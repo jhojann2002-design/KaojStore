@@ -271,6 +271,11 @@
           <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
         </svg>
       ),
+      Heart: ({ className = "w-4 h-4", filled = false }) => (
+        <svg className={className} fill={filled ? "#FF2E93" : "none"} stroke={filled ? "#FF2E93" : "currentColor"} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+        </svg>
+      ),
       Settings: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
@@ -456,6 +461,102 @@
         payphoneRef: ''
       });
 
+      // Estado de procesamiento seguro y confirmación de pedido
+      const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+      const [orderSuccessModal, setOrderSuccessModal] = useState(null);
+
+      // Cupones de descuento promocionales
+      const [couponCodeInput, setCouponCodeInput] = useState('');
+      const [appliedCoupon, setAppliedCoupon] = useState(null);
+
+      // Lista de Favoritos (Wishlist) persistente en localStorage
+      const [favorites, setFavorites] = useState(() => {
+        try {
+          const saved = localStorage.getItem('kaoj_favorites');
+          return saved ? JSON.parse(saved) : [];
+        } catch {
+          return [];
+        }
+      });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('kaoj_favorites', JSON.stringify(favorites));
+        } catch (e) {}
+      }, [favorites]);
+
+      function toggleFavorite(productId, productName) {
+        if (favorites.includes(productId)) {
+          setFavorites(favorites.filter(id => id !== productId));
+          showToast(`"${productName}" retirado de favoritos`, 'info');
+        } else {
+          setFavorites([...favorites, productId]);
+          showToast(`¡"${productName}" guardado en tus favoritos! ❤️`);
+        }
+      }
+
+      // Auto-detección de cliente VIP al escribir celular en el checkout
+      async function handlePhoneLookup(phoneVal) {
+        const clean = phoneVal.replace(/\D/g, '');
+        if (clean.length < 9) return;
+        if (customerProfile && customerProfile.phone === clean) return;
+
+        try {
+          const { data: matchedCust } = await supabase
+            .from('kaoj_customers')
+            .select('*')
+            .or(`phone.ilike.%${clean.slice(-8)}%,customer_code.ilike.%${clean.slice(-4)}%`)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (matchedCust) {
+            setCustomerProfile(matchedCust);
+            setCustomer(prev => ({
+              ...prev,
+              name: prev.name.trim() ? prev.name : (matchedCust.name || ''),
+              idCard: prev.idCard.trim() ? prev.idCard : (matchedCust.id_card || ''),
+              address: prev.address.trim() ? prev.address : (matchedCust.address || ''),
+              email: prev.email.trim() ? prev.email : (matchedCust.email || '')
+            }));
+            showToast(`¡Bienvenida de nuevo, ${matchedCust.name.split(' ')[0]}! Tienes ${matchedCust.points || 0} Puntos VIP.`);
+          }
+        } catch (err) {}
+      }
+
+      // Cupones disponibles
+      const availableCoupons = useMemo(() => {
+        const defaults = [
+          { code: 'BIENVENIDA', discount: 10, type: 'percent', label: '10% OFF Bienvenida' },
+          { code: 'KAOJ5', discount: 5, type: 'fixed', label: '$5.00 OFF Especial' },
+          { code: 'ENVIOFREE', discount: 5.50, type: 'shipping', label: 'Envío Gratis Servientrega' }
+        ];
+        if (Array.isArray(settings.coupons_config) && settings.coupons_config.length > 0) {
+          return settings.coupons_config;
+        }
+        return defaults;
+      }, [settings.coupons_config]);
+
+      function handleApplyCoupon(e) {
+        if (e) e.preventDefault();
+        const code = couponCodeInput.trim().toUpperCase();
+        if (!code) return showToast('Ingresa un código de cupón', 'error');
+
+        const found = availableCoupons.find(c => c.code.toUpperCase() === code);
+        if (!found) {
+          return showToast(`El cupón "${code}" no es válido o ha expirado.`, 'error');
+        }
+
+        setAppliedCoupon(found);
+        showToast(`¡Cupón "${found.code}" aplicado con éxito! 🎉`);
+      }
+
+      function handleRemoveCoupon() {
+        setAppliedCoupon(null);
+        setCouponCodeInput('');
+        showToast('Cupón de descuento removido');
+      }
+
       // Toast Notifications
       const [toast, setToast] = useState(null);
       const showToast = (message, type = 'success') => {
@@ -476,6 +577,7 @@
       const [adminTab, setAdminTab] = useState('metrics'); // 'metrics', 'inventory', 'sections', 'orders', 'reviews', 'customers', 'settings'
       const [adminSearch, setAdminSearch] = useState('');
       const [adminFilterStatus, setAdminFilterStatus] = useState('todos');
+      const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
       const [editingProduct, setEditingProduct] = useState(null);
       const [servientregaOrder, setServientregaOrder] = useState(null);
       const [uploading, setUploading] = useState(false);
@@ -715,6 +817,46 @@
         }
       }, [cart, user, customerProfile]);
 
+      // Saneamiento y sincronización de stock del carrito al abrirlo
+      useEffect(() => {
+        if (!isCartOpen || products.length === 0 || cart.length === 0) return;
+
+        let hasAdjusted = false;
+        const sanitized = cart.map(item => {
+          const prod = products.find(p => p.id === item.productId);
+          if (!prod || !prod.is_active) {
+            hasAdjusted = true;
+            return null;
+          }
+          const varObj = (prod.variants || []).find(v => v.name === item.variant);
+          const currentStock = varObj ? Number(varObj.stock || 0) : 0;
+          if (currentStock <= 0) {
+            hasAdjusted = true;
+            return null;
+          }
+          let newQty = item.qty;
+          if (item.qty > currentStock) {
+            newQty = currentStock;
+            hasAdjusted = true;
+          }
+          const freshPrice = prod.discount_price ? Number(prod.discount_price) : Number(prod.price);
+          if (item.price !== freshPrice) {
+            hasAdjusted = true;
+          }
+          return {
+            ...item,
+            qty: newQty,
+            price: freshPrice,
+            image: varObj?.image || prod.image
+          };
+        }).filter(Boolean);
+
+        if (hasAdjusted) {
+          setCart(sanitized);
+          showToast('Tu carrito fue actualizado con el stock y precios vigentes.', 'info');
+        }
+      }, [isCartOpen]);
+
       async function loadCloudCart(userId) {
         try {
           const { data } = await supabase.from('kaoj_carts').select('items').eq('user_id', userId).single();
@@ -816,14 +958,33 @@
       const customerCurrentPoints = customerProfile?.points || 0;
       const canRedeemPoints = customerCurrentPoints >= (settings.points_min_redeem || 50);
       const pointsDiscountAmount = (applyPointsDiscount && canRedeemPoints) ? 5.00 : 0.00;
-      const total = Math.max(0, subtotal - pointsDiscountAmount) + finalShippingCost;
-      const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - pointsDiscountAmount));
+
+      // Descuento por Cupón Promocional
+      let couponDiscountAmount = 0;
+      if (appliedCoupon) {
+        if (appliedCoupon.type === 'percent') {
+          couponDiscountAmount = Number(((subtotal * appliedCoupon.discount) / 100).toFixed(2));
+        } else if (appliedCoupon.type === 'fixed') {
+          couponDiscountAmount = Math.min(subtotal, Number(appliedCoupon.discount));
+        } else if (appliedCoupon.type === 'shipping') {
+          couponDiscountAmount = finalShippingCost;
+        }
+      }
+
+      const totalDiscounts = pointsDiscountAmount + couponDiscountAmount;
+      const finalShippingAfterCoupon = (qualifiesFreeShipping || appliedCoupon?.type === 'shipping') ? 0 : deliveryObj.price;
+      const total = Math.max(0, subtotal - (pointsDiscountAmount + (appliedCoupon?.type !== 'shipping' ? couponDiscountAmount : 0))) + finalShippingAfterCoupon;
+      const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - totalDiscounts));
+
+      // Métricas de Envío Gratis
+      const remainingForFreeShipping = Math.max(0, freeShippingThreshold - subtotal);
+      const shippingProgressPercent = Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
 
       // Código de cliente activo
       const activeCustomerCode = customerProfile?.customer_code || generateCustomerCode(customer.name, customer.phone);
 
       // =======================================================================
-      // 4. CHECKOUT SEGURO & DESCUENTO ATÓMICO DE STOCK
+      // 4. CHECKOUT SEGURO & DESCUENTO ATÓMICO DE STOCK (FASE 1)
       // =======================================================================
       async function handleCheckoutSubmit(e) {
         e.preventDefault();
@@ -841,6 +1002,40 @@
           return showToast('Sube el comprobante de transferencia o pago para validar tu pedido.', 'error');
         }
 
+        setIsSubmittingOrder(true);
+
+        // 1. VERIFICACIÓN DE STOCK EN TIEMPO REAL DESDE SUPABASE
+        const prodIds = [...new Set(cart.map(i => i.productId))];
+        const { data: freshProducts, error: fetchErr } = await supabase
+          .from('kaoj_products')
+          .select('id, name, variants, is_active')
+          .in('id', prodIds);
+
+        if (fetchErr || !freshProducts) {
+          setIsSubmittingOrder(false);
+          return showToast('No se pudo verificar el inventario en tiempo real. Intenta de nuevo.', 'error');
+        }
+
+        // Validar cantidades de cada ítem del carrito contra el stock fresco
+        for (const item of cart) {
+          const freshProd = freshProducts.find(p => p.id === item.productId);
+          if (!freshProd || !freshProd.is_active) {
+            setIsSubmittingOrder(false);
+            return showToast(`El producto "${item.name}" ya no se encuentra disponible.`, 'error');
+          }
+
+          const varObj = (freshProd.variants || []).find(v => v.name === item.variant);
+          const stockAvail = varObj ? Number(varObj.stock || 0) : 0;
+          if (stockAvail < item.qty) {
+            setIsSubmittingOrder(false);
+            if (stockAvail <= 0) {
+              return showToast(`Lo sentimos, "${item.name} (${item.variant})" se ha agotado. Por favor retíralo de tu pedido.`, 'error');
+            } else {
+              return showToast(`Solo quedan ${stockAvail} unidad(es) de "${item.name} (${item.variant})". Ajusta tu carrito.`, 'error');
+            }
+          }
+        }
+
         const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
 
         const orderData = {
@@ -853,9 +1048,9 @@
           user_id: user?.id || null,
           delivery_method: deliveryObj.label + (qualifiesFreeShipping ? ' (Envío Gratis)' : ''),
           delivery_address: customer.address.trim(),
-          shipping_cost: finalShippingCost,
+          shipping_cost: finalShippingAfterCoupon,
           subtotal: subtotal,
-          discount_amount: pointsDiscountAmount,
+          discount_amount: totalDiscounts,
           total: total,
           points_earned: pointsEarnedWithOrder,
           points_redeemed: applyPointsDiscount ? (settings.points_min_redeem || 50) : 0,
@@ -864,35 +1059,42 @@
             customer.paymentMethod === 'payphone' ? `Payphone (Ref: ${customer.payphoneRef})` : 'Transferencia Bancaria',
           receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
           items: cart,
-          status: 'pendiente'
+          status: 'pendiente',
+          admin_notes: appliedCoupon ? `Cupón aplicado: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})` : ''
         };
 
         try {
-          // 1. Insertar orden en Supabase
-          await supabase.from('kaoj_orders').insert([orderData]);
+          // 2. Insertar orden con control estricto de error
+          const { error: orderError } = await supabase
+            .from('kaoj_orders')
+            .insert([orderData]);
 
-          // 2. Descuento ATÓMICO y COMBINADO de stock (Evita sobreescritura de variantes de un mismo producto)
-          const itemsByProduct = {};
-          cart.forEach(item => {
-            if (!itemsByProduct[item.productId]) itemsByProduct[item.productId] = [];
-            itemsByProduct[item.productId].push(item);
-          });
-
-          for (const [prodIdStr, itemsList] of Object.entries(itemsByProduct)) {
-            const prodId = Number(prodIdStr);
-            const prod = products.find(p => p.id === prodId);
-            if (prod && Array.isArray(prod.variants)) {
-              let updatedVariants = [...prod.variants];
-              itemsList.forEach(item => {
-                updatedVariants = updatedVariants.map(v =>
-                  v.name === item.variant ? { ...v, stock: Math.max(0, (v.stock || 0) - item.qty) } : v
-                );
-              });
-              await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', prodId);
-            }
+          if (orderError) {
+            console.error('Error registrando orden en Supabase:', orderError);
+            setIsSubmittingOrder(false);
+            return showToast('Error al registrar tu orden: ' + (orderError.message || 'Verifica tu conexión'), 'error');
           }
 
-          // 3. Actualizar puntos del cliente en kaoj_customers
+          // 3. Descuento seguro de stock basado en el inventario fresco
+          for (const freshProd of freshProducts) {
+            const itemsForProd = cart.filter(i => i.productId === freshProd.id);
+            if (itemsForProd.length === 0) continue;
+
+            const updatedVariants = (freshProd.variants || []).map(v => {
+              const matchedItem = itemsForProd.find(i => i.variant === v.name);
+              if (matchedItem) {
+                return { ...v, stock: Math.max(0, (Number(v.stock) || 0) - matchedItem.qty) };
+              }
+              return v;
+            });
+
+            await supabase
+              .from('kaoj_products')
+              .update({ variants: updatedVariants })
+              .eq('id', freshProd.id);
+          }
+
+          // 4. Actualizar puntos del cliente en kaoj_customers
           const newPointsBalance = Math.max(0, customerCurrentPoints - (applyPointsDiscount ? 50 : 0)) + pointsEarnedWithOrder;
           const customerUpsert = {
             customer_code: activeCustomerCode,
@@ -904,7 +1106,7 @@
             user_id: user?.id || null,
             points: newPointsBalance,
             orders_count: (customerProfile?.orders_count || 0) + 1,
-            total_spent: Number((customerProfile?.total_spent || 0) + total)
+            total_spent: Number(((customerProfile?.total_spent || 0) + total).toFixed(2))
           };
 
           await supabase.from('kaoj_customers').upsert(customerUpsert, { onConflict: 'customer_code' });
@@ -916,10 +1118,12 @@
             await supabase.from('kaoj_carts').delete().eq('user_id', user.id);
           }
         } catch (err) {
-          console.error('Error registrando orden:', err);
+          console.error('Error inesperado durante la compra:', err);
+          setIsSubmittingOrder(false);
+          return showToast('Ocurrió un error al procesar la compra: ' + err.message, 'error');
         }
 
-        // 4. Enviar a WhatsApp Oficial con formato internacional
+        // 5. Generar enlace y mensaje pre-formateado a WhatsApp Oficial
         const officialWhatsApp = formatWhatsAppPhone(settings.whatsapp_number);
         const itemsListText = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
         const paymentLabel =
@@ -939,18 +1143,44 @@
           `*PRODUCTOS COMPRADOS:*\n${itemsListText}\n\n` +
           `*Subtotal:* $${subtotal.toFixed(2)}\n` +
           (pointsDiscountAmount > 0 ? `*Descuento VIP (50 Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') +
-          `*Envío:* ${finalShippingCost === 0 ? 'GRATIS' : '$' + finalShippingCost.toFixed(2)}\n` +
+          (couponDiscountAmount > 0 ? `*Cupón (${appliedCoupon.code}):* -$${couponDiscountAmount.toFixed(2)}\n` : '') +
+          `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` +
           `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` +
           `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts\n\n` +
           (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') +
           `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
 
-        window.open(`https://wa.me/${officialWhatsApp}?text=${encodeURIComponent(whatsappMsg)}`, '_blank');
+        const whatsappUrl = `https://wa.me/${officialWhatsApp}?text=${encodeURIComponent(whatsappMsg)}`;
 
+        // 6. Activar el Modal de Confirmación de Pedido (Resistente a bloqueadores móviles)
+        setOrderSuccessModal({
+          orderCode,
+          customerCode: activeCustomerCode,
+          customerName: customer.name.trim(),
+          customerPhone: customer.phone.trim(),
+          total: total.toFixed(2),
+          subtotal: subtotal.toFixed(2),
+          shippingCost: finalShippingAfterCoupon,
+          pointsEarned: pointsEarnedWithOrder,
+          deliveryMethod: deliveryObj.label,
+          whatsappUrl,
+          items: [...cart]
+        });
+
+        // Intentar apertura automática de WhatsApp en pestaña nueva
+        try {
+          window.open(whatsappUrl, '_blank');
+        } catch (e) {}
+
+        // Limpiar carrito y formulario de checkout
         setCart([]);
+        localStorage.removeItem('kaoj_cart');
         setIsCartOpen(false);
         setApplyPointsDiscount(false);
+        setAppliedCoupon(null);
+        setCouponCodeInput('');
         setCustomer(prev => ({ ...prev, receiptUrl: '', payphoneRef: '' }));
+        setIsSubmittingOrder(false);
         showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste ${pointsEarnedWithOrder} puntos.`);
         fetchInitialData();
       }
@@ -1150,13 +1380,28 @@
         showToast(`Stock de "${variantName}" actualizado`);
       }
 
+      async function handleDirectStockChange(productId, variantName, newStock) {
+        const safeVal = Math.max(0, isNaN(newStock) ? 0 : newStock);
+        const prod = products.find(p => p.id === productId);
+        if (!prod || !prod.variants) return;
+
+        const updatedVariants = prod.variants.map(v =>
+          v.name === variantName ? { ...v, stock: safeVal } : v
+        );
+
+        setProducts(products.map(p => p.id === productId ? { ...p, variants: updatedVariants } : p));
+        await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', productId);
+      }
+
       // =======================================================================
       // 8. FILTRADO INTELIGENTE DE PRODUCTOS
       // =======================================================================
       const filteredProducts = useMemo(() => {
         let result = [...products];
 
-        if (selectedSection !== 'TODOS') {
+        if (selectedSection === 'FAVORITOS') {
+          result = result.filter(p => favorites.includes(p.id));
+        } else if (selectedSection !== 'TODOS') {
           if (selectedSection === 'OFERTAS') {
             result = result.filter(p => Boolean(p.discount_price && p.discount_price < p.price));
           } else {
@@ -1164,7 +1409,7 @@
           }
         }
 
-        if (selectedSubcategory !== 'TODOS' && selectedSection !== 'OFERTAS') {
+        if (selectedSubcategory !== 'TODOS' && selectedSection !== 'OFERTAS' && selectedSection !== 'FAVORITOS') {
           result = result.filter(p => (p.category || '').toLowerCase() === selectedSubcategory.toLowerCase());
         }
 
@@ -1187,7 +1432,7 @@
         }
 
         return result;
-      }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy]);
+      }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy, favorites]);
 
       // Métricas administrativas
       const metrics = useMemo(() => {
@@ -1289,6 +1534,27 @@
                   >
                     <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
                     <span className="hidden sm:inline">Mis Pedidos</span>
+                  </button>
+                )}
+
+                {/* BOTÓN FAVORITOS EN NAVBAR */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); }}
+                    className={`text-xs px-2.5 sm:px-3 py-2 rounded-full border transition flex items-center gap-1.5 ${
+                      selectedSection === 'FAVORITOS'
+                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold'
+                        : 'border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium'
+                    }`}
+                    title="Mis Favoritos"
+                  >
+                    <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={selectedSection === 'FAVORITOS' || favorites.length > 0} />
+                    <span className="hidden sm:inline">Favoritos</span>
+                    {favorites.length > 0 && (
+                      <span className="text-[10px] bg-[#FF2E93] text-white px-1.5 py-0.2 rounded-full font-bold">
+                        {favorites.length}
+                      </span>
+                    )}
                   </button>
                 )}
 
@@ -1454,6 +1720,25 @@
                     >
                       OFERTAS
                     </button>
+
+                    <button
+                      onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); }}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition flex items-center gap-1.5 ${
+                        selectedSection === 'FAVORITOS'
+                          ? 'bg-[#FF2E93] text-white shadow-sm'
+                          : 'bg-white border border-pink-200 text-[#FF2E93] hover:bg-pink-50'
+                      }`}
+                    >
+                      <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={selectedSection === 'FAVORITOS' || favorites.length > 0} />
+                      <span>FAVORITOS</span>
+                      {favorites.length > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          selectedSection === 'FAVORITOS' ? 'bg-white text-[#FF2E93]' : 'bg-pink-100 text-[#FF2E93]'
+                        }`}>
+                          {favorites.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
 
                   {/* SELECTOR DE ORDENACIÓN (Visible en móvil y desktop) */}
@@ -1535,13 +1820,31 @@
               {/* GRID DE PRODUCTOS (2 Columnas en móvil para agilidad boutique) */}
               {filteredProducts.length === 0 ? (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center space-y-3">
-                  <p className="font-bold text-zinc-700 text-sm">No encontramos productos en esta sección o búsqueda.</p>
-                  <button
-                    onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); }}
-                    className="text-xs bg-[#FF2E93] text-white font-bold px-4 py-2 rounded-full"
-                  >
-                    Ver Todo el Catálogo
-                  </button>
+                  {selectedSection === 'FAVORITOS' ? (
+                    <>
+                      <div className="w-14 h-14 rounded-full bg-pink-50 text-[#FF2E93] flex items-center justify-center mx-auto">
+                        <Icon.Heart className="w-7 h-7" filled={true} />
+                      </div>
+                      <p className="font-bold text-zinc-900 text-sm">Aún no tienes productos guardados en Favoritos.</p>
+                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">Toca el corazón ❤️ en las fotos de los labiales, blusas o accesorios que más te gusten para guardarlos aquí.</p>
+                      <button
+                        onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); }}
+                        className="text-xs bg-[#FF2E93] text-white font-bold px-5 py-2.5 rounded-full shadow-xs transition"
+                      >
+                        Explorar Todo el Catálogo
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-bold text-zinc-700 text-sm">No encontramos productos en esta sección o búsqueda.</p>
+                      <button
+                        onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); }}
+                        className="text-xs bg-[#FF2E93] text-white font-bold px-4 py-2 rounded-full"
+                      >
+                        Ver Todo el Catálogo
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-6">
@@ -1550,6 +1853,8 @@
                     const currentVarName = activeVar.variantName || prod.variants?.[0]?.name;
                     const varObj = (prod.variants || []).find(v => v.name === currentVarName);
                     const stock = varObj ? varObj.stock : 0;
+                    const isAllOutOfStock = (prod.variants || []).every(v => (v.stock || 0) <= 0);
+                    const hasLowStockVariant = (prod.variants || []).some(v => v.stock > 0 && v.stock <= 2);
                     const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
                     const displayImage = activeVar.image || varObj?.image || prod.image;
@@ -1567,11 +1872,37 @@
                           <img
                             src={displayImage || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
                             alt={prod.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            className={`w-full h-full object-cover group-hover:scale-105 transition duration-300 ${isAllOutOfStock ? 'grayscale opacity-75' : ''}`}
                             loading="lazy"
                           />
 
-                          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                          {/* BOTÓN FAVORITO FLOTANTE */}
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleFavorite(prod.id, prod.name);
+                            }}
+                            className="absolute top-2.5 right-2.5 z-20 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100"
+                            title={favorites.includes(prod.id) ? "Quitar de favoritos" : "Guardar en favoritos"}
+                          >
+                            <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.includes(prod.id)} />
+                          </button>
+
+                          {/* OVERLAY DE AGOTADO O ALERTA DE POCAS UNIDADES */}
+                          {isAllOutOfStock ? (
+                            <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center z-10">
+                              <span className="bg-zinc-900/95 text-white border border-white/20 px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-black tracking-widest uppercase shadow-xl">
+                                Agotado
+                              </span>
+                            </div>
+                          ) : hasLowStockVariant ? (
+                            <span className="absolute bottom-2.5 left-2.5 bg-amber-500/95 text-zinc-950 font-extrabold text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full shadow-md z-10 flex items-center gap-1">
+                              🔥 Pocas unidades
+                            </span>
+                          ) : null}
+
+                          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 z-10">
                             <span className="bg-[#FF2E93] text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs">
                               {prod.section || 'KAOJ'}
                             </span>
@@ -1581,7 +1912,7 @@
                           </div>
 
                           {hasDiscount && (
-                            <span className="absolute top-2.5 right-2.5 bg-zinc-900 text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs">
+                            <span className="absolute top-11 right-2.5 bg-zinc-900 text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs z-10">
                               -{discountPercent}%
                             </span>
                           )}
@@ -1616,9 +1947,17 @@
                               <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
                                 <span className="font-semibold text-zinc-600 truncate">{prod.variant_label || 'Tono / Talla'}:</span>
                                 {varObj && (
-                                  <span className={`font-bold ${varObj.stock > 0 ? 'text-emerald-700' : 'text-red-500'}`}>
-                                    {varObj.stock > 0 ? `${varObj.stock} disp.` : 'Agotado'}
-                                  </span>
+                                  varObj.stock <= 0 ? (
+                                    <span className="font-bold text-red-500 text-[10px] sm:text-xs">Agotado</span>
+                                  ) : varObj.stock <= 2 ? (
+                                    <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] animate-pulse">
+                                      🔥 ¡Solo {varObj.stock} disp!
+                                    </span>
+                                  ) : (
+                                    <span className="font-bold text-emerald-700 text-[10px] sm:text-xs">
+                                      {varObj.stock} disp.
+                                    </span>
+                                  )
                                 )}
                               </div>
 
@@ -1655,11 +1994,15 @@
                             disabled={stock <= 0}
                             onClick={() => addToCart(prod)}
                             className={`w-full py-2 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
-                              stock > 0 ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                              stock <= 0
+                                ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                                : stock <= 2
+                                ? 'bg-amber-500 hover:bg-amber-600 text-zinc-950 active:scale-95'
+                                : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95'
                             }`}
                           >
                             <Icon.Bag className="w-3.5 h-3.5" />
-                            <span>{stock > 0 ? 'Agregar' : 'Agotado'}</span>
+                            <span>{stock <= 0 ? 'Agotado' : stock <= 2 ? `Comprar (Solo ${stock})` : 'Agregar'}</span>
                           </button>
                         </div>
                       </div>
@@ -1991,25 +2334,79 @@
 
                   {/* LISTA DE PRODUCTOS */}
                   <div className="lg:col-span-2 space-y-4">
-                    <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs flex items-center justify-between gap-4">
-                      <div className="relative flex-1">
-                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
-                          <Icon.Search className="w-4 h-4" />
-                        </span>
-                        <input
-                          type="text"
-                          value={adminSearch}
-                          onChange={e => setAdminSearch(e.target.value)}
-                          placeholder="Buscar por nombre, sección o categoría..."
-                          className="w-full pl-9 pr-4 py-2 border rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                        />
+                    <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="relative flex-1">
+                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
+                            <Icon.Search className="w-4 h-4" />
+                          </span>
+                          <input
+                            type="text"
+                            value={adminSearch}
+                            onChange={e => setAdminSearch(e.target.value)}
+                            placeholder="Buscar por nombre, sección o categoría..."
+                            className="w-full pl-9 pr-4 py-2 border rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#FF2E93]"
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-zinc-600 shrink-0">{products.length} productos</span>
                       </div>
-                      <span className="text-xs font-bold text-zinc-600">{products.length} productos</span>
+
+                      {/* FILTROS RÁPIDOS DE STOCK */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2 border-t border-zinc-100">
+                        <span className="text-[10px] uppercase font-bold text-zinc-400 mr-1 shrink-0">Filtro Stock:</span>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('todos')}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition ${
+                            adminStockFilter === 'todos' ? 'bg-zinc-900 text-white shadow-xs' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                          }`}
+                        >
+                          Todos ({products.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('critico')}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                            adminStockFilter === 'critico' ? 'bg-amber-500 text-zinc-950 font-black shadow-xs' : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
+                          }`}
+                        >
+                          <span>🔥 Stock Crítico (≤ 2)</span>
+                          <span className="bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full text-[10px] font-black">
+                            {products.filter(p => (p.variants || []).some(v => v.stock > 0 && v.stock <= 2)).length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('agotados')}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                            adminStockFilter === 'agotados' ? 'bg-red-600 text-white font-black shadow-xs' : 'bg-red-50 text-red-800 border border-red-200 hover:bg-red-100'
+                          }`}
+                        >
+                          <span>⚠️ Variantes Agotadas</span>
+                          <span className="bg-red-200 text-red-900 px-1.5 py-0.2 rounded-full text-[10px] font-black">
+                            {products.filter(p => (p.variants || []).some(v => (v.stock || 0) <= 0)).length}
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-3">
                       {products
-                        .filter(p => !adminSearch || p.name.toLowerCase().includes(adminSearch.toLowerCase()) || (p.section || '').toLowerCase().includes(adminSearch.toLowerCase()) || (p.category || '').toLowerCase().includes(adminSearch.toLowerCase()))
+                        .filter(p => {
+                          const matchesSearch = !adminSearch ||
+                            p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
+                            (p.section || '').toLowerCase().includes(adminSearch.toLowerCase()) ||
+                            (p.category || '').toLowerCase().includes(adminSearch.toLowerCase());
+                          if (!matchesSearch) return false;
+
+                          if (adminStockFilter === 'critico') {
+                            return (p.variants || []).some(v => v.stock > 0 && v.stock <= 2);
+                          }
+                          if (adminStockFilter === 'agotados') {
+                            return (p.variants || []).some(v => (v.stock || 0) <= 0);
+                          }
+                          return true;
+                        })
                         .map(prod => (
                           <div key={prod.id} className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex gap-3">
@@ -2029,15 +2426,52 @@
                                   {prod.discount_price && <span className="line-through text-zinc-400 text-[10px]">${Number(prod.price).toFixed(2)}</span>}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                <div className="flex flex-wrap gap-2 pt-1">
                                   {(prod.variants || []).map(v => (
-                                    <div key={v.name} className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] ${v.stock <= 2 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-zinc-50 border-zinc-200'}`}>
-                                      {v.image && <img src={v.image} className="w-3 h-3 rounded-full object-cover" />}
-                                      <span>{v.name}: <b>{v.stock}</b></span>
-                                      <div className="flex items-center gap-0.5 ml-1">
-                                        <button onClick={() => handleQuickStockChange(prod.id, v.name, -1)} disabled={v.stock <= 0} className="w-4 h-4 rounded bg-zinc-200 hover:bg-zinc-300 font-bold">-</button>
-                                        <button onClick={() => handleQuickStockChange(prod.id, v.name, 1)} className="w-4 h-4 rounded bg-zinc-200 hover:bg-zinc-300 font-bold">+</button>
+                                    <div
+                                      key={v.name}
+                                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs ${
+                                        v.stock <= 0
+                                          ? 'bg-red-50 border-red-200 text-red-900'
+                                          : v.stock <= 2
+                                          ? 'bg-amber-50 border-amber-200 text-amber-900'
+                                          : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                                      }`}
+                                    >
+                                      {v.image && <img src={v.image} className="w-4 h-4 rounded-full object-cover border" />}
+                                      <span className="font-semibold">{v.name}:</span>
+                                      <div className="flex items-center gap-0.5 bg-white border border-zinc-300 rounded-lg p-0.5 shadow-xs">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleQuickStockChange(prod.id, v.name, -1)}
+                                          disabled={v.stock <= 0}
+                                          className="w-5 h-5 rounded hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 disabled:opacity-20"
+                                          title="Restar 1"
+                                        >
+                                          -
+                                        </button>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={v.stock}
+                                          onChange={e => {
+                                            const val = parseInt(e.target.value || '0', 10);
+                                            handleDirectStockChange(prod.id, v.name, val);
+                                          }}
+                                          className="w-10 text-center font-black text-xs outline-none bg-transparent"
+                                          title="Escribe la cantidad exacta de stock"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleQuickStockChange(prod.id, v.name, 1)}
+                                          className="w-5 h-5 rounded hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600"
+                                          title="Sumar 1"
+                                        >
+                                          +
+                                        </button>
                                       </div>
+                                      {v.stock <= 0 && <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.2 rounded-md">Agotado</span>}
+                                      {v.stock > 0 && v.stock <= 2 && <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1 rounded-md">¡Poco!</span>}
                                     </div>
                                   ))}
                                 </div>
@@ -2436,6 +2870,37 @@
                       </div>
                     </div>
 
+                    {/* CUPONES DE DESCUENTO ACTIVOS */}
+                    <div className="border border-pink-200 rounded-2xl p-4 bg-pink-50/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-zinc-900 text-sm flex items-center gap-1.5">
+                          <Icon.Tag className="w-4 h-4 text-[#FF2E93]" /> Cupones Promocionales Disponibles
+                        </h4>
+                        <span className="text-[10px] bg-pink-100 text-[#FF2E93] font-black px-2 py-0.5 rounded-full">
+                          {availableCoupons.length} Activos
+                        </span>
+                      </div>
+                      <p className="text-zinc-500 text-[11px]">
+                        Los clientes pueden ingresar estos códigos al momento del checkout para obtener beneficios inmediatos en sus compras:
+                      </p>
+                      <div className="grid sm:grid-cols-3 gap-2 pt-1">
+                        {availableCoupons.map(c => (
+                          <div key={c.code} className="bg-white border border-pink-200 rounded-xl p-3 flex flex-col justify-between shadow-xs">
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-black text-[#FF2E93] tracking-wider text-xs">{c.code}</span>
+                                <span className="text-[9px] font-bold bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded">
+                                  {c.type === 'percentage' ? `${c.value}% OFF` : c.type === 'fixed' ? `$${c.value} OFF` : 'ENVÍO GRATIS'}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-600 mt-1">{c.description}</p>
+                            </div>
+                            <span className="text-[10px] text-zinc-400 mt-2 block">Mínimo: ${c.minSpend}.00</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <button
                       type="submit"
                       disabled={uploading}
@@ -2761,6 +3226,41 @@
                     </div>
                   )}
 
+                  {/* BARRA DE PROGRESO INTERACTIVA PARA ENVÍO GRATIS */}
+                  {cart.length > 0 && (
+                    qualifiesFreeShipping || subtotal >= freeShippingThreshold ? (
+                      <div className="mt-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-3 space-y-1.5 shadow-xs animate-in fade-in">
+                        <div className="flex items-center justify-between text-xs font-extrabold text-emerald-800">
+                          <span className="flex items-center gap-1.5">
+                            <Icon.Truck className="w-4 h-4 text-emerald-600" /> ¡Felicidades! Tienes Envío Gratis
+                          </span>
+                          <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black">100%</span>
+                        </div>
+                        <div className="w-full bg-emerald-200/60 rounded-full h-2 overflow-hidden">
+                          <div className="bg-emerald-500 h-full rounded-full transition-all duration-500 w-full"></div>
+                        </div>
+                        <p className="text-[10px] text-emerald-700 font-medium">Aplica para entregas locales y envíos Servientrega a todo el Ecuador 🎉</p>
+                      </div>
+                    ) : (
+                      <div className="mt-3 bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-2xl p-3 space-y-1.5 shadow-xs">
+                        <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                          <span className="flex items-center gap-1.5">
+                            <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
+                            <span>Te faltan <b className="text-[#FF2E93] font-black">${remainingForFreeShipping.toFixed(2)}</b> para Envío Gratis</span>
+                          </span>
+                          <span className="text-[10px] font-extrabold text-[#FF2E93]">{shippingProgressPercent}%</span>
+                        </div>
+                        <div className="w-full bg-pink-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-[#FF2E93] h-full rounded-full transition-all duration-500"
+                            style={{ width: `${shippingProgressPercent}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 font-medium">Envío Gratis automático desde ${freeShippingThreshold.toFixed(2)} a todo el Ecuador</p>
+                      </div>
+                    )
+                  )}
+
                   {cart.length === 0 ? (
                     <div className="text-center py-16 space-y-3">
                       <Icon.Bag className="w-12 h-12 text-zinc-300 mx-auto" />
@@ -2798,7 +3298,17 @@
                         <div className="space-y-2">
                           <input required placeholder="Nombre y Apellido *" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                           <div className="grid grid-cols-2 gap-2">
-                            <input required placeholder="Celular (WhatsApp) *" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
+                            <input
+                              required
+                              placeholder="Celular (WhatsApp) *"
+                              value={customer.phone}
+                              onChange={e => {
+                                setCustomer({ ...customer, phone: e.target.value });
+                                handlePhoneLookup(e.target.value);
+                              }}
+                              onBlur={e => handlePhoneLookup(e.target.value)}
+                              className="border rounded-xl p-2.5 outline-none"
+                            />
                             <input placeholder="Cédula / RUC (Guía)" value={customer.idCard} onChange={e => setCustomer({ ...customer, idCard: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
                           </div>
                         </div>
@@ -2838,6 +3348,52 @@
                           </label>
                         </div>
                       )}
+
+                      {/* CUPÓN DE DESCUENTO */}
+                      <div className="bg-pink-50/50 border border-pink-100 rounded-2xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-zinc-800 text-xs flex items-center gap-1.5">
+                            <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" /> ¿Tienes un cupón de descuento?
+                          </span>
+                          {appliedCoupon && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-extrabold">
+                              ✓ Aplicado
+                            </span>
+                          )}
+                        </div>
+                        {appliedCoupon ? (
+                          <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-emerald-700 tracking-wider uppercase">{appliedCoupon.code}</span>
+                              <span className="text-[11px] text-zinc-500">({appliedCoupon.description})</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleRemoveCoupon}
+                              className="text-[11px] text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded hover:bg-red-50"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Ej. BIENVENIDA / KAOJ5"
+                              value={couponCodeInput}
+                              onChange={e => setCouponCodeInput(e.target.value)}
+                              className="flex-1 border rounded-xl px-3 py-2 text-xs bg-white uppercase tracking-wider outline-none focus:border-[#FF2E93]"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleApplyCoupon}
+                              className="bg-zinc-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs"
+                            >
+                              Aplicar
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
                       {/* MÉTODO DE ENTREGA */}
                       <div>
@@ -2965,6 +3521,11 @@
                             <span>Descuento VIP (50 Pts):</span><span>-${pointsDiscountAmount.toFixed(2)}</span>
                           </div>
                         )}
+                        {couponDiscountAmount > 0 && (
+                          <div className="flex justify-between text-emerald-600 font-bold">
+                            <span>Cupón ({appliedCoupon?.code}):</span><span>-${couponDiscountAmount.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span>Envío:</span><span>{finalShippingCost === 0 ? 'GRATIS' : `$${finalShippingCost.toFixed(2)}`}</span>
                         </div>
@@ -2976,8 +3537,26 @@
                         </div>
                       </div>
 
-                      <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition">
-                        Confirmar y Enviar a WhatsApp
+                      <button
+                        type="submit"
+                        disabled={uploading || isSubmittingOrder}
+                        className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
+                          uploading || isSubmittingOrder
+                            ? 'bg-zinc-400 text-white cursor-not-allowed'
+                            : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-[0.99]'
+                        }`}
+                      >
+                        {isSubmittingOrder ? (
+                          <>
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            <span>Verificando inventario y procesando orden...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Icon.WhatsApp className="w-4 h-4 text-white" />
+                            <span>Confirmar y Enviar a WhatsApp</span>
+                          </>
+                        )}
                       </button>
                     </form>
                   )}
@@ -2992,7 +3571,24 @@
           {quickViewProduct && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setQuickViewProduct(null)}>
               <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-zinc-200 flex flex-col md:flex-row relative" onClick={e => e.stopPropagation()}>
-                <button onClick={() => setQuickViewProduct(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center font-bold text-zinc-600 shadow-md z-10">✕</button>
+                <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                  <button
+                    type="button"
+                    onClick={() => toggleFavorite(quickViewProduct.id, quickViewProduct.name)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all active:scale-90 ${
+                      favorites.includes(quickViewProduct.id)
+                        ? 'bg-rose-50 text-rose-500 border border-rose-200'
+                        : 'bg-white/90 hover:bg-white text-zinc-500 hover:text-rose-500'
+                    }`}
+                    title={favorites.includes(quickViewProduct.id) ? 'Quitar de Favoritos' : 'Guardar en Favoritos'}
+                  >
+                    <Icon.Heart
+                      className={`w-4 h-4 ${favorites.includes(quickViewProduct.id) ? 'fill-rose-500 text-rose-500' : 'text-zinc-600'}`}
+                      filled={favorites.includes(quickViewProduct.id)}
+                    />
+                  </button>
+                  <button onClick={() => setQuickViewProduct(null)} className="w-8 h-8 rounded-full bg-white/90 hover:bg-white flex items-center justify-center font-bold text-zinc-600 shadow-md">✕</button>
+                </div>
 
                 {(() => {
                   const currentVarName = quickViewSelectedVar || activeVariants[quickViewProduct.id]?.variantName || quickViewProduct.variants?.[0]?.name;
@@ -3030,8 +3626,14 @@
                           <div className="mt-4 border-t pt-3 space-y-2">
                             <div className="flex justify-between items-center text-xs">
                               <span className="font-semibold text-zinc-700">{quickViewProduct.variant_label || 'Tono / Talla'}:</span>
-                              <span className={`text-[11px] font-bold ${stock > 0 ? 'text-emerald-700' : 'text-red-500'}`}>
-                                {stock > 0 ? `Stock disponible: ${stock}` : 'Agotado'}
+                              <span className={`text-[11px] font-bold ${
+                                stock <= 0
+                                  ? 'text-red-500'
+                                  : stock <= 2
+                                  ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black animate-pulse'
+                                  : 'text-emerald-700'
+                              }`}>
+                                {stock <= 0 ? 'Agotado' : stock <= 2 ? `🔥 ¡Solo ${stock} disponibles!` : `Stock disponible: ${stock}`}
                               </span>
                             </div>
 
@@ -3057,6 +3659,9 @@
                                 >
                                   {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
                                   <span>{v.name}</span>
+                                  {v.stock > 0 && v.stock <= 2 && (
+                                    <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -3066,12 +3671,16 @@
                         <button
                           disabled={stock <= 0}
                           onClick={() => addToCart(quickViewProduct, currentVarName)}
-                          className={`w-full py-3 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
-                            stock > 0 ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                          className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
+                            stock <= 0
+                              ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                              : stock <= 2
+                              ? 'bg-amber-500 hover:bg-amber-600 text-zinc-950 active:scale-95'
+                              : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95'
                           }`}
                         >
                           <Icon.Bag className="w-4 h-4" />
-                          <span>{stock > 0 ? `Agregar al Carrito (${currentVarName})` : 'Agotado'}</span>
+                          <span>{stock <= 0 ? 'Agotado' : stock <= 2 ? `Comprar Ahora (Solo quedan ${stock})` : `Agregar al Carrito (${currentVarName})`}</span>
                         </button>
                       </div>
                     </>
@@ -3313,6 +3922,105 @@
             </div>
           )}
 
+          {/* =========================================================================
+              MODAL: CONFIRMACIÓN DE PEDIDO Y WHATSAPP (Resistente a bloqueadores móviles)
+              ========================================================================= */}
+          {orderSuccessModal && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setOrderSuccessModal(null)}>
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-zinc-200 relative text-center" onClick={e => e.stopPropagation()}>
+                
+                {/* ÍCONO DE ÉXITO */}
+                <div className="w-16 h-16 mx-auto bg-emerald-50 border-2 border-emerald-400 text-emerald-600 rounded-full flex items-center justify-center shadow-sm">
+                  <Icon.Check className="w-8 h-8" />
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-black tracking-widest text-[#FF2E93] uppercase bg-pink-50 border border-pink-200 px-3 py-1 rounded-full">
+                    ¡Orden Guardada con Éxito!
+                  </span>
+                  <h3 className="font-serif-kaoj text-2xl sm:text-3xl font-extrabold text-zinc-900 mt-2.5">
+                    ¡Gracias, {orderSuccessModal.customerName.split(' ')[0]}! ✨
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">
+                    Tu pedido ya está registrado en nuestra boutique. Presiona el botón verde para enviar los datos a nuestro WhatsApp oficial y comenzar a preparar tu paquete:
+                  </p>
+                </div>
+
+                {/* DETALLES DE LA ORDEN GENERADA */}
+                <div className="bg-zinc-50/80 border border-zinc-200 rounded-2xl p-4 text-left space-y-2.5">
+                  <div className="flex justify-between items-center border-b border-zinc-200 pb-2">
+                    <div>
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase block">Código de Orden:</span>
+                      <span className="text-xl font-black text-[#FF2E93] font-mono tracking-wider">{orderSuccessModal.orderCode}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(orderSuccessModal.orderCode, 'Código de orden')}
+                      className="flex items-center gap-1 text-[11px] font-bold text-zinc-600 hover:text-[#FF2E93] bg-white border border-zinc-200 px-2.5 py-1.5 rounded-xl transition shadow-xs"
+                    >
+                      <Icon.Copy className="w-3.5 h-3.5" /> Copiar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">Código VIP:</span>
+                      <span className="font-bold text-zinc-800">{orderSuccessModal.customerCode}</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">Total a Pagar:</span>
+                      <span className="font-extrabold text-zinc-900 text-sm">${orderSuccessModal.total}</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">Entrega:</span>
+                      <span className="font-semibold text-zinc-800 truncate block">{orderSuccessModal.deliveryMethod}</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 block text-[10px]">Puntos Ganados:</span>
+                      <span className="font-bold text-emerald-700 flex items-center gap-1">
+                        <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> +{orderSuccessModal.pointsEarned} pts
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BOTÓN WHATSAPP DESTACADO (CLIC DIRECTO) */}
+                <div className="space-y-2.5 pt-1">
+                  <a
+                    href={orderSuccessModal.whatsappUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-[#25D366] hover:bg-[#20ba5a] text-white py-3.5 px-4 rounded-2xl font-black text-sm shadow-md transition flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95"
+                  >
+                    <Icon.WhatsApp className="w-5 h-5 text-white" />
+                    <span>Enviar Pedido a WhatsApp</span>
+                  </a>
+
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      onClick={() => {
+                        const code = orderSuccessModal.orderCode;
+                        setOrderSuccessModal(null);
+                        setTrackingCode(code);
+                        setIsTrackingOpen(true);
+                      }}
+                      className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 py-2.5 rounded-xl font-bold transition"
+                    >
+                      📦 Rastrear Pedido
+                    </button>
+                    <button
+                      onClick={() => setOrderSuccessModal(null)}
+                      className="px-4 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-xl font-bold transition"
+                    >
+                      Seguir Comprando
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
           {/* BOTÓN FLOTANTE WHATSAPP OFICIAL DINÁMICO (+593) */}
           <a
             href={`https://wa.me/${formatWhatsAppPhone(settings.whatsapp_number)}?text=${encodeURIComponent('Hola Kaoj Store, quisiera consultar sobre sus productos y catálogo.')}`}
@@ -3324,11 +4032,21 @@
             <Icon.WhatsApp className="w-6 h-6 text-emerald-400" />
           </a>
 
-          {/* NOTIFICACIÓN TOAST */}
+          {/* NOTIFICACIÓN TOAST DINÁMICO */}
           {toast && (
-            <div className="fixed top-5 right-5 z-50 flex items-center gap-2 bg-zinc-900 text-white text-xs px-4 py-3 rounded-2xl shadow-2xl border border-zinc-800 animate-bounce">
-              <Icon.Check className="w-4 h-4 text-[#FF2E93]" />
-              <p className="font-semibold">{toast.message}</p>
+            <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 text-xs px-4 py-3 rounded-2xl shadow-2xl border transition-all max-w-sm ${
+              toast.type === 'error'
+                ? 'bg-zinc-950 text-red-300 border-red-500'
+                : toast.type === 'info'
+                ? 'bg-zinc-900 text-zinc-100 border-pink-500/50'
+                : 'bg-zinc-900 text-white border-zinc-800'
+            }`}>
+              {toast.type === 'error' ? (
+                <span className="w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-xs shrink-0">!</span>
+              ) : (
+                <Icon.Check className="w-4 h-4 text-[#FF2E93] shrink-0" />
+              )}
+              <p className="font-semibold leading-tight">{toast.message}</p>
             </div>
           )}
 

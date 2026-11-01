@@ -66,6 +66,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
+    html, body {
+      overflow-x: hidden !important;
+      max-width: 100vw !important;
+      width: 100% !important;
+    }
     body {
       font-family: 'Plus Jakarta Sans', sans-serif;
       background-color: #FAFAFC;
@@ -133,7 +138,7 @@
     }
   </style>
 </head>
-<body class="text-zinc-900 antialiased selection:bg-[#FF2E93] selection:text-white min-h-screen flex flex-col">
+<body class="text-zinc-900 antialiased selection:bg-[#FF2E93] selection:text-white min-h-screen flex flex-col overflow-x-hidden w-full max-w-full">
 
   <!-- CONTENEDOR REACT CON PRELOADER BOUTIQUE ELEGANTE -->
   <div id="root">
@@ -416,12 +421,15 @@
       const [trackingLoading, setTrackingLoading] = useState(false);
       const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
-      // Nueva reseña en modal
+      // Nueva reseña en modal vinculada a pedido verificado
       const [newReview, setNewReview] = useState({
         customer_name: '',
         customer_code: '',
         product_id: '',
         product_name: '',
+        product_image: '',
+        product_variant: '',
+        order_code: '',
         rating: 5,
         comment: '',
         photo_url: ''
@@ -523,6 +531,69 @@
           }
         } catch (err) {}
       }
+
+      // Consulta automática de pedidos para clientas logeadas o por código/celular
+      const fetchMyOrders = async (identifier) => {
+        const targetId = identifier || trackingCode.trim() || customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : null);
+        if (!targetId) {
+          setTrackedOrders([]);
+          return;
+        }
+        setTrackingLoading(true);
+        try {
+          let query = supabase.from('kaoj_orders').select('*');
+          if (user?.id) {
+            const custCode = customerProfile?.customer_code || '';
+            const phoneClean = (customerProfile?.phone || customer.phone || '').replace(/\D/g, '');
+            if (phoneClean.length >= 7) {
+              query = query.or(`user_id.eq.${user.id},customer_code.eq.${custCode},customer_phone.ilike.%${phoneClean.slice(-8)}%`);
+            } else if (custCode) {
+              query = query.or(`user_id.eq.${user.id},customer_code.eq.${custCode}`);
+            } else {
+              query = query.eq('user_id', user.id);
+            }
+          } else if (customerProfile?.customer_code) {
+            const phoneClean = (customerProfile.phone || '').replace(/\D/g, '');
+            if (phoneClean.length >= 7) {
+              query = query.or(`customer_code.eq.${customerProfile.customer_code},customer_phone.ilike.%${phoneClean.slice(-8)}%`);
+            } else {
+              query = query.eq('customer_code', customerProfile.customer_code);
+            }
+          } else {
+            const q = String(targetId).trim();
+            const cleanDigits = q.replace(/\D/g, '');
+            if (cleanDigits.length >= 7) {
+              query = query.or(`customer_phone.ilike.%${cleanDigits.slice(-8)}%,customer_code.ilike.%${q}%,order_code.ilike.%${q}%`);
+            } else {
+              query = query.or(`customer_code.ilike.%${q}%,order_code.ilike.%${q}%`);
+            }
+          }
+          const { data, error } = await query.order('created_at', { ascending: false });
+          if (!error && data) {
+            setTrackedOrders(data);
+          } else {
+            setTrackedOrders([]);
+          }
+        } catch (err) {
+          console.error('Error cargando pedidos:', err);
+          setTrackedOrders([]);
+        } finally {
+          setTrackingLoading(false);
+        }
+      };
+
+      // Disparador automático al abrir el modal Mis Pedidos
+      useEffect(() => {
+        if (isTrackingOpen) {
+          const autoId = customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : null);
+          if (autoId) {
+            if (!trackingCode && customerProfile?.customer_code) {
+              setTrackingCode(customerProfile.customer_code);
+            }
+            fetchMyOrders(autoId);
+          }
+        }
+      }, [isTrackingOpen, user, customerProfile]);
 
       // Cupones disponibles
       const availableCoupons = useMemo(() => {
@@ -1172,6 +1243,12 @@
           window.open(whatsappUrl, '_blank');
         } catch (e) {}
 
+        // Persistir último código y teléfono para auto-rastreo sin login manual
+        try {
+          localStorage.setItem('kaoj_last_customer_code', activeCustomerCode);
+          if (customer.phone) localStorage.setItem('kaoj_last_customer_phone', customer.phone);
+        } catch (e) {}
+
         // Limpiar carrito y formulario de checkout
         setCart([]);
         localStorage.removeItem('kaoj_cart');
@@ -1213,7 +1290,7 @@
           setReviews([data[0], ...reviews]);
         }
         setIsReviewModalOpen(false);
-        setNewReview({ customer_name: '', customer_code: '', product_id: '', product_name: '', rating: 5, comment: '', photo_url: '' });
+        setNewReview({ customer_name: '', customer_code: '', product_id: '', product_name: '', product_image: '', product_variant: '', order_code: '', rating: 5, comment: '', photo_url: '' });
         showToast('¡Gracias por tu reseña y foto! Ha sido publicada en el muro.');
       }
 
@@ -1456,15 +1533,17 @@
       // 9. RENDERIZADO VISUAL
       // =======================================================================
       return (
-        <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-zinc-900">
+        <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-zinc-900 overflow-x-hidden w-full max-w-full">
 
           {/* BARRA SUPERIOR CON ANUNCIO Y SALDO VIP EN VIVO */}
-          <div className="bg-zinc-900 text-zinc-200 text-xs py-2 px-4 font-medium tracking-wider flex items-center justify-between gap-3">
-            <span className="truncate flex-1 text-center sm:text-left">{settings.banner_message}</span>
+          <div className="w-full overflow-hidden bg-zinc-900 text-zinc-200 text-xs py-2 px-3 sm:px-4 font-medium tracking-wider flex items-center justify-between gap-2 sm:gap-4">
+            <div className="min-w-0 flex-1 truncate text-center sm:text-left text-[11px] sm:text-xs">
+              {settings.banner_message}
+            </div>
             <div className="flex items-center gap-2 shrink-0">
               {customerProfile ? (
-                <span className="bg-zinc-800 text-[#FF2E93] text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1">
-                  <Icon.Diamond className="w-3 h-3" /> VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts
+                <span className="bg-zinc-800 text-[#FF2E93] text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1 shrink-0">
+                  <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts
                 </span>
               ) : (
                 <span className="hidden md:inline text-[11px] text-zinc-400">
@@ -1475,18 +1554,18 @@
           </div>
 
           {/* HEADER / NAVBAR PRINCIPAL */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-30">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-30 w-full overflow-hidden">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO KAOJ STORE */}
               <div
                 onClick={() => { setIsAdmin(false); setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); }}
-                className="cursor-pointer select-none text-left group"
+                className="cursor-pointer select-none text-left group shrink-0"
               >
                 <h1 className="font-serif-kaoj text-2xl sm:text-3xl font-black text-[#FF2E93] tracking-widest leading-none">
                   KAOJ
                 </h1>
-                <span className="block text-[9px] sm:text-[10px] tracking-[0.45em] text-zinc-700 font-extrabold mt-0.5">
+                <span className="block text-[8px] sm:text-[10px] tracking-[0.45em] text-zinc-700 font-extrabold mt-0.5">
                   STORE
                 </span>
               </div>
@@ -1513,13 +1592,13 @@
               )}
 
               {/* ACCIONES: BÚSQUEDA MÓVIL, RASTREO, GOOGLE AUTH & CARRITO */}
-              <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
 
                 {/* BOTÓN BÚSQUEDA MÓVIL */}
                 {!isAdmin && (
                   <button
                     onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-                    className="md:hidden p-2 rounded-full border border-zinc-200 text-zinc-700 hover:text-[#FF2E93]"
+                    className="md:hidden p-2 rounded-full border border-zinc-200 text-zinc-700 hover:text-[#FF2E93] transition"
                     title="Buscar"
                   >
                     <Icon.Search className="w-4 h-4" />
@@ -1530,7 +1609,8 @@
                 {!isAdmin && (
                   <button
                     onClick={() => setIsTrackingOpen(true)}
-                    className="text-xs px-2.5 sm:px-3 py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
+                    className="text-xs p-2 sm:px-3 sm:py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
+                    title="Mis Pedidos y Calificaciones"
                   >
                     <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
                     <span className="hidden sm:inline">Mis Pedidos</span>
@@ -1541,7 +1621,7 @@
                 {!isAdmin && (
                   <button
                     onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); }}
-                    className={`text-xs px-2.5 sm:px-3 py-2 rounded-full border transition flex items-center gap-1.5 ${
+                    className={`text-xs p-2 sm:px-3 sm:py-2 rounded-full border transition flex items-center gap-1.5 ${
                       selectedSection === 'FAVORITOS'
                         ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold'
                         : 'border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium'
@@ -1558,32 +1638,22 @@
                   </button>
                 )}
 
-                {/* BOTÓN RESEÑAS */}
-                {!isAdmin && (
-                  <button
-                    onClick={() => setIsReviewModalOpen(true)}
-                    className="text-xs px-2.5 sm:px-3 py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
-                    title="Dejar Reseña"
-                  >
-                    <Icon.Star className="w-3.5 h-3.5 text-amber-500" filled={true} />
-                    <span className="hidden sm:inline">Opinar</span>
-                  </button>
-                )}
-
                 {/* GOOGLE SIGN IN O PERFIL PERMANENTE */}
                 {!user ? (
                   <button
                     onClick={handleGoogleSignIn}
-                    className="bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-300 text-xs px-2.5 sm:px-3 py-2 rounded-full font-semibold flex items-center gap-1.5 shadow-sm transition hover:border-[#FF2E93]"
+                    className="bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-300 text-xs p-2 sm:px-3 sm:py-2 rounded-full font-semibold flex items-center gap-1.5 shadow-2xs transition hover:border-[#FF2E93]"
+                    title="Iniciar sesión"
                   >
                     <Icon.Google className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Iniciar sesión</span>
+                    <span className="hidden sm:inline">Ingresar</span>
                   </button>
                 ) : (
                   <div className="relative">
                     <button
                       onClick={() => setIsProfileOpen(!isProfileOpen)}
-                      className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold text-zinc-800 transition"
+                      className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 p-1.5 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-zinc-800 transition"
+                      title="Mi Perfil"
                     >
                       {user.user_metadata?.avatar_url ? (
                         <img src={user.user_metadata.avatar_url} alt="User" className="w-5 h-5 rounded-full border border-[#FF2E93]" />
@@ -1596,7 +1666,7 @@
                         {user.user_metadata?.full_name?.split(' ')[0] || user.email?.split('@')[0]}
                       </span>
                       {customerProfile?.customer_code && (
-                        <span className="bg-[#FF2E93] text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold">
+                        <span className="bg-[#FF2E93] text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold hidden sm:inline">
                           {customerProfile.customer_code}
                         </span>
                       )}
@@ -1622,7 +1692,7 @@
                             onClick={() => { setIsProfileOpen(false); setIsTrackingOpen(true); }}
                             className="w-full text-left py-1 hover:text-[#FF2E93] font-medium"
                           >
-                            Rastrear mis compras realizadas
+                            Mis Pedidos y Calificaciones
                           </button>
                         </div>
                         <button
@@ -1639,7 +1709,7 @@
                 {/* BOTÓN CARRITO */}
                 <button
                   onClick={() => setIsCartOpen(true)}
-                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3 sm:px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-sm transition active:scale-95"
+                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-2.5 sm:px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-sm transition active:scale-95 shrink-0"
                 >
                   <Icon.Bag className="w-4 h-4" />
                   <span className="hidden sm:inline">Carrito</span>
@@ -1676,8 +1746,8 @@
 
             {/* SECCIONES GRANDES (MAQUILLAJES | ACCESORIOS | ROPA) */}
             {!isAdmin && (
-              <div className="border-t border-zinc-100 bg-[#FCFBFD]">
-                <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
+              <div className="border-t border-zinc-100 bg-[#FCFBFD] w-full max-w-full overflow-hidden">
+                <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar scroll-smooth">
                   <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); }}
@@ -1761,8 +1831,8 @@
 
             {/* SUBCATEGORÍAS DINÁMICAS */}
             {!isAdmin && selectedSection !== 'TODOS' && selectedSection !== 'OFERTAS' && (
-              <div className="border-t border-zinc-100 bg-zinc-50/70 py-2">
-                <div className="max-w-7xl mx-auto px-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="border-t border-zinc-100 bg-zinc-50/70 py-2 w-full max-w-full overflow-hidden">
+                <div className="max-w-7xl mx-auto px-3 sm:px-4 flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
                   <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mr-1">
                     {selectedSection}:
                   </span>
@@ -1798,7 +1868,91 @@
 
           {/* VISTA 1: TIENDA PÚBLICA */}
           {!isAdmin ? (
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-12">
+            <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 flex-1 w-full space-y-8 sm:space-y-12">
+
+              {/* BOUTIQUE HERO BANNER */}
+              {selectedSection === 'TODOS' && !searchQuery && (
+                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-pink-50/90 via-rose-50/40 to-white border border-pink-100/90 shadow-xs p-6 sm:p-10">
+                  <div className="max-w-2xl space-y-4 relative z-10">
+                    <div className="inline-flex items-center gap-2 bg-white/95 backdrop-blur-xs border border-pink-200 px-3 py-1 rounded-full text-xs font-bold text-[#FF2E93] shadow-2xs">
+                      <Icon.Sparkles className="w-3.5 h-3.5" />
+                      <span>Colección Exclusiva & Tendencias 2026</span>
+                    </div>
+
+                    <h2 className="font-serif-kaoj text-2xl sm:text-4xl lg:text-5xl font-black text-zinc-900 tracking-tight leading-[1.15]">
+                      Realza tu belleza con <span className="text-[#FF2E93]">estilo chic</span> y elegancia
+                    </h2>
+
+                    <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed max-w-xl">
+                      Descubre nuestra curaduría de cosmética premium, tonos virales, accesorios en tendencia y moda boutique con entregas rápidas y envíos asegurados a todo el Ecuador.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2.5 pt-2">
+                      <button
+                        onClick={() => { setSelectedSection('MAQUILLAJES'); setSelectedSubcategory('TODOS'); }}
+                        className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md transition flex items-center gap-2 active:scale-95"
+                      >
+                        <Icon.Bag className="w-3.5 h-3.5" />
+                        <span>Ver Maquillaje</span>
+                      </button>
+                      <button
+                        onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); }}
+                        className="bg-white hover:bg-pink-50 border border-pink-200 text-zinc-800 px-4 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.length > 0} />
+                        <span>Mis Favoritos ({favorites.length})</span>
+                      </button>
+                      <button
+                        onClick={() => setIsTrackingOpen(true)}
+                        className="bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 px-4 py-2.5 rounded-full text-xs font-medium transition flex items-center gap-1.5"
+                      >
+                        <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
+                        <span>Mis Pedidos & Rastreos</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* VALUE PROPS STRIP */}
+                  <div className="mt-8 pt-6 border-t border-pink-100/80 grid grid-cols-2 md:grid-cols-4 gap-3.5 text-xs relative z-10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-pink-100 text-[#FF2E93] flex items-center justify-center shrink-0">
+                        <Icon.Truck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 leading-tight text-xs">Envíos a Todo Ecuador</p>
+                        <p className="text-[10px] text-zinc-500">Servientrega 24/48h</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <Icon.Diamond className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 leading-tight text-xs">Puntos Kaoj VIP</p>
+                        <p className="text-[10px] text-zinc-500">Canjea $5 de descuento</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                        <Icon.Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 leading-tight text-xs">Pagos Flexibles</p>
+                        <p className="text-[10px] text-zinc-500">Deuna, Bancos, Tarjeta</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <Icon.WhatsApp className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 leading-tight text-xs">Asesoría Directa</p>
+                        <p className="text-[10px] text-zinc-500">Atención WhatsApp</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ENCABEZADO DE CATÁLOGO */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-zinc-200/60 pb-3">
@@ -2022,15 +2176,15 @@
                     <h3 className="font-serif-kaoj text-2xl font-black text-zinc-900 mt-1">
                       Opiniones de Nuestras Clientas VIP
                     </h3>
-                    <p className="text-xs text-zinc-500">Fotos reales y compras verificadas en Manabí y todo el Ecuador.</p>
+                    <p className="text-xs text-zinc-500">Opiniones 100% reales de compras verificadas en Manabí y todo el Ecuador.</p>
                   </div>
 
                   <button
-                    onClick={() => setIsReviewModalOpen(true)}
-                    className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-4 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-2 shadow-xs"
+                    onClick={() => setIsTrackingOpen(true)}
+                    className="bg-pink-50 hover:bg-[#FF2E93] text-[#FF2E93] hover:text-white border border-pink-200 hover:border-[#FF2E93] px-4 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-2 shadow-2xs"
                   >
-                    <Icon.Photo className="w-4 h-4" />
-                    <span>Dejar mi Reseña & Foto</span>
+                    <Icon.Star className="w-4 h-4 text-amber-500" filled={true} />
+                    <span>Calificar en Mis Pedidos</span>
                   </button>
                 </div>
 
@@ -3691,59 +3845,197 @@
           )}
 
           {/* =========================================================================
-              MODAL: RASTREO DE PEDIDOS (Con formulario submit al presionar Enter)
+              MODAL: RASTREO DE PEDIDOS AUTOMÁTICO & PORTAL DE COMPRAS
               ========================================================================= */}
           {isTrackingOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsTrackingOpen(false)}>
-              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <button onClick={() => setIsTrackingOpen(false)} className="absolute top-4 right-4 text-zinc-400 font-bold text-xl">✕</button>
-                <h3 className="font-serif-kaoj text-2xl font-bold text-zinc-900">Consulta de Pedidos</h3>
-                <p className="text-xs text-zinc-500">Ingresa tu Código VIP (ej. J3456) o celular para consultar el estado de tus compras:</p>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => setIsTrackingOpen(false)}>
+              <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-start border-b border-zinc-100 pb-3">
+                  <div>
+                    <h3 className="font-serif-kaoj text-2xl font-black text-zinc-900">Mis Pedidos & Rastreos</h3>
+                    <p className="text-xs text-zinc-500">Historial de compras, estado del envío y calificaciones de productos.</p>
+                  </div>
+                  <button onClick={() => setIsTrackingOpen(false)} className="text-zinc-400 hover:text-zinc-700 font-bold text-xl p-1">✕</button>
+                </div>
 
-                <form onSubmit={async e => {
+                {/* IDENTIFICACIÓN VIP DE LA CLIENTA O INICIO DE SESIÓN */}
+                {user || customerProfile ? (
+                  <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-[#FF2E93] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                        {(customerProfile?.name || user?.user_metadata?.full_name || 'K').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 text-xs">{customerProfile?.name || user?.user_metadata?.full_name || 'Clienta Kaoj'}</p>
+                        <p className="text-[11px] text-zinc-500">Sesión iniciada • Tus compras se muestran automáticamente</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 self-end sm:self-center">
+                      {customerProfile?.customer_code && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(customerProfile.customer_code, 'Código VIP')}
+                          className="bg-white border border-pink-200 text-[#FF2E93] px-2.5 py-1 rounded-xl text-xs font-black tracking-wider flex items-center gap-1 shadow-2xs hover:bg-pink-100 transition"
+                          title="Copiar código"
+                        >
+                          <Icon.Diamond className="w-3.5 h-3.5" />
+                          <span>{customerProfile.customer_code}</span>
+                          <Icon.Copy className="w-3 h-3 text-zinc-400" />
+                        </button>
+                      )}
+                      <span className="bg-amber-100 text-amber-900 border border-amber-200 px-2 py-1 rounded-xl text-xs font-black">
+                        {customerProfile?.points || 0} pts
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-zinc-800 text-xs">¿Tienes cuenta registrada?</p>
+                        <p className="text-[11px] text-zinc-500">Inicia sesión con Google para ver tus compras automáticamente:</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGoogleSignIn}
+                        className="bg-white hover:bg-zinc-100 text-zinc-800 border border-zinc-300 text-xs px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 shadow-2xs shrink-0 transition"
+                      >
+                        <Icon.Google className="w-3.5 h-3.5" />
+                        <span>Google</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* BUSCADOR DE PEDIDOS POR CELULAR O CÓDIGO */}
+                <form onSubmit={e => {
                   e.preventDefault();
-                  const q = trackingCode.trim();
-                  if (q.length < 3) return showToast('Ingresa al menos 3 caracteres de tu código o celular.', 'info');
-                  setTrackingLoading(true);
-                  const { data } = await supabase
-                    .from('kaoj_orders')
-                    .select('*')
-                    .or(`customer_code.ilike.%${q}%,customer_phone.ilike.%${q}%,order_code.ilike.%${q}%`)
-                    .order('created_at', { ascending: false });
-                  setTrackedOrders(data || []);
-                  setTrackingLoading(false);
+                  fetchMyOrders(trackingCode);
                 }} className="flex gap-2">
                   <input
                     type="text"
                     value={trackingCode}
                     onChange={e => setTrackingCode(e.target.value)}
-                    placeholder="Código Único (ej. J3456), celular u orden..."
-                    className="flex-1 border rounded-xl p-2.5 text-xs outline-none font-bold uppercase"
+                    placeholder="Buscar por celular de WhatsApp, código VIP o pedido..."
+                    className="flex-1 border rounded-xl px-3 py-2 text-xs outline-none bg-zinc-50 focus:bg-white focus:border-[#FF2E93] font-bold"
                   />
-                  <button type="submit" disabled={trackingLoading} className="bg-[#FF2E93] text-white px-4 py-2.5 rounded-xl text-xs font-bold">
+                  <button
+                    type="submit"
+                    disabled={trackingLoading}
+                    className="bg-zinc-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-50 shrink-0"
+                  >
                     {trackingLoading ? 'Buscando...' : 'Buscar'}
                   </button>
                 </form>
 
-                {trackedOrders && (
-                  <div className="space-y-2 pt-2">
+                {/* ESTADO DE CARGA */}
+                {trackingLoading && (
+                  <div className="text-center py-8 space-y-2">
+                    <div className="w-7 h-7 border-2 border-[#FF2E93] border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <p className="text-xs text-zinc-500 font-medium">Buscando tus pedidos en tiempo real...</p>
+                  </div>
+                )}
+
+                {/* RESULTADO DE PEDIDOS */}
+                {!trackingLoading && trackedOrders && (
+                  <div className="space-y-3 pt-1">
                     {trackedOrders.length === 0 ? (
-                      <p className="text-xs text-zinc-500 text-center py-4">No encontramos pedidos registrados con esos datos.</p>
+                      <div className="text-center py-6 bg-zinc-50 rounded-2xl border border-zinc-200 p-4 space-y-2">
+                        <p className="text-xs font-bold text-zinc-700">No encontramos pedidos registrados con estos datos.</p>
+                        <p className="text-[11px] text-zinc-500">Si hiciste tu compra como invitada, ingresa el mismo número de WhatsApp que indicaste al momento de pagar.</p>
+                      </div>
                     ) : (
                       trackedOrders.map(o => (
-                        <div key={o.id} className="border rounded-xl p-3 text-xs bg-zinc-50 flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-[#FF2E93]">{o.order_code}</span>
-                            <p className="text-zinc-500">{o.delivery_method} • ${Number(o.total).toFixed(2)}</p>
-                            <span className="text-[10px] text-zinc-400">{new Date(o.created_at).toLocaleDateString()}</span>
+                        <div key={o.id} className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-3 shadow-2xs hover:border-pink-200 transition">
+                          {/* ENCABEZADO DE ORDEN */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 pb-2.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-black text-xs text-[#FF2E93]">{o.order_code}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(o.order_code, 'Código de Pedido')}
+                                className="text-zinc-400 hover:text-zinc-700 p-1 rounded transition"
+                                title="Copiar código"
+                              >
+                                <Icon.Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <span className={`font-bold text-[10px] sm:text-[11px] uppercase px-2.5 py-0.5 rounded-full border shadow-2xs ${
+                              o.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                              o.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                              o.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              {o.status === 'entregado' ? '✓ Entregado' :
+                               o.status === 'en_camino' ? '🚚 En Camino' :
+                               o.status === 'verificado' ? '✓ Pago Verificado' : '⏳ En Verificación'}
+                            </span>
                           </div>
-                          <span className={`font-bold text-xs uppercase px-2.5 py-1 rounded-md border ${
-                            o.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                            o.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                            o.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}>
-                            {o.status}
-                          </span>
+
+                          {/* DATOS RESUMIDOS */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-zinc-600">
+                            <div>
+                              <span className="text-[10px] text-zinc-400 block font-semibold">Fecha:</span>
+                              <span className="font-bold text-zinc-800">{new Date(o.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-400 block font-semibold">Método de Entrega:</span>
+                              <span className="font-bold text-zinc-800 truncate block">{o.delivery_method}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-zinc-400 block font-semibold">Total Pagado:</span>
+                              <span className="font-black text-[#FF2E93] text-xs">${Number(o.total).toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* PRODUCTOS COMPRADOS Y BOTÓN DIRECTO PARA CALIFICAR CADA UNO */}
+                          {Array.isArray(o.items) && o.items.length > 0 && (
+                            <div className="pt-2 border-t border-zinc-200/70 space-y-2">
+                              <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
+                                Productos en este pedido (Toca para calificar):
+                              </p>
+                              <div className="space-y-1.5">
+                                {o.items.map((item, itemIdx) => (
+                                  <div key={itemIdx} className="bg-white border border-zinc-200/80 rounded-xl p-2.5 flex items-center justify-between gap-3 shadow-2xs">
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                      <img
+                                        src={item.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                                        alt={item.name}
+                                        className="w-10 h-10 rounded-lg object-cover border border-zinc-100 shrink-0"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-bold text-zinc-900 text-xs truncate">{item.name}</p>
+                                        <p className="text-[11px] text-zinc-500 truncate">{item.variant || 'Estándar'} • {item.qty} un. x ${Number(item.price).toFixed(2)}</p>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewReview({
+                                          customer_name: customerProfile?.name || o.customer_name || user?.user_metadata?.full_name || '',
+                                          customer_code: customerProfile?.customer_code || o.customer_code || '',
+                                          product_id: item.productId,
+                                          product_name: item.name,
+                                          product_image: item.image,
+                                          product_variant: item.variant || '',
+                                          order_code: o.order_code,
+                                          rating: 5,
+                                          comment: '',
+                                          photo_url: ''
+                                        });
+                                        setIsReviewModalOpen(true);
+                                      }}
+                                      className="bg-pink-50 hover:bg-[#FF2E93] text-[#FF2E93] hover:text-white border border-pink-200 hover:border-[#FF2E93] px-3 py-1.5 rounded-xl font-bold text-[11px] transition flex items-center gap-1.5 shrink-0 shadow-2xs"
+                                      title="Calificar este producto"
+                                    >
+                                      <Icon.Star className="w-3.5 h-3.5 text-amber-500" filled={true} />
+                                      <span>Calificar</span>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
@@ -3754,77 +4046,94 @@
           )}
 
           {/* =========================================================================
-              MODAL: DEJAR RESEÑA & FOTO (Social Proof)
+              MODAL: CALIFICAR PRODUCTO VERIFICADO (Social Proof Auténtico sin selector masivo)
               ========================================================================= */}
           {isReviewModalOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsReviewModalOpen(false)}>
-              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
+              <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b pb-3">
-                  <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
-                    <Icon.Star className="w-4 h-4 text-amber-500" filled={true} /> Dejar mi Reseña & Foto
-                  </h3>
+                  <div>
+                    <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
+                      <Icon.Star className="w-4 h-4 text-amber-500" filled={true} /> Calificar Producto
+                    </h3>
+                    <p className="text-[11px] text-zinc-500">Tu opinión real ayuda a otras clientas a elegir su compra ideal.</p>
+                  </div>
                   <button onClick={() => setIsReviewModalOpen(false)} className="font-bold text-zinc-400 hover:text-zinc-700 text-base">✕</button>
                 </div>
 
-                <form onSubmit={handleCreateReview} className="space-y-3">
+                <form onSubmit={handleCreateReview} className="space-y-3.5">
+                  {/* TARJETA DEL PRODUCTO COMPRADO */}
+                  <div className="bg-pink-50/60 border border-pink-200 rounded-2xl p-3 flex items-center gap-3">
+                    <img
+                      src={newReview.product_image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                      alt={newReview.product_name}
+                      className="w-12 h-12 rounded-xl object-cover border border-pink-200 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">
+                          ✓ Compra Verificada
+                        </span>
+                        {newReview.order_code && (
+                          <span className="text-[9px] text-zinc-500 font-mono">#{newReview.order_code}</span>
+                        )}
+                      </div>
+                      <p className="font-bold text-zinc-900 text-xs truncate mt-0.5">{newReview.product_name || 'Boutique Kaoj'}</p>
+                      {newReview.product_variant && (
+                        <p className="text-[11px] text-zinc-500">{newReview.product_variant}</p>
+                      )}
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="font-semibold block mb-1">Tu Nombre y Apellido *</label>
+                    <label className="font-semibold block mb-1">Tu Nombre *</label>
                     <input
                       required
                       value={newReview.customer_name}
                       onChange={e => setNewReview({ ...newReview, customer_name: e.target.value })}
                       placeholder="Ej. Valeria Zambrano"
-                      className="w-full border rounded-xl p-2.5 outline-none font-bold"
+                      className="w-full border rounded-xl p-2.5 outline-none font-bold bg-zinc-50 focus:bg-white focus:border-[#FF2E93]"
                     />
                   </div>
 
                   <div>
-                    <label className="font-semibold block mb-1">Producto Calificado</label>
-                    <select
-                      value={newReview.product_id}
-                      onChange={e => {
-                        const selProd = products.find(p => p.id === Number(e.target.value));
-                        setNewReview({ ...newReview, product_id: e.target.value, product_name: selProd?.name || 'Kaoj Boutique' });
-                      }}
-                      className="w-full border rounded-xl p-2.5 bg-white outline-none"
-                    >
-                      <option value="">-- Elige un producto de tu compra --</option>
-                      {products.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-semibold block mb-1">Calificación en Estrellas:</label>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4, 5].map(st => (
-                        <button
-                          key={st}
-                          type="button"
-                          onClick={() => setNewReview({ ...newReview, rating: st })}
-                          className="p-1 hover:scale-110 transition"
-                        >
-                          <Icon.Star className="w-6 h-6 text-amber-500" filled={st <= newReview.rating} />
-                        </button>
-                      ))}
+                    <label className="font-semibold block mb-1">Calificación en Estrellas *</label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-1.5">
+                        {[1, 2, 3, 4, 5].map(st => (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => setNewReview({ ...newReview, rating: st })}
+                            className="p-1 hover:scale-125 transition-transform"
+                          >
+                            <Icon.Star className="w-7 h-7" filled={st <= newReview.rating} />
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-xs font-bold text-amber-700">
+                        {newReview.rating === 5 ? '¡Excelente! Me encantó ✨' :
+                         newReview.rating === 4 ? 'Muy bueno' :
+                         newReview.rating === 3 ? 'Bueno' :
+                         newReview.rating === 2 ? 'Regular' : 'No me gustó'}
+                      </span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="font-semibold block mb-1">Tu Opinión / Experiencia *</label>
+                    <label className="font-semibold block mb-1">Tu Experiencia con el Producto *</label>
                     <textarea
                       required
                       rows="3"
                       value={newReview.comment}
                       onChange={e => setNewReview({ ...newReview, comment: e.target.value })}
-                      placeholder="Cuéntanos qué tal te pareció el labial, blusa o la atención de entrega..."
-                      className="w-full border rounded-xl p-2.5 outline-none resize-none"
+                      placeholder="Cuéntanos qué tal la fijación, textura, tono o cómo te quedó la prenda..."
+                      className="w-full border rounded-xl p-2.5 outline-none resize-none bg-zinc-50 focus:bg-white focus:border-[#FF2E93]"
                     ></textarea>
                   </div>
 
                   <div>
-                    <label className="font-semibold block mb-1">Sube una foto luciendo tu producto / selfie</label>
+                    <label className="font-semibold block mb-1">Foto luciendo tu producto / unboxing (Opcional)</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -3837,9 +4146,11 @@
                       className="w-full text-xs"
                     />
                     {newReview.photo_url && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <img src={newReview.photo_url} alt="Review" className="w-12 h-12 rounded-xl object-cover border" />
-                        <span className="text-emerald-700 font-bold">Foto cargada exitosamente</span>
+                      <div className="mt-2 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl p-2">
+                        <img src={newReview.photo_url} alt="Review" className="w-10 h-10 rounded-lg object-cover border" />
+                        <span className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
+                          <Icon.Check className="w-3.5 h-3.5" /> Foto lista para publicar
+                        </span>
                       </div>
                     )}
                   </div>
@@ -3847,9 +4158,10 @@
                   <button
                     type="submit"
                     disabled={uploading}
-                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold shadow-md transition"
+                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold shadow-md transition flex items-center justify-center gap-2"
                   >
-                    {uploading ? 'Publicando...' : 'Publicar mi Reseña'}
+                    <Icon.Star className="w-4 h-4 text-amber-300" filled={true} />
+                    <span>{uploading ? 'Publicando...' : 'Publicar mi Reseña Verificada'}</span>
                   </button>
                 </form>
               </div>

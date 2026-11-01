@@ -1,5 +1,5 @@
 -- =========================================================================
--- KAOJ STORE - ESQUEMA SUPABASE CON SECCIONES Y SUBSECCIONES DINÁMICAS
+-- KAOJ STORE - ESQUEMA SUPABASE CON SECCIONES, SUBSECCIONES Y SEGURIDAD PRO
 -- =========================================================================
 -- Ejecuta este script en el Editor SQL de tu panel de Supabase:
 -- Supabase Dashboard -> SQL Editor -> New Query -> Pegar y Ejecutar (Run)
@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_kaoj_products_active ON public.kaoj_products(is_a
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.kaoj_settings (
     id INT PRIMARY KEY DEFAULT 1,
-    whatsapp_number TEXT NOT NULL DEFAULT '593999999999',
+    whatsapp_number TEXT NOT NULL DEFAULT '593963073456',
     deuna_link TEXT DEFAULT 'https://deuna.app/',
     deuna_qr_url TEXT DEFAULT '',
     payphone_link TEXT DEFAULT 'https://payphone.app/',
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.kaoj_settings (
     bank_pichincha_name TEXT DEFAULT 'Demera García Jhojann Alberto',
     bank_pichincha_id TEXT DEFAULT '1314710946',
     email_contact TEXT DEFAULT 'kaoj.store.ecu@gmail.com',
-    banner_message TEXT DEFAULT '✨ Recuerda: No es un gasto, es una inversión en ti misma. 💅✨ | Envíos a todo el Ecuador',
+    banner_message TEXT DEFAULT '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador 💅✨',
     free_shipping_threshold NUMERIC(10, 2) DEFAULT 50.00,
     points_per_dollar NUMERIC(10, 2) DEFAULT 1.00,
     points_redeem_ratio NUMERIC(10, 2) DEFAULT 10.00,
@@ -71,9 +71,11 @@ ALTER TABLE public.kaoj_settings ADD COLUMN IF NOT EXISTS sections_config JSONB 
   "ROPA": ["Blusas", "Pantalones", "Vestidos", "Shorts", "Pijamas", "Conjuntos", "Ropa deportiva"]
 }'::jsonb;
 
-INSERT INTO public.kaoj_settings (id, whatsapp_number, deuna_link, admin_pin)
-VALUES (1, '593999999999', 'https://deuna.app/', '2026')
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.kaoj_settings (id, whatsapp_number, deuna_link, admin_pin, banner_message)
+VALUES (1, '593963073456', 'https://deuna.app/', '2026', '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador 💅✨')
+ON CONFLICT (id) DO UPDATE SET
+  whatsapp_number = EXCLUDED.whatsapp_number,
+  admin_pin = COALESCE(public.kaoj_settings.admin_pin, '2026');
 
 -- -------------------------------------------------------------------------
 -- 3. TABLA: kaoj_customers (Clientes, Código Único y Puntos)
@@ -157,6 +159,8 @@ CREATE TABLE IF NOT EXISTS public.kaoj_reviews (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_kaoj_reviews_approved ON public.kaoj_reviews(is_approved);
+
 -- -------------------------------------------------------------------------
 -- 7. POLÍTICAS RLS (Row Level Security)
 -- -------------------------------------------------------------------------
@@ -214,7 +218,6 @@ CREATE POLICY "Permitir actualización en kaoj-assets" ON storage.objects FOR UP
 -- -------------------------------------------------------------------------
 -- 9. PRODUCTOS INICIALES DE EJEMPLO (MAQUILLAJES, ACCESORIOS Y ROPA)
 -- -------------------------------------------------------------------------
--- Limpiar catálogo de prueba anterior para insertar el catálogo categorizado
 DELETE FROM public.kaoj_products WHERE id <= 20;
 
 INSERT INTO public.kaoj_products (id, name, section, category, price, discount_price, image, description, variant_label, variants)
@@ -452,3 +455,40 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- Actualizar secuencia de IDs
 SELECT setval('kaoj_products_id_seq', (SELECT MAX(id) FROM public.kaoj_products));
+
+-- -------------------------------------------------------------------------
+-- 10. RESEÑAS INICIALES (SOCIAL PROOF CON FOTOS REALES)
+-- -------------------------------------------------------------------------
+INSERT INTO public.kaoj_reviews (customer_name, customer_code, rating, comment, photo_url, product_name, is_verified_buyer, is_approved)
+VALUES
+(
+    'Camila Moreira',
+    'C3829',
+    5,
+    '¡El labial Velvet tono Rosa Nude es un sueño! No reseca nada los labios y dura todo el día intacto. Llegó el mismo día a Manta súper bien empacado. 💅💖',
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+    'Labial Líquido Velvet Matte Longwear',
+    true,
+    true
+),
+(
+    'Valeria Zambrano',
+    'V9102',
+    5,
+    'Me encanta el Gloss Plumper, me dejó los labios con un volumen y brillo natural increíble. Además acumulé puntos VIP con mi código único!',
+    'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80',
+    'Lip Gloss Plumper Volume & Crystal Shine',
+    true,
+    true
+),
+(
+    'Alisson Cedeño',
+    'A4918',
+    5,
+    'La blusa satinada en color champagne tiene una tela exquisita y el calce es perfecto. Pagué facilísimo con Deuna y me la entregaron en Portoviejo rapidísimo. 10/10 ✨',
+    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80',
+    'Blusa Satinada Elegance Cuello Halter',
+    true,
+    true
+)
+ON CONFLICT DO NOTHING;

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="kaojGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF2E93"/>
+      <stop offset="100%" stop-color="#940E4F"/>
+    </linearGradient>
+    <filter id="shadow512" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#kaojGrad512)"/>
+  <rect x="20" y="20" width="472" height="472" rx="96" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="4"/>
+  <g filter="url(#shadow512)" fill="#FFFFFF" text-anchor="middle">
+    <text x="256" y="265" font-family="'Playfair Display', Georgia, serif" font-size="118" font-weight="900" letter-spacing="10">KAOJ</text>
+    <text x="256" y="328" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="34" font-weight="700" letter-spacing="20" fill="rgba(255,255,255,0.92)">STORE</text>
+  </g>
+  <circle cx="256" cy="130" r="10" fill="#FFFFFF" opacity="0.9"/>
+  <path d="M256 100 L261 122 L283 127 L261 132 L256 154 L251 132 L229 127 L251 122 Z" fill="#FFFFFF"/>
+</svg>

@@ -3,11 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KAOJ STORE | Alta Cosmética, Accesorios & Moda</title>
-  <meta name="description" content="Kaoj Store - Boutique exclusiva de maquillaje, accesorios y moda. Entregas en Portoviejo, Manta y envíos a todo el Ecuador." />
+  <title>KAOJ STORE | Alta Cosmética, Accesorios & Moda Chic</title>
+  <meta name="description" content="Tu boutique favorita de alta cosmética, maquillaje, accesorios y moda chic con entregas en Portoviejo, Manta y envíos Servientrega a todo el Ecuador." />
   <meta name="theme-color" content="#FF2E93" />
 
-  <!-- PWA Manifest & iOS -->
+  <!-- Open Graph & Social Sharing Meta Tags -->
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="es_EC" />
+  <meta property="og:site_name" content="KAOJ STORE" />
+  <meta property="og:title" content="KAOJ STORE | Alta Cosmética, Accesorios & Moda Chic" />
+  <meta property="og:description" content="Maquillaje de alta gama, accesorios chic y moda boutique. Entregas en Portoviejo, Manta y envíos seguros a todo el Ecuador." />
+  <meta property="og:image" content="https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=1200&auto=format&fit=crop&q=80" />
+
+  <!-- PWA Favicon, Manifest & iOS Support -->
+  <link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
   <link rel="manifest" href="manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -25,7 +35,7 @@
               100: '#FFE4F0',
               200: '#FFCCE3',
               300: '#FFA3CD',
-              400: '#FF6AAFC',
+              400: '#FF6EA7',
               500: '#FF2E93',
               600: '#E0157A',
               700: '#B80D61',
@@ -42,12 +52,12 @@
     }
   </script>
 
-  <!-- Google Fonts: Playfair Display + Plus Jakarta Sans + Barcode Font -->
+  <!-- Google Fonts: Playfair Display + Plus Jakarta Sans + Barcode 39 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Libre+Barcode+39+Text&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Libre+Barcode+39+Text&display=swap" rel="stylesheet">
 
-  <!-- React 18 & Babel CDN -->
+  <!-- React 18 & Babel Standalone CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -87,21 +97,35 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+    .animate-pulse-glow {
+      animation: pulse-glow 2s infinite ease-in-out;
+    }
     @media print {
-      body * {
-        visibility: hidden;
-      }
-      #servientrega-print-area, #servientrega-print-area * {
-        visibility: visible;
+      body {
+        visibility: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
       }
       #servientrega-print-area {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        margin: 0;
-        padding: 10px;
+        visibility: visible !important;
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 20px !important;
         background: white !important;
+        border: 2px solid #047857 !important;
+        box-shadow: none !important;
+        z-index: 999999 !important;
+      }
+      #servientrega-print-area * {
+        visibility: visible !important;
       }
       .no-print {
         display: none !important;
@@ -110,7 +134,18 @@
   </style>
 </head>
 <body class="text-zinc-900 antialiased selection:bg-[#FF2E93] selection:text-white min-h-screen flex flex-col">
-  <div id="root"></div>
+
+  <!-- CONTENEDOR REACT CON PRELOADER BOUTIQUE ELEGANTE -->
+  <div id="root">
+    <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #FDFAFC; font-family: 'Plus Jakarta Sans', sans-serif;">
+      <div style="text-align: center;">
+        <h1 style="font-family: 'Playfair Display', Georgia, serif; font-size: 2.75rem; font-weight: 900; color: #FF2E93; letter-spacing: 0.25em; margin: 0; line-height: 1;">KAOJ</h1>
+        <span style="font-size: 0.75rem; letter-spacing: 0.5em; color: #52525B; font-weight: 800; display: block; margin-top: 0.4rem;">STORE</span>
+        <div style="margin-top: 1.5rem; width: 48px; height: 3px; background: #FF2E93; border-radius: 9999px; margin-left: auto; margin-right: auto; animation: pulse-glow 1.5s infinite ease-in-out;"></div>
+        <p style="font-size: 0.75rem; color: #A1A1AA; font-weight: 600; margin-top: 0.75rem; letter-spacing: 0.05em;">Cargando boutique exclusiva...</p>
+      </div>
+    </div>
+  </div>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
@@ -123,14 +158,37 @@
     }
 
     // =========================================================================
-    // CONEXIÓN DIRECTA A SUPABASE (Sin avisos ni configuración en pantalla)
+    // CONEXIÓN DIRECTA A SUPABASE
     // =========================================================================
     const SUPABASE_URL = 'https://uxptcckcwcyaivurhxzh.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4cHRjY2tjd2N5YWl2dXJoeHpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NjY1NDgsImV4cCI6MjEwOTE0MjU0OH0.8Br_I5FuqHBdNM5GzlITJ-d8AS_6kbvuruMqYjLMo4A';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // =========================================================================
-    // VECTORES MINIMALISTAS (Reemplazo total de emojis)
+    // UTILIDADES: FORMATEO WHATSAPP ECUADOR (+593) Y CÓDIGO ÚNICO
+    // =========================================================================
+    function formatWhatsAppPhone(phone) {
+      if (!phone) return '593963073456';
+      const clean = phone.toString().replace(/\D/g, '');
+      if (clean.startsWith('593')) return clean;
+      if (clean.startsWith('0') && clean.length === 10) return '593' + clean.substring(1);
+      if (clean.length === 9) return '593' + clean;
+      return clean;
+    }
+
+    function generateCustomerCode(name, phone) {
+      if (!name || !phone) return '';
+      const cleanName = name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const match = cleanName.match(/[a-zA-Z]/);
+      const firstLetter = match ? match[0].toUpperCase() : 'K';
+      const digits = phone.toString().replace(/\D/g, '');
+      if (digits.length < 4) return '';
+      const last4 = digits.slice(-4);
+      return `${firstLetter}${last4}`;
+    }
+
+    // =========================================================================
+    // VECTORES MINIMALISTAS (Iconografía completa SVG)
     // =========================================================================
     const Icon = {
       Bag: ({ className = "w-4 h-4" }) => (
@@ -208,6 +266,22 @@
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M6 3h12l4 6-10 12L2 9l4-6z"/>
         </svg>
       ),
+      Star: ({ className = "w-4 h-4", filled = true }) => (
+        <svg className={className} viewBox="0 0 24 24" fill={filled ? "#FBBF24" : "none"} stroke={filled ? "#F59E0B" : "currentColor"} strokeWidth={filled ? "1" : "1.8"}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+        </svg>
+      ),
+      Settings: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      ),
+      Copy: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+        </svg>
+      ),
       Printer: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
@@ -231,11 +305,6 @@
           <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
         </svg>
       ),
-      Card: ({ className = "w-4 h-4" }) => (
-        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-        </svg>
-      ),
       Truck: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a2 2 0 114 0m0 0h2a1 1 0 001-1v-4.586a1 1 0 00-.293-.707l-2.414-2.414a1 1 0 00-.707-.293H16v8m0 0a2 2 0 11-4 0m0 0H7m-2 0a2 2 0 11-4 0"/>
@@ -251,19 +320,41 @@
       { id: 'envio_nacional', label: 'Envío Nacional Seguro (Servientrega)', price: 5.50, tag: 'Servientrega' }
     ];
 
-    // =========================================================================
-    // CÁLCULO DE CÓDIGO ÚNICO DE CLIENTE
-    // =========================================================================
-    function generateCustomerCode(name, phone) {
-      if (!name || !phone) return '';
-      const cleanName = name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const match = cleanName.match(/[a-zA-Z]/);
-      const firstLetter = match ? match[0].toUpperCase() : 'K';
-      const digits = phone.replace(/\D/g, '');
-      if (digits.length < 4) return '';
-      const last4 = digits.slice(-4);
-      return `${firstLetter}${last4}`;
-    }
+    const DEMO_REVIEWS = [
+      {
+        id: 1,
+        customer_name: 'Camila Moreira',
+        customer_code: 'C3829',
+        rating: 5,
+        comment: '¡El labial Velvet tono Rosa Nude es un sueño! No reseca nada los labios y dura todo el día intacto. Llegó el mismo día a Manta súper bien empacado. 💅💖',
+        photo_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Labial Líquido Velvet Matte Longwear',
+        is_verified_buyer: true,
+        is_approved: true
+      },
+      {
+        id: 2,
+        customer_name: 'Valeria Zambrano',
+        customer_code: 'V9102',
+        rating: 5,
+        comment: 'Me encanta el Gloss Plumper, me dejó los labios con un volumen y brillo natural increíble. Además acumulé puntos VIP con mi código único!',
+        photo_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Lip Gloss Plumper Volume & Crystal Shine',
+        is_verified_buyer: true,
+        is_approved: true
+      },
+      {
+        id: 3,
+        customer_name: 'Alisson Cedeño',
+        customer_code: 'A4918',
+        rating: 5,
+        comment: 'La blusa satinada en color champagne tiene una tela exquisita y el calce es perfecto. Pagué facilísimo con Deuna y me la entregaron en Portoviejo rapidísimo. 10/10 ✨',
+        photo_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Blusa Satinada Elegance Cuello Halter',
+        is_verified_buyer: true,
+        is_approved: true
+      }
+    ];
 
     // =========================================================================
     // COMPONENTE PRINCIPAL APP
@@ -271,6 +362,9 @@
     function App() {
       const [products, setProducts] = useState([]);
       const [orders, setOrders] = useState([]);
+      const [customersList, setCustomersList] = useState([]);
+      const [reviews, setReviews] = useState(DEMO_REVIEWS);
+
       const [sectionsConfig, setSectionsConfig] = useState({
         "MAQUILLAJES": ["Labiales", "Gloss", "Delineadores", "Rubores", "Bálsamos", "Primers", "Rimels", "Bases", "Pestañas"],
         "ACCESORIOS": ["Vinchas", "Cintillos"],
@@ -282,32 +376,51 @@
         deuna_link: 'https://deuna.app/',
         deuna_qr_url: '',
         payphone_link: 'https://payphone.app/',
-        admin_pin: '091002',
+        payphone_token: '',
+        admin_pin: '2026',
         bank_guayaquil_acc: '0013899619',
         bank_guayaquil_name: 'Toledo Mendoza Alisson Kandy',
         bank_guayaquil_id: '1350290308',
         bank_pichincha_acc: '2215807440',
         bank_pichincha_name: 'Demera García Jhojann Alberto',
         bank_pichincha_id: '1314710946',
-        banner_message: 'Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador'
+        free_shipping_threshold: 50.00,
+        points_per_dollar: 1,
+        points_redeem_ratio: 10, // 10 pts = $1.00 de descuento
+        points_min_redeem: 50,  // Mínimo 50 pts = $5.00
+        banner_message: '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador 💅✨'
       });
 
-      // Filtros de navegación
+      // Filtros de catálogo y búsqueda
       const [selectedSection, setSelectedSection] = useState('TODOS');
       const [selectedSubcategory, setSelectedSubcategory] = useState('TODOS');
       const [searchQuery, setSearchQuery] = useState('');
       const [sortBy, setSortBy] = useState('destacados');
+      const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
-      // Variante activa y foto seleccionada por producto { [prodId]: { variantName, image } }
+      // Variantes activas por producto { [prodId]: { variantName, image } }
       const [activeVariants, setActiveVariants] = useState({});
 
-      // Modales y Drawer
+      // Modales y Vistas Rápidas
       const [quickViewProduct, setQuickViewProduct] = useState(null);
+      const [quickViewSelectedVar, setQuickViewSelectedVar] = useState(null);
       const [isCartOpen, setIsCartOpen] = useState(false);
       const [isTrackingOpen, setIsTrackingOpen] = useState(false);
       const [trackingCode, setTrackingCode] = useState('');
       const [trackedOrders, setTrackedOrders] = useState(null);
       const [trackingLoading, setTrackingLoading] = useState(false);
+      const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+
+      // Nueva reseña en modal
+      const [newReview, setNewReview] = useState({
+        customer_name: '',
+        customer_code: '',
+        product_id: '',
+        product_name: '',
+        rating: 5,
+        comment: '',
+        photo_url: ''
+      });
 
       // Autenticación con Google y Perfil Permanente
       const [user, setUser] = useState(null);
@@ -315,6 +428,7 @@
       const [showPhonePromptModal, setShowPhonePromptModal] = useState(false);
       const [phoneInputForGoogle, setPhoneInputForGoogle] = useState('');
       const [isProfileOpen, setIsProfileOpen] = useState(false);
+      const isCloudCartLoadedRef = useRef(false);
 
       // Carrito sincronizado
       const [cart, setCart] = useState(() => {
@@ -325,6 +439,9 @@
           return [];
         }
       });
+
+      // Canje de puntos en Checkout
+      const [applyPointsDiscount, setApplyPointsDiscount] = useState(false);
 
       // Datos del Checkout
       const [customer, setCustomer] = useState({
@@ -346,17 +463,25 @@
         setTimeout(() => setToast(null), 3800);
       };
 
-      // ADMINISTRADOR (Acceso discreto con PIN 091002)
+      // Copiar texto al portapapeles
+      const copyToClipboard = (text, label) => {
+        navigator.clipboard.writeText(text);
+        showToast(`${label} copiado al portapapeles`);
+      };
+
+      // ADMINISTRADOR
       const [isAdmin, setIsAdmin] = useState(false);
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinInput, setPinInput] = useState('');
-      const [adminTab, setAdminTab] = useState('metrics'); // 'metrics', 'inventory', 'sections', 'orders', 'customers', 'settings'
+      const [adminTab, setAdminTab] = useState('metrics'); // 'metrics', 'inventory', 'sections', 'orders', 'reviews', 'customers', 'settings'
       const [adminSearch, setAdminSearch] = useState('');
       const [adminFilterStatus, setAdminFilterStatus] = useState('todos');
-      const [customersList, setCustomersList] = useState([]);
       const [editingProduct, setEditingProduct] = useState(null);
       const [servientregaOrder, setServientregaOrder] = useState(null);
       const [uploading, setUploading] = useState(false);
+
+      // Estado editable de ajustes en Admin
+      const [adminSettingsForm, setAdminSettingsForm] = useState(null);
 
       // Nuevo producto en Admin
       const [newProd, setNewProd] = useState({
@@ -374,12 +499,12 @@
         ]
       });
 
-      // Nuevo nombre de sección y subcategoría
+      // Nuevos nombres de sección y subcategoría
       const [newSectionName, setNewSectionName] = useState('');
       const [newSubcatInputs, setNewSubcatInputs] = useState({});
 
       // =======================================================================
-      // INICIALIZACIÓN Y MONITOREO DE GOOGLE AUTH
+      // 1. CARGA INICIAL SEGURA (Solo productos, ajustes públicos y reseñas aprobadas)
       // =======================================================================
       useEffect(() => {
         fetchInitialData();
@@ -391,24 +516,36 @@
 
         // 2. Escuchar cambios de autenticación
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          if (session?.user) {
+          if (event === 'SIGNED_IN' && session?.user) {
             handleUserAuth(session.user);
-          } else {
+          } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setCustomerProfile(null);
+            isCloudCartLoadedRef.current = false;
           }
         });
 
         return () => subscription?.unsubscribe();
       }, []);
 
+      // Al entrar como admin, cargar datos protegidos (pedidos, clientes, reseñas completas)
+      useEffect(() => {
+        if (isAdmin) {
+          fetchAdminData();
+        }
+      }, [isAdmin]);
+
       async function fetchInitialData() {
         try {
-          // Cargar productos
-          const { data: prods } = await supabase.from('kaoj_products').select('*').eq('is_active', true).order('id', { ascending: false });
+          // 1. Productos activos
+          const { data: prods } = await supabase
+            .from('kaoj_products')
+            .select('*')
+            .eq('is_active', true)
+            .order('id', { ascending: false });
+
           if (prods && prods.length > 0) {
             setProducts(prods);
-            // Configurar variantes iniciales
             const initVars = {};
             prods.forEach(p => {
               const firstAvail = (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
@@ -419,28 +556,50 @@
             setActiveVariants(initVars);
           }
 
-          // Cargar ajustes
+          // 2. Ajustes públicos
           const { data: cfg } = await supabase.from('kaoj_settings').select('*').eq('id', 1).single();
           if (cfg) {
             setSettings(prev => ({
               ...prev,
               ...cfg,
               whatsapp_number: cfg.whatsapp_number || '593963073456',
-              admin_pin: '091002'
+              admin_pin: cfg.admin_pin || '2026'
             }));
+            setAdminSettingsForm({ ...cfg });
             if (cfg.sections_config && Object.keys(cfg.sections_config).length > 0) {
               setSectionsConfig(cfg.sections_config);
             }
           }
 
-          // Cargar pedidos para admin
+          // 3. Reseñas públicas aprobadas para Social Proof
+          const { data: revs } = await supabase
+            .from('kaoj_reviews')
+            .select('*')
+            .eq('is_approved', true)
+            .order('created_at', { ascending: false });
+
+          if (revs && revs.length > 0) {
+            setReviews(revs);
+          }
+        } catch (err) {
+          console.error('Error cargando catálogo:', err);
+        }
+      }
+
+      // Carga de datos administrativos protegidos (Solo al ingresar con PIN de administrador)
+      async function fetchAdminData() {
+        try {
           const { data: ords } = await supabase.from('kaoj_orders').select('*').order('created_at', { ascending: false });
           if (ords) setOrders(ords);
 
-          // Cargar clientes VIP para admin
           const { data: custs } = await supabase.from('kaoj_customers').select('*').order('created_at', { ascending: false });
           if (custs) setCustomersList(custs);
-        } catch (err) {}
+
+          const { data: allRevs } = await supabase.from('kaoj_reviews').select('*').order('created_at', { ascending: false });
+          if (allRevs) setReviews(allRevs);
+        } catch (err) {
+          console.error('Error cargando datos de administración:', err);
+        }
       }
 
       // Proceso de autenticación con Google y vinculación permanente del teléfono
@@ -449,35 +608,37 @@
         const googleName = googleUser.user_metadata?.full_name || googleUser.user_metadata?.name || '';
         const googleEmail = googleUser.email || '';
 
-        // Buscar si ya tiene perfil registrado en Supabase
-        const { data: existingCust } = await supabase
-          .from('kaoj_customers')
-          .select('*')
-          .or(`user_id.eq.${googleUser.id},email.eq.${googleEmail}`)
-          .maybeSingle();
+        try {
+          const { data: existingCust } = await supabase
+            .from('kaoj_customers')
+            .select('*')
+            .or(`user_id.eq.${googleUser.id},email.eq.${googleEmail}`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (existingCust && existingCust.customer_code) {
-          // Cliente ya tiene teléfono y código único permanente
-          setCustomerProfile(existingCust);
-          setCustomer(prev => ({
-            ...prev,
-            name: existingCust.name || googleName,
-            phone: existingCust.phone || '',
-            email: googleEmail,
-            address: existingCust.address || prev.address
-          }));
-          showToast(`Bienvenida de nuevo, ${googleName.split(' ')[0]}. Código: ${existingCust.customer_code}`);
-        } else {
-          // Primer ingreso con Google: solicitar número de celular para generar código permanente
-          setCustomer(prev => ({ ...prev, name: googleName, email: googleEmail }));
-          setShowPhonePromptModal(true);
+          if (existingCust && existingCust.customer_code) {
+            setCustomerProfile(existingCust);
+            setCustomer(prev => ({
+              ...prev,
+              name: existingCust.name || googleName,
+              phone: existingCust.phone || '',
+              email: googleEmail,
+              address: existingCust.address || prev.address
+            }));
+            showToast(`Bienvenida de nuevo, ${googleName.split(' ')[0]}. Código VIP: ${existingCust.customer_code} (${existingCust.points || 0} pts)`);
+          } else {
+            setCustomer(prev => ({ ...prev, name: googleName, email: googleEmail }));
+            setShowPhonePromptModal(true);
+          }
+
+          // Cargar y fusionar carrito persistente de la nube
+          await loadCloudCart(googleUser.id);
+        } catch (e) {
+          console.error('Error al autenticar usuario:', e);
         }
-
-        // Cargar y sincronizar carrito de la nube
-        loadCloudCart(googleUser.id);
       }
 
-      // Guardar el número de celular del cliente y asociarlo de por vida a Google
       async function handleSavePhoneForGoogle(e) {
         e.preventDefault();
         const cleanDigits = phoneInputForGoogle.replace(/\D/g, '');
@@ -495,10 +656,17 @@
           phone: cleanDigits,
           email: googleEmail,
           customer_code: code,
-          points: 0
+          points: 0,
+          lifetime_points: 0,
+          orders_count: 0,
+          total_spent: 0
         };
 
-        const { data, error } = await supabase.from('kaoj_customers').upsert(newProfile, { onConflict: 'customer_code' }).select().single();
+        const { data, error } = await supabase
+          .from('kaoj_customers')
+          .upsert(newProfile, { onConflict: 'user_id' })
+          .select()
+          .single();
 
         if (error) {
           return showToast('Error vinculando cuenta: ' + error.message, 'error');
@@ -507,10 +675,9 @@
         setCustomerProfile(data || newProfile);
         setCustomer(prev => ({ ...prev, phone: cleanDigits, name: googleName }));
         setShowPhonePromptModal(false);
-        showToast(`Tu Código Único permanente es [${code}]. Ha quedado vinculado a tu cuenta de Google.`);
+        showToast(`Tu Código VIP permanente es [${code}]. Ha quedado vinculado a tu cuenta.`);
       }
 
-      // Iniciar sesión con Google
       async function handleGoogleSignIn() {
         const redirectUrl = window.location.origin + window.location.pathname;
         const { error } = await supabase.auth.signInWithOAuth({
@@ -525,18 +692,20 @@
         setUser(null);
         setCustomerProfile(null);
         setIsProfileOpen(false);
+        isCloudCartLoadedRef.current = false;
         showToast('Sesión cerrada correctamente');
       }
 
       // =======================================================================
-      // SINCRONIZACIÓN DE CARRITO EN SUPABASE (kaoj_carts)
+      // 2. SINCRONIZACIÓN SEGURA DE CARRITO EN SUPABASE (Sin sobrescritura destructiva)
       // =======================================================================
       useEffect(() => {
         try {
           localStorage.setItem('kaoj_cart', JSON.stringify(cart));
         } catch (e) {}
 
-        if (user) {
+        // Solo sincronizar con la nube si el usuario está logueado Y ya se cargó el carrito inicial
+        if (user && isCloudCartLoadedRef.current) {
           supabase.from('kaoj_carts').upsert({
             user_id: user.id,
             customer_code: customerProfile?.customer_code || '',
@@ -565,11 +734,14 @@
             });
             showToast('Carrito sincronizado desde la nube');
           }
-        } catch (err) {}
+        } catch (err) {
+        } finally {
+          isCloudCartLoadedRef.current = true;
+        }
       }
 
       // =======================================================================
-      // GESTIÓN DE CARRITO
+      // 3. GESTIÓN DEL CARRITO Y CÁLCULOS (Envío Gratis & Puntos VIP)
       // =======================================================================
       function addToCart(product, specificVariant = null) {
         const activeInfo = activeVariants[product.id];
@@ -604,7 +776,7 @@
           }]);
         }
 
-        showToast(`"${product.name}" agregado al carrito`);
+        showToast(`"${product.name}" (${varName}) agregado`);
         setIsCartOpen(true);
         if (quickViewProduct) setQuickViewProduct(null);
       }
@@ -631,15 +803,27 @@
         setCart(cart.filter(i => i.key !== key));
       }
 
+      // Cálculos Financieros
       const subtotal = cart.reduce((acc, i) => acc + (i.price * i.qty), 0);
       const deliveryObj = DELIVERY_OPTIONS.find(d => d.id === customer.delivery) || DELIVERY_OPTIONS[0];
-      const total = subtotal + deliveryObj.price;
 
-      // Código de cliente activo (permanente o generado en tiempo real)
+      // Regla de Envío Gratis
+      const freeShippingThreshold = Number(settings.free_shipping_threshold || 50.00);
+      const qualifiesFreeShipping = subtotal >= freeShippingThreshold && (customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional');
+      const finalShippingCost = qualifiesFreeShipping ? 0 : deliveryObj.price;
+
+      // Regla de Puntos VIP
+      const customerCurrentPoints = customerProfile?.points || 0;
+      const canRedeemPoints = customerCurrentPoints >= (settings.points_min_redeem || 50);
+      const pointsDiscountAmount = (applyPointsDiscount && canRedeemPoints) ? 5.00 : 0.00;
+      const total = Math.max(0, subtotal - pointsDiscountAmount) + finalShippingCost;
+      const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - pointsDiscountAmount));
+
+      // Código de cliente activo
       const activeCustomerCode = customerProfile?.customer_code || generateCustomerCode(customer.name, customer.phone);
 
       // =======================================================================
-      // FINALIZAR PEDIDO (CHECKOUT)
+      // 4. CHECKOUT SEGURO & DESCUENTO ATÓMICO DE STOCK
       // =======================================================================
       async function handleCheckoutSubmit(e) {
         e.preventDefault();
@@ -648,8 +832,13 @@
           return showToast('Ingresa tu nombre y celular para generar tu código.', 'error');
         }
 
-        if (customer.paymentMethod !== 'payphone' && !customer.receiptUrl) {
-          return showToast('Sube el comprobante de transferencia para validar tu pedido.', 'error');
+        // Validación de pago
+        if (customer.paymentMethod === 'payphone') {
+          if (!customer.payphoneRef.trim()) {
+            return showToast('Ingresa el número de referencia / teléfono de tu pago en Payphone.', 'error');
+          }
+        } else if (!customer.receiptUrl) {
+          return showToast('Sube el comprobante de transferencia o pago para validar tu pedido.', 'error');
         }
 
         const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -662,72 +851,158 @@
           customer_id_card: customer.idCard.trim(),
           customer_email: customer.email || user?.email || '',
           user_id: user?.id || null,
-          delivery_method: deliveryObj.label,
+          delivery_method: deliveryObj.label + (qualifiesFreeShipping ? ' (Envío Gratis)' : ''),
           delivery_address: customer.address.trim(),
-          shipping_cost: deliveryObj.price,
+          shipping_cost: finalShippingCost,
           subtotal: subtotal,
+          discount_amount: pointsDiscountAmount,
           total: total,
+          points_earned: pointsEarnedWithOrder,
+          points_redeemed: applyPointsDiscount ? (settings.points_min_redeem || 50) : 0,
           payment_method:
             customer.paymentMethod === 'deuna' ? 'Deuna!' :
-            customer.paymentMethod === 'payphone' ? 'Payphone (Tarjeta)' : 'Transferencia Bancaria',
-          receipt_url: customer.receiptUrl || (customer.payphoneRef ? `Payphone Ref: ${customer.payphoneRef}` : ''),
+            customer.paymentMethod === 'payphone' ? `Payphone (Ref: ${customer.payphoneRef})` : 'Transferencia Bancaria',
+          receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
           items: cart,
           status: 'pendiente'
         };
 
         try {
+          // 1. Insertar orden en Supabase
           await supabase.from('kaoj_orders').insert([orderData]);
 
-          // Descontar inventario en Supabase
-          for (const item of cart) {
-            const prod = products.find(p => p.id === item.productId);
+          // 2. Descuento ATÓMICO y COMBINADO de stock (Evita sobreescritura de variantes de un mismo producto)
+          const itemsByProduct = {};
+          cart.forEach(item => {
+            if (!itemsByProduct[item.productId]) itemsByProduct[item.productId] = [];
+            itemsByProduct[item.productId].push(item);
+          });
+
+          for (const [prodIdStr, itemsList] of Object.entries(itemsByProduct)) {
+            const prodId = Number(prodIdStr);
+            const prod = products.find(p => p.id === prodId);
             if (prod && Array.isArray(prod.variants)) {
-              const updatedVariants = prod.variants.map(v =>
-                v.name === item.variant ? { ...v, stock: Math.max(0, v.stock - item.qty) } : v
-              );
-              await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', prod.id);
+              let updatedVariants = [...prod.variants];
+              itemsList.forEach(item => {
+                updatedVariants = updatedVariants.map(v =>
+                  v.name === item.variant ? { ...v, stock: Math.max(0, (v.stock || 0) - item.qty) } : v
+                );
+              });
+              await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', prodId);
             }
+          }
+
+          // 3. Actualizar puntos del cliente en kaoj_customers
+          const newPointsBalance = Math.max(0, customerCurrentPoints - (applyPointsDiscount ? 50 : 0)) + pointsEarnedWithOrder;
+          const customerUpsert = {
+            customer_code: activeCustomerCode,
+            name: customer.name.trim(),
+            phone: customer.phone.trim(),
+            email: customer.email || user?.email || '',
+            id_card: customer.idCard.trim(),
+            address: customer.address.trim(),
+            user_id: user?.id || null,
+            points: newPointsBalance,
+            orders_count: (customerProfile?.orders_count || 0) + 1,
+            total_spent: Number((customerProfile?.total_spent || 0) + total)
+          };
+
+          await supabase.from('kaoj_customers').upsert(customerUpsert, { onConflict: 'customer_code' });
+          if (customerProfile) {
+            setCustomerProfile({ ...customerProfile, ...customerUpsert, points: newPointsBalance });
           }
 
           if (user) {
             await supabase.from('kaoj_carts').delete().eq('user_id', user.id);
           }
-        } catch (err) {}
+        } catch (err) {
+          console.error('Error registrando orden:', err);
+        }
 
-        // Enviar a WhatsApp oficial 593963073456
-        const itemsList = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
+        // 4. Enviar a WhatsApp Oficial con formato internacional
+        const officialWhatsApp = formatWhatsAppPhone(settings.whatsapp_number);
+        const itemsListText = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
         const paymentLabel =
           customer.paymentMethod === 'deuna' ? 'Deuna!' :
-          customer.paymentMethod === 'payphone' ? 'Tarjeta (Payphone)' : 'Transferencia Bancaria';
+          customer.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${customer.payphoneRef})` : 'Transferencia Bancaria';
 
         const whatsappMsg =
           `*NUEVO PEDIDO KAOJ STORE*\n\n` +
           `*Orden:* ${orderCode}\n` +
-          `*Código Único de Cliente:* *${activeCustomerCode}*\n` +
+          `*Código VIP Cliente:* *${activeCustomerCode}*\n` +
           `*Cliente:* ${customer.name}\n` +
           `*Celular:* ${customer.phone}\n` +
-          (customer.idCard ? `*Cédula:* ${customer.idCard}\n` : '') +
+          (customer.idCard ? `*Cédula/RUC:* ${customer.idCard}\n` : '') +
           `*Entrega:* ${deliveryObj.label}\n` +
           (customer.address ? `*Dirección:* ${customer.address}\n` : '') +
-          `*Método de Pago:* ${paymentLabel}\n\n` +
-          `*PRODUCTOS:*\n${itemsList}\n\n` +
+          `*Forma de Pago:* ${paymentLabel}\n\n` +
+          `*PRODUCTOS COMPRADOS:*\n${itemsListText}\n\n` +
           `*Subtotal:* $${subtotal.toFixed(2)}\n` +
-          `*Envío:* $${deliveryObj.price.toFixed(2)}\n` +
-          `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n\n` +
+          (pointsDiscountAmount > 0 ? `*Descuento VIP (50 Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') +
+          `*Envío:* ${finalShippingCost === 0 ? 'GRATIS' : '$' + finalShippingCost.toFixed(2)}\n` +
+          `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` +
+          `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts\n\n` +
           (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') +
-          `Hola Kaoj Store, acabo de enviar mi pedido por la web.`;
+          `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
 
-        window.open(`https://wa.me/593963073456?text=${encodeURIComponent(whatsappMsg)}`, '_blank');
+        window.open(`https://wa.me/${officialWhatsApp}?text=${encodeURIComponent(whatsappMsg)}`, '_blank');
 
         setCart([]);
         setIsCartOpen(false);
+        setApplyPointsDiscount(false);
         setCustomer(prev => ({ ...prev, receiptUrl: '', payphoneRef: '' }));
-        showToast(`Pedido ${orderCode} registrado con éxito.`);
+        showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste ${pointsEarnedWithOrder} puntos.`);
         fetchInitialData();
       }
 
       // =======================================================================
-      // SUBIDA DE ARCHIVOS A SUPABASE STORAGE
+      // 5. GESTIÓN DE RESEÑAS (Social Proof)
+      // =======================================================================
+      async function handleCreateReview(e) {
+        e.preventDefault();
+        if (!newReview.customer_name.trim() || !newReview.comment.trim()) {
+          return showToast('Por favor ingresa tu nombre y opinión.', 'error');
+        }
+
+        const reviewPayload = {
+          customer_name: newReview.customer_name.trim(),
+          customer_code: newReview.customer_code.trim() || activeCustomerCode || '',
+          product_id: newReview.product_id ? Number(newReview.product_id) : null,
+          product_name: newReview.product_name || 'Boutique Kaoj',
+          rating: Number(newReview.rating) || 5,
+          comment: newReview.comment.trim(),
+          photo_url: newReview.photo_url || '',
+          is_verified_buyer: true,
+          is_approved: true
+        };
+
+        const { data, error } = await supabase.from('kaoj_reviews').insert([reviewPayload]).select();
+        if (error) return showToast('Error al publicar reseña: ' + error.message, 'error');
+
+        if (data && data[0]) {
+          setReviews([data[0], ...reviews]);
+        }
+        setIsReviewModalOpen(false);
+        setNewReview({ customer_name: '', customer_code: '', product_id: '', product_name: '', rating: 5, comment: '', photo_url: '' });
+        showToast('¡Gracias por tu reseña y foto! Ha sido publicada en el muro.');
+      }
+
+      async function handleDeleteReview(reviewId) {
+        if (!confirm('¿Eliminar esta reseña definitivamente?')) return;
+        await supabase.from('kaoj_reviews').delete().eq('id', reviewId);
+        setReviews(reviews.filter(r => r.id !== reviewId));
+        showToast('Reseña eliminada');
+      }
+
+      async function handleToggleReviewApproval(reviewId, currentStatus) {
+        const nextStatus = !currentStatus;
+        await supabase.from('kaoj_reviews').update({ is_approved: nextStatus }).eq('id', reviewId);
+        setReviews(reviews.map(r => r.id === reviewId ? { ...r, is_approved: nextStatus } : r));
+        showToast(`Reseña ${nextStatus ? 'aprobada' : 'ocultada'}`);
+      }
+
+      // =======================================================================
+      // 6. SUBIDA DE ARCHIVOS A SUPABASE STORAGE
       // =======================================================================
       async function uploadFileToSupabase(file, folder = 'products') {
         setUploading(true);
@@ -744,18 +1019,52 @@
 
           const { data } = supabase.storage.from('kaoj-assets').getPublicUrl(fileName);
           setUploading(false);
-          showToast('Imagen cargada');
+          showToast('Archivo subido a la nube');
           return data.publicUrl;
         } catch (err) {
           setUploading(false);
-          showToast('Error cargando imagen: ' + err.message, 'error');
+          showToast('Error cargando archivo: ' + err.message, 'error');
           return null;
         }
       }
 
       // =======================================================================
-      // ADMINISTRADOR: EDICIÓN COMPLETA Y FUNCIONAL DE PRODUCTOS
+      // 7. ADMINISTRADOR: AJUSTES, PRODUCTOS, SECCIONES Y PEDIDOS
       // =======================================================================
+      async function handleSaveSettings(e) {
+        e.preventDefault();
+        if (!adminSettingsForm) return;
+
+        setUploading(true);
+        try {
+          const { error } = await supabase.from('kaoj_settings').upsert({
+            id: 1,
+            whatsapp_number: adminSettingsForm.whatsapp_number,
+            deuna_link: adminSettingsForm.deuna_link,
+            deuna_qr_url: adminSettingsForm.deuna_qr_url,
+            payphone_link: adminSettingsForm.payphone_link,
+            payphone_token: adminSettingsForm.payphone_token,
+            admin_pin: adminSettingsForm.admin_pin || '2026',
+            bank_guayaquil_acc: adminSettingsForm.bank_guayaquil_acc,
+            bank_guayaquil_name: adminSettingsForm.bank_guayaquil_name,
+            bank_guayaquil_id: adminSettingsForm.bank_guayaquil_id,
+            bank_pichincha_acc: adminSettingsForm.bank_pichincha_acc,
+            bank_pichincha_name: adminSettingsForm.bank_pichincha_name,
+            bank_pichincha_id: adminSettingsForm.bank_pichincha_id,
+            free_shipping_threshold: parseFloat(adminSettingsForm.free_shipping_threshold || 50),
+            banner_message: adminSettingsForm.banner_message
+          });
+
+          if (error) throw error;
+          setSettings({ ...settings, ...adminSettingsForm });
+          setUploading(false);
+          showToast('Ajustes de la tienda guardados correctamente en Supabase');
+        } catch (err) {
+          setUploading(false);
+          showToast('Error al guardar ajustes: ' + err.message, 'error');
+        }
+      }
+
       async function handleSaveEditedProduct(e) {
         e.preventDefault();
         if (!editingProduct) return;
@@ -782,14 +1091,13 @@
           setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p));
           setEditingProduct(null);
           setUploading(false);
-          showToast('Producto actualizado exitosamente en Supabase');
+          showToast('Producto actualizado exitosamente');
         } catch (err) {
           setUploading(false);
           showToast('Error al actualizar producto: ' + err.message, 'error');
         }
       }
 
-      // Crear nuevo producto con soporte para fotos por variante
       async function handleCreateProduct(e) {
         e.preventDefault();
         if (!newProd.name.trim() || !newProd.price) {
@@ -818,7 +1126,7 @@
           name: '', section: 'MAQUILLAJES', category: 'Labiales',
           price: '', discount_price: '', image: '', description: '',
           variant_label: 'Tono / Talla',
-          variants: [{ name: '01', stock: 5, image: '' }]
+          variants: [{ name: '01 Rosa', stock: 5, image: '' }]
         });
       }
 
@@ -843,14 +1151,14 @@
       }
 
       // =======================================================================
-      // FILTRADO DE PRODUCTOS
+      // 8. FILTRADO INTELIGENTE DE PRODUCTOS
       // =======================================================================
       const filteredProducts = useMemo(() => {
         let result = [...products];
 
         if (selectedSection !== 'TODOS') {
           if (selectedSection === 'OFERTAS') {
-            result = result.filter(p => Boolean(p.discount_price));
+            result = result.filter(p => Boolean(p.discount_price && p.discount_price < p.price));
           } else {
             result = result.filter(p => (p.section || '').toUpperCase() === selectedSection);
           }
@@ -881,7 +1189,7 @@
         return result;
       }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy]);
 
-      // Métricas ejecutivas para el administrador
+      // Métricas administrativas
       const metrics = useMemo(() => {
         const totalSales = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
         const pendingCount = orders.filter(o => o.status === 'pendiente').length;
@@ -889,7 +1197,6 @@
           (p.variants || []).some(v => v.stock <= 2)
         ).length;
 
-        // Distribución por sección
         const secCounts = { MAQUILLAJES: 0, ACCESORIOS: 0, ROPA: 0 };
         products.forEach(p => {
           const sec = (p.section || 'MAQUILLAJES').toUpperCase();
@@ -901,41 +1208,47 @@
       }, [orders, products]);
 
       // =======================================================================
-      // RENDERIZADO
+      // 9. RENDERIZADO VISUAL
       // =======================================================================
       return (
         <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-zinc-900">
 
-          {/* BARRA SUPERIOR MINIMALISTA */}
-          <div className="bg-zinc-900 text-zinc-200 text-xs py-2 px-4 text-center font-medium tracking-wider flex items-center justify-center gap-3">
-            <span className="max-w-2xl truncate">{settings.banner_message}</span>
-            {customerProfile && (
-              <span className="hidden sm:inline bg-zinc-800 text-[#FF2E93] text-[11px] font-bold px-2 py-0.5 rounded-full border border-zinc-700">
-                VIP: {customerProfile.customer_code}
-              </span>
-            )}
+          {/* BARRA SUPERIOR CON ANUNCIO Y SALDO VIP EN VIVO */}
+          <div className="bg-zinc-900 text-zinc-200 text-xs py-2 px-4 font-medium tracking-wider flex items-center justify-between gap-3">
+            <span className="truncate flex-1 text-center sm:text-left">{settings.banner_message}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              {customerProfile ? (
+                <span className="bg-zinc-800 text-[#FF2E93] text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1">
+                  <Icon.Diamond className="w-3 h-3" /> VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts
+                </span>
+              ) : (
+                <span className="hidden md:inline text-[11px] text-zinc-400">
+                  Gana 1 punto por cada $1 en compras ✨
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* NAVBAR / HEADER */}
+          {/* HEADER / NAVBAR PRINCIPAL */}
           <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-30">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
 
               {/* LOGOTIPO KAOJ STORE */}
               <div
-                onClick={() => { setIsAdmin(false); setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); }}
+                onClick={() => { setIsAdmin(false); setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); }}
                 className="cursor-pointer select-none text-left group"
               >
-                <h1 className="font-serif-kaoj text-2xl sm:text-3xl font-extrabold text-[#FF2E93] tracking-widest leading-none">
+                <h1 className="font-serif-kaoj text-2xl sm:text-3xl font-black text-[#FF2E93] tracking-widest leading-none">
                   KAOJ
                 </h1>
-                <span className="block text-[9px] sm:text-[10px] tracking-[0.45em] text-zinc-700 font-bold mt-0.5">
+                <span className="block text-[9px] sm:text-[10px] tracking-[0.45em] text-zinc-700 font-extrabold mt-0.5">
                   STORE
                 </span>
               </div>
 
-              {/* BÚSQUEDA MINIMALISTA */}
+              {/* BUSCADOR DESKTOP */}
               {!isAdmin && (
-                <div className="hidden md:flex flex-1 max-w-md mx-4 relative">
+                <div className="hidden md:flex flex-1 max-w-md mx-2 relative">
                   <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
                     <Icon.Search className="w-4 h-4" />
                   </span>
@@ -954,25 +1267,48 @@
                 </div>
               )}
 
-              {/* ACCIONES DEL HEADER: RASTREO, GOOGLE LOGIN & CARRITO */}
-              <div className="flex items-center gap-2 sm:gap-3">
+              {/* ACCIONES: BÚSQUEDA MÓVIL, RASTREO, GOOGLE AUTH & CARRITO */}
+              <div className="flex items-center gap-1.5 sm:gap-3">
+
+                {/* BOTÓN BÚSQUEDA MÓVIL */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                    className="md:hidden p-2 rounded-full border border-zinc-200 text-zinc-700 hover:text-[#FF2E93]"
+                    title="Buscar"
+                  >
+                    <Icon.Search className="w-4 h-4" />
+                  </button>
+                )}
 
                 {/* BOTÓN RASTREO DE PEDIDOS */}
                 {!isAdmin && (
                   <button
                     onClick={() => setIsTrackingOpen(true)}
-                    className="text-xs px-3 py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
+                    className="text-xs px-2.5 sm:px-3 py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
                   >
                     <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
                     <span className="hidden sm:inline">Mis Pedidos</span>
                   </button>
                 )}
 
-                {/* BOTÓN INICIAR SESIÓN CON GOOGLE (O PERFIL PERMANENTE) */}
+                {/* BOTÓN RESEÑAS */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => setIsReviewModalOpen(true)}
+                    className="text-xs px-2.5 sm:px-3 py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition flex items-center gap-1.5"
+                    title="Dejar Reseña"
+                  >
+                    <Icon.Star className="w-3.5 h-3.5 text-amber-500" filled={true} />
+                    <span className="hidden sm:inline">Opinar</span>
+                  </button>
+                )}
+
+                {/* GOOGLE SIGN IN O PERFIL PERMANENTE */}
                 {!user ? (
                   <button
                     onClick={handleGoogleSignIn}
-                    className="bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-300 text-xs px-3 py-2 rounded-full font-semibold flex items-center gap-2 shadow-xs transition hover:border-[#FF2E93]"
+                    className="bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-300 text-xs px-2.5 sm:px-3 py-2 rounded-full font-semibold flex items-center gap-1.5 shadow-sm transition hover:border-[#FF2E93]"
                   >
                     <Icon.Google className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Iniciar sesión</span>
@@ -981,7 +1317,7 @@
                   <div className="relative">
                     <button
                       onClick={() => setIsProfileOpen(!isProfileOpen)}
-                      className="flex items-center gap-2 bg-pink-50/70 hover:bg-pink-100/70 border border-pink-200 py-1.5 px-3 rounded-full text-xs font-semibold text-zinc-800 transition"
+                      className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 py-1.5 px-2.5 sm:px-3 rounded-full text-xs font-semibold text-zinc-800 transition"
                     >
                       {user.user_metadata?.avatar_url ? (
                         <img src={user.user_metadata.avatar_url} alt="User" className="w-5 h-5 rounded-full border border-[#FF2E93]" />
@@ -990,7 +1326,7 @@
                           {user.email?.charAt(0).toUpperCase()}
                         </span>
                       )}
-                      <span className="max-w-[80px] truncate hidden sm:inline">
+                      <span className="max-w-[75px] truncate hidden sm:inline">
                         {user.user_metadata?.full_name?.split(' ')[0] || user.email?.split('@')[0]}
                       </span>
                       {customerProfile?.customer_code && (
@@ -1000,15 +1336,15 @@
                       )}
                     </button>
 
-                    {/* MENÚ DE PERFIL */}
+                    {/* MENÚ DESPLEGABLE DE PERFIL */}
                     {isProfileOpen && (
                       <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-zinc-200 p-4 z-50 text-xs space-y-3">
                         <div className="border-b pb-2">
                           <p className="font-bold text-zinc-900 truncate">{user.user_metadata?.full_name || 'Clienta Kaoj'}</p>
                           <p className="text-zinc-500 truncate text-[11px]">{user.email}</p>
-                          {customerProfile?.customer_code && (
+                          {customerProfile && (
                             <div className="mt-2 bg-pink-50 border border-pink-200 text-[#FF2E93] rounded-lg p-2 text-center font-bold">
-                              Código Permanente: {customerProfile.customer_code}
+                              Código: {customerProfile.customer_code} • {customerProfile.points || 0} Puntos
                             </div>
                           )}
                         </div>
@@ -1020,7 +1356,7 @@
                             onClick={() => { setIsProfileOpen(false); setIsTrackingOpen(true); }}
                             className="w-full text-left py-1 hover:text-[#FF2E93] font-medium"
                           >
-                            Ver mis compras realizadas
+                            Rastrear mis compras realizadas
                           </button>
                         </div>
                         <button
@@ -1037,27 +1373,51 @@
                 {/* BOTÓN CARRITO */}
                 <button
                   onClick={() => setIsCartOpen(true)}
-                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-xs transition active:scale-95"
+                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3 sm:px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-sm transition active:scale-95"
                 >
                   <Icon.Bag className="w-4 h-4" />
                   <span className="hidden sm:inline">Carrito</span>
-                  <span className="bg-white text-[#FF2E93] text-xs font-black rounded-full px-2 py-0.5">
+                  <span className="bg-white text-[#FF2E93] text-xs font-black rounded-full px-1.5 sm:px-2 py-0.5">
                     {cart.reduce((a, b) => a + b.qty, 0)}
                   </span>
                 </button>
               </div>
             </div>
 
+            {/* BARRA DE BÚSQUEDA MÓVIL DESPLEGABLE */}
+            {mobileSearchOpen && !isAdmin && (
+              <div className="md:hidden border-t border-zinc-100 px-4 py-2 bg-zinc-50">
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
+                    <Icon.Search className="w-4 h-4" />
+                  </span>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Buscar labiales, vestidos, accesorios..."
+                    className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-zinc-200 rounded-full outline-none focus:ring-1 focus:ring-[#FF2E93]"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-zinc-400">
+                      <Icon.Close className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* SECCIONES GRANDES (MAQUILLAJES | ACCESORIOS | ROPA) */}
             {!isAdmin && (
               <div className="border-t border-zinc-100 bg-[#FCFBFD]">
                 <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); }}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
                         selectedSection === 'TODOS'
-                          ? 'bg-[#FF2E93] text-white shadow-xs'
+                          ? 'bg-[#FF2E93] text-white shadow-sm'
                           : 'bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
                       }`}
                     >
@@ -1073,9 +1433,9 @@
                             setSelectedSection(sectionKey);
                             setSelectedSubcategory('TODOS');
                           }}
-                          className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
                             isSelected
-                              ? 'bg-[#FF2E93] text-white shadow-xs'
+                              ? 'bg-[#FF2E93] text-white shadow-sm'
                               : 'bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
                           }`}
                         >
@@ -1086,9 +1446,9 @@
 
                     <button
                       onClick={() => { setSelectedSection('OFERTAS'); setSelectedSubcategory('TODOS'); }}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
                         selectedSection === 'OFERTAS'
-                          ? 'bg-zinc-900 text-white shadow-xs'
+                          ? 'bg-zinc-900 text-white shadow-sm'
                           : 'bg-pink-50 border border-pink-200 text-[#FF2E93] hover:bg-pink-100'
                       }`}
                     >
@@ -1096,8 +1456,9 @@
                     </button>
                   </div>
 
-                  <div className="hidden lg:flex items-center gap-2 text-xs text-zinc-500 whitespace-nowrap">
-                    <span>Ordenar:</span>
+                  {/* SELECTOR DE ORDENACIÓN (Visible en móvil y desktop) */}
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 whitespace-nowrap shrink-0">
+                    <span className="hidden sm:inline">Ordenar:</span>
                     <select
                       value={sortBy}
                       onChange={e => setSortBy(e.target.value)}
@@ -1113,7 +1474,7 @@
               </div>
             )}
 
-            {/* SUBSECCIONES DE LA SECCIÓN ACTIVA */}
+            {/* SUBCATEGORÍAS DINÁMICAS */}
             {!isAdmin && selectedSection !== 'TODOS' && selectedSection !== 'OFERTAS' && (
               <div className="border-t border-zinc-100 bg-zinc-50/70 py-2">
                 <div className="max-w-7xl mx-auto px-4 flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -1152,9 +1513,9 @@
 
           {/* VISTA 1: TIENDA PÚBLICA */}
           {!isAdmin ? (
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-8">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-12">
 
-              {/* ENCABEZADO Y CONTADOR */}
+              {/* ENCABEZADO DE CATÁLOGO */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-zinc-200/60 pb-3">
                 <div>
                   <h2 className="font-serif-kaoj text-2xl sm:text-3xl font-extrabold text-zinc-900 flex items-center gap-2">
@@ -1171,10 +1532,10 @@
                 </div>
               </div>
 
-              {/* GRID DE PRODUCTOS */}
+              {/* GRID DE PRODUCTOS (2 Columnas en móvil para agilidad boutique) */}
               {filteredProducts.length === 0 ? (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center space-y-3">
-                  <p className="font-bold text-zinc-700 text-sm">No encontramos productos en esta sección.</p>
+                  <p className="font-bold text-zinc-700 text-sm">No encontramos productos en esta sección o búsqueda.</p>
                   <button
                     onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); }}
                     className="text-xs bg-[#FF2E93] text-white font-bold px-4 py-2 rounded-full"
@@ -1183,22 +1544,26 @@
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-6">
                   {filteredProducts.map(prod => {
                     const activeVar = activeVariants[prod.id] || {};
                     const currentVarName = activeVar.variantName || prod.variants?.[0]?.name;
                     const varObj = (prod.variants || []).find(v => v.name === currentVarName);
                     const stock = varObj ? varObj.stock : 0;
-                    const hasDiscount = Boolean(prod.discount_price && prod.discount_price < prod.price);
+                    const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
-
-                    // Foto dinámica: Si la variante seleccionada tiene foto propia, mostrarla
                     const displayImage = activeVar.image || varObj?.image || prod.image;
 
                     return (
                       <div key={prod.id} className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group">
-                        {/* FOTO CON CAMBIO AUTOMÁTICO SEGÚN VARIANTE */}
-                        <div className="relative h-64 bg-zinc-50 overflow-hidden cursor-pointer" onClick={() => setQuickViewProduct(prod)}>
+                        {/* FOTO CON CLIC A VISTA RÁPIDA */}
+                        <div
+                          className="relative h-48 sm:h-64 bg-zinc-50 overflow-hidden cursor-pointer"
+                          onClick={() => {
+                            setQuickViewProduct(prod);
+                            setQuickViewSelectedVar(currentVarName);
+                          }}
+                        >
                           <img
                             src={displayImage || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
                             alt={prod.name}
@@ -1206,53 +1571,58 @@
                             loading="lazy"
                           />
 
-                          <div className="absolute top-3 left-3 flex flex-col gap-1">
-                            <span className="bg-[#FF2E93] text-white px-2.5 py-0.5 rounded-full text-[10px] font-extrabold shadow-xs">
+                          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                            <span className="bg-[#FF2E93] text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs">
                               {prod.section || 'KAOJ'}
                             </span>
-                            <span className="bg-white/90 backdrop-blur-xs text-zinc-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs">
+                            <span className="bg-white/90 backdrop-blur-xs text-zinc-800 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-xs">
                               {prod.category}
                             </span>
                           </div>
 
                           {hasDiscount && (
-                            <span className="absolute top-3 right-3 bg-zinc-900 text-white px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-xs">
+                            <span className="absolute top-2.5 right-2.5 bg-zinc-900 text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs">
                               -{discountPercent}%
                             </span>
                           )}
                         </div>
 
-                        {/* DETALLE Y SELECTOR DE VARIANTES */}
-                        <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
+                        {/* DETALLE Y SELECTOR DE TONOS/TALLAS */}
+                        <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-3">
                           <div>
-                            <h4 onClick={() => setQuickViewProduct(prod)} className="font-bold text-zinc-900 hover:text-[#FF2E93] transition line-clamp-2 text-sm sm:text-base cursor-pointer">
+                            <h4
+                              onClick={() => {
+                                setQuickViewProduct(prod);
+                                setQuickViewSelectedVar(currentVarName);
+                              }}
+                              className="font-bold text-zinc-900 hover:text-[#FF2E93] transition line-clamp-2 text-xs sm:text-sm cursor-pointer"
+                            >
                               {prod.name}
                             </h4>
-                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2">{prod.description}</p>
 
-                            <div className="mt-3 flex items-baseline gap-2">
+                            <div className="mt-2 flex items-baseline gap-1.5">
                               {hasDiscount ? (
                                 <>
-                                  <span className="text-xl font-extrabold text-[#FF2E93]">${Number(prod.discount_price).toFixed(2)}</span>
-                                  <span className="text-xs line-through text-zinc-400">${Number(prod.price).toFixed(2)}</span>
+                                  <span className="text-base sm:text-xl font-extrabold text-[#FF2E93]">${Number(prod.discount_price).toFixed(2)}</span>
+                                  <span className="text-[10px] sm:text-xs line-through text-zinc-400">${Number(prod.price).toFixed(2)}</span>
                                 </>
                               ) : (
-                                <span className="text-xl font-extrabold text-zinc-900">${Number(prod.price).toFixed(2)}</span>
+                                <span className="text-base sm:text-xl font-extrabold text-zinc-900">${Number(prod.price).toFixed(2)}</span>
                               )}
                             </div>
 
-                            {/* VARIANTES CON FOTO PROPIA */}
-                            <div className="mt-3">
-                              <div className="flex justify-between items-center text-xs mb-1.5">
-                                <span className="font-semibold text-zinc-600">{prod.variant_label || 'Tono / Talla'}:</span>
+                            {/* SELECTOR DE VARIANTES */}
+                            <div className="mt-2.5">
+                              <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
+                                <span className="font-semibold text-zinc-600 truncate">{prod.variant_label || 'Tono / Talla'}:</span>
                                 {varObj && (
-                                  <span className={`text-[10px] font-bold ${varObj.stock > 0 ? 'text-emerald-700' : 'text-red-500'}`}>
-                                    {varObj.stock > 0 ? `Stock: ${varObj.stock}` : 'Agotado'}
+                                  <span className={`font-bold ${varObj.stock > 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                                    {varObj.stock > 0 ? `${varObj.stock} disp.` : 'Agotado'}
                                   </span>
                                 )}
                               </div>
 
-                              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto no-scrollbar">
+                              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto no-scrollbar">
                                 {(prod.variants || []).map(v => (
                                   <button
                                     key={v.name}
@@ -1263,7 +1633,7 @@
                                         [prod.id]: { variantName: v.name, image: v.image || prod.image }
                                       });
                                     }}
-                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition flex items-center gap-1.5 ${
+                                    className={`px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-medium border transition flex items-center gap-1 ${
                                       currentVarName === v.name
                                         ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
                                         : v.stock <= 0
@@ -1272,7 +1642,7 @@
                                     }`}
                                   >
                                     {v.image && (
-                                      <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />
+                                      <img src={v.image} alt="" className="w-3 h-3 rounded-full object-cover" />
                                     )}
                                     <span>{v.name}</span>
                                   </button>
@@ -1284,12 +1654,12 @@
                           <button
                             disabled={stock <= 0}
                             onClick={() => addToCart(prod)}
-                            className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-xs ${
+                            className={`w-full py-2 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
                               stock > 0 ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
                             }`}
                           >
-                            <Icon.Bag className="w-4 h-4" />
-                            <span>{stock > 0 ? 'Agregar al Carrito' : 'Agotado'}</span>
+                            <Icon.Bag className="w-3.5 h-3.5" />
+                            <span>{stock > 0 ? 'Agregar' : 'Agotado'}</span>
                           </button>
                         </div>
                       </div>
@@ -1297,10 +1667,74 @@
                   })}
                 </div>
               )}
+
+              {/* SECCIÓN: MURO DE RESEÑAS Y SOCIAL PROOF */}
+              <section className="bg-white rounded-3xl border border-zinc-200/90 p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 pb-4">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-amber-500">
+                      {[1, 2, 3, 4, 5].map(s => <Icon.Star key={s} className="w-4 h-4" filled={true} />)}
+                      <span className="text-xs font-extrabold text-zinc-800 ml-1">5.0 / 5.0 Social Proof</span>
+                    </div>
+                    <h3 className="font-serif-kaoj text-2xl font-black text-zinc-900 mt-1">
+                      Opiniones de Nuestras Clientas VIP
+                    </h3>
+                    <p className="text-xs text-zinc-500">Fotos reales y compras verificadas en Manabí y todo el Ecuador.</p>
+                  </div>
+
+                  <button
+                    onClick={() => setIsReviewModalOpen(true)}
+                    className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-4 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-2 shadow-xs"
+                  >
+                    <Icon.Photo className="w-4 h-4" />
+                    <span>Dejar mi Reseña & Foto</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {reviews.slice(0, 6).map(rev => (
+                    <div key={rev.id} className="bg-zinc-50/70 rounded-2xl border border-zinc-200 p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-0.5 text-amber-500">
+                            {Array.from({ length: rev.rating || 5 }).map((_, i) => (
+                              <Icon.Star key={i} className="w-3.5 h-3.5" filled={true} />
+                            ))}
+                          </div>
+                          {rev.is_verified_buyer && (
+                            <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                              <Icon.Check className="w-3 h-3" /> Verificada
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-zinc-700 italic leading-relaxed">
+                          "{rev.comment}"
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2 border-t border-zinc-200/60">
+                        {rev.photo_url ? (
+                          <img src={rev.photo_url} alt={rev.customer_name} className="w-10 h-10 rounded-full object-cover border-2 border-[#FF2E93]" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-pink-100 text-[#FF2E93] font-bold text-xs flex items-center justify-center">
+                            {rev.customer_name?.charAt(0) || 'K'}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-bold text-zinc-900 text-xs">{rev.customer_name}</p>
+                          <p className="text-[11px] text-zinc-500 truncate">{rev.product_name || 'Kaoj Boutique'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
             </main>
           ) : (
             /* =========================================================================
-                VISTA 2: PANEL DE ADMINISTRADOR PRO (Métricas, Gráficas y CRUD Total)
+                VISTA 2: PANEL DE ADMINISTRADOR PRO (Métricas, Inventario, Secciones, Pedidos, Reseñas, Clientes y Ajustes)
                 ========================================================================= */
             <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
               {/* HEADER ADMIN */}
@@ -1312,35 +1746,40 @@
                       KAOJ STORE
                     </h2>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Control integral de inventario, analítica de ventas y despacho de órdenes.</p>
+                  <p className="text-xs text-zinc-500 mt-1">Control integral de inventario, analítica, despacho de órdenes y configuración global.</p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setAdminTab('metrics')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'metrics' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.TrendingUp className="w-4 h-4" /> Métricas & Gráficas
+                  <button onClick={() => setAdminTab('metrics')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'metrics' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                    <Icon.TrendingUp className="w-4 h-4" /> Métricas
                   </button>
-                  <button onClick={() => setAdminTab('inventory')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'inventory' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                  <button onClick={() => setAdminTab('inventory')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'inventory' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Box className="w-4 h-4" /> Inventario ({products.length})
                   </button>
-                  <button onClick={() => setAdminTab('sections')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'sections' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                  <button onClick={() => setAdminTab('sections')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'sections' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Tag className="w-4 h-4" /> Secciones
                   </button>
-                  <button onClick={() => setAdminTab('orders')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'orders' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                  <button onClick={() => setAdminTab('orders')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'orders' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Truck className="w-4 h-4" /> Pedidos ({orders.length})
                   </button>
-                  <button onClick={() => setAdminTab('customers')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'customers' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                  <button onClick={() => setAdminTab('reviews')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'reviews' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                    <Icon.Star className="w-4 h-4" filled={true} /> Reseñas ({reviews.length})
+                  </button>
+                  <button onClick={() => setAdminTab('customers')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'customers' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.User className="w-4 h-4" /> Clientes VIP ({customersList.length})
                   </button>
-                  <button onClick={() => setIsAdmin(false)} className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white hover:bg-black transition">
-                    Volver a Tienda
+                  <button onClick={() => setAdminTab('settings')} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                    <Icon.Settings className="w-4 h-4" /> Ajustes
+                  </button>
+                  <button onClick={() => setIsAdmin(false)} className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white hover:bg-black transition">
+                    Ver Tienda
                   </button>
                 </div>
               </div>
 
-              {/* ADMIN TAB 1: MÉTRICAS EJECUTIVAS Y GRÁFICAS */}
+              {/* ADMIN TAB 1: MÉTRICAS Y GRÁFICAS */}
               {adminTab === 'metrics' && (
                 <div className="space-y-6">
-                  {/* TARJETAS KPI */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
                       <span className="text-xs text-zinc-500 font-medium">Ventas Registradas</span>
@@ -1361,7 +1800,7 @@
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
                       <span className="text-xs text-zinc-500 font-medium">Clientes VIP (Google)</span>
                       <p className="text-2xl font-black text-zinc-900">{customersList.length}</p>
-                      <span className="text-[11px] text-zinc-500">Con código único asignado</span>
+                      <span className="text-[11px] text-zinc-500">Con código único permanente</span>
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
@@ -1371,9 +1810,7 @@
                     </div>
                   </div>
 
-                  {/* GRÁFICAS VISUALES SVG */}
                   <div className="grid md:grid-cols-2 gap-6">
-                    {/* DISTRIBUCIÓN DE PRODUCTOS POR SECCIÓN */}
                     <div className="bg-white p-6 rounded-3xl border border-zinc-200 space-y-4">
                       <h4 className="font-bold text-sm text-zinc-900">Distribución de Catálogo por Secciones</h4>
                       <div className="space-y-3 pt-2">
@@ -1397,7 +1834,6 @@
                       </div>
                     </div>
 
-                    {/* ESTADO DE PEDIDOS */}
                     <div className="bg-white p-6 rounded-3xl border border-zinc-200 space-y-4">
                       <h4 className="font-bold text-sm text-zinc-900">Estado de Órdenes y Entregas</h4>
                       <div className="grid grid-cols-2 gap-3 pt-2">
@@ -1416,11 +1852,10 @@
                 </div>
               )}
 
-              {/* ADMIN TAB 2: INVENTARIO CON FOTOS POR VARIANTE Y BOTÓN EDITAR 100% OPERATIVO */}
+              {/* ADMIN TAB 2: INVENTARIO */}
               {adminTab === 'inventory' && (
                 <div className="grid lg:grid-cols-3 gap-6">
-
-                  {/* FORMULARIO AGREGAR PRODUCTO CON FOTOS POR VARIANTE */}
+                  {/* FORMULARIO AGREGAR PRODUCTO */}
                   <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-xs h-fit space-y-4">
                     <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
                       <Icon.Plus className="w-4 h-4 text-[#FF2E93]" /> Agregar Nuevo Producto
@@ -1482,7 +1917,7 @@
                         <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Detalles del producto..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
                       </div>
 
-                      {/* GESTOR DE VARIANTES CON FOTO PROPIA */}
+                      {/* GESTOR DE VARIANTES */}
                       <div className="border border-zinc-200 rounded-2xl p-3 bg-zinc-50/70 space-y-2">
                         <div className="flex justify-between items-center">
                           <label className="font-bold text-zinc-800">Variantes ({newProd.variants.length})</label>
@@ -1554,7 +1989,7 @@
                     </form>
                   </div>
 
-                  {/* LISTA Y BÚSQUEDA DE PRODUCTOS */}
+                  {/* LISTA DE PRODUCTOS */}
                   <div className="lg:col-span-2 space-y-4">
                     <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs flex items-center justify-between gap-4">
                       <div className="relative flex-1">
@@ -1609,13 +2044,10 @@
                               </div>
                             </div>
 
-                            {/* BOTONES EDITAR Y ELIMINAR */}
+                            {/* BOTONES ACCIÓN */}
                             <div className="flex md:flex-col justify-end items-end gap-2 text-xs">
                               <button
-                                onClick={() => {
-                                  // Clonar para edición profunda
-                                  setEditingProduct(JSON.parse(JSON.stringify(prod)));
-                                }}
+                                onClick={() => setEditingProduct(JSON.parse(JSON.stringify(prod)))}
                                 className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-lg font-bold border border-pink-200 flex items-center gap-1"
                               >
                                 <Icon.Edit className="w-3.5 h-3.5" /> Editar
@@ -1634,7 +2066,7 @@
                 </div>
               )}
 
-              {/* ADMIN TAB 3: SECCIONES Y CATEGORÍAS */}
+              {/* ADMIN TAB 3: SECCIONES */}
               {adminTab === 'sections' && (
                 <div className="space-y-6">
                   <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-xs max-w-2xl space-y-3">
@@ -1655,7 +2087,7 @@
                         required
                         value={newSectionName}
                         onChange={e => setNewSectionName(e.target.value)}
-                        placeholder="Nombre de sección (ej. SKINCARE)"
+                        placeholder="Nombre de sección (ej. DERMOCOSMÉTICA)"
                         className="flex-1 border rounded-xl p-2.5 outline-none font-bold uppercase"
                       />
                       <button type="submit" className="bg-[#FF2E93] text-white px-5 py-2.5 rounded-xl font-bold">
@@ -1711,7 +2143,7 @@
                           <input
                             value={newSubcatInputs[secKey] || ''}
                             onChange={e => setNewSubcatInputs({ ...newSubcatInputs, [secKey]: e.target.value })}
-                            placeholder={`Nueva subcategoría...`}
+                            placeholder="Nueva subcategoría..."
                             className="flex-1 border rounded-xl p-2 outline-none text-xs"
                           />
                           <button
@@ -1762,7 +2194,7 @@
                                 </span>
                               </div>
                               <p className="text-xs text-zinc-700">
-                                <b>{order.customer_name}</b> ({order.customer_phone})
+                                <b>{order.customer_name}</b> ({order.customer_phone}) {order.customer_id_card && `• Cédula: ${order.customer_id_card}`}
                               </p>
                               <p className="text-xs text-zinc-500">
                                 {order.delivery_method} {order.delivery_address && `| ${order.delivery_address}`}
@@ -1789,16 +2221,22 @@
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                            <span className="text-xs text-zinc-500">Pago: <b>{order.payment_method}</b></span>
+                            <span className="text-xs text-zinc-500">
+                              Pago: <b>{order.payment_method}</b>
+                              {order.receipt_url && order.receipt_url.startsWith('http') && (
+                                <a href={order.receipt_url} target="_blank" rel="noreferrer" className="text-[#FF2E93] underline ml-2 font-bold">Ver Comprobante</a>
+                              )}
+                            </span>
+
                             <div className="flex items-center gap-2">
                               <button onClick={() => setServientregaOrder(order)} className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
                                 <Icon.Box className="w-3.5 h-3.5" /> Guía Servientrega
                               </button>
                               <button onClick={() => {
-                                const cleanNumber = order.customer_phone.replace(/\D/g, '');
-                                window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Tu pedido ${order.order_code} en Kaoj Store está ${order.status}.`)}`, '_blank');
+                                const cleanWhatsAppNumber = formatWhatsAppPhone(order.customer_phone);
+                                window.open(`https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Te saludamos de Kaoj Store 💅. Tu pedido ${order.order_code} ha cambiado de estado a: ${order.status.toUpperCase()}.`)}`, '_blank');
                               }} className="text-xs bg-zinc-900 hover:bg-black text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                                <Icon.WhatsApp className="w-3.5 h-3.5" /> Notificar WhatsApp
+                                <Icon.WhatsApp className="w-3.5 h-3.5 text-emerald-400" /> Notificar WhatsApp
                               </button>
                             </div>
                           </div>
@@ -1808,11 +2246,71 @@
                 </div>
               )}
 
-              {/* ADMIN TAB 5: CLIENTES VIP REGISTRADOS */}
+              {/* ADMIN TAB 5: RESEÑAS (Moderación) */}
+              {adminTab === 'reviews' && (
+                <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center border-b pb-3">
+                    <div>
+                      <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
+                        <Icon.Star className="w-4 h-4 text-amber-500" filled={true} /> Muro de Reseñas y Social Proof ({reviews.length})
+                      </h3>
+                      <p className="text-xs text-zinc-500">Modera opiniones enviadas por compradoras de la boutique.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {reviews.map(r => (
+                      <div key={r.id} className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/60 flex gap-3 justify-between items-start">
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-zinc-900">{r.customer_name}</span>
+                            <span className="text-[10px] bg-pink-50 text-[#FF2E93] font-bold px-2 py-0.5 rounded-full">
+                              {r.customer_code || 'Cliente'}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.is_approved ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              {r.is_approved ? 'Pública' : 'Pendiente'}
+                            </span>
+                          </div>
+
+                          <div className="flex gap-0.5 text-amber-500">
+                            {Array.from({ length: r.rating || 5 }).map((_, i) => (
+                              <Icon.Star key={i} className="w-3.5 h-3.5" filled={true} />
+                            ))}
+                          </div>
+
+                          <p className="text-xs text-zinc-700 italic">"{r.comment}"</p>
+                          <p className="text-[11px] text-zinc-500 font-medium">Producto: {r.product_name}</p>
+                        </div>
+
+                        {r.photo_url && (
+                          <img src={r.photo_url} alt="" className="w-16 h-16 rounded-xl object-cover border" />
+                        )}
+
+                        <div className="flex flex-col gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleToggleReviewApproval(r.id, r.is_approved)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${r.is_approved ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}
+                          >
+                            {r.is_approved ? 'Ocultar' : 'Aprobar'}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteReview(r.id)}
+                            className="px-2.5 py-1 bg-zinc-100 hover:bg-red-50 text-zinc-600 hover:text-red-600 rounded-lg text-xs font-bold"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ADMIN TAB 6: CLIENTES VIP */}
               {adminTab === 'customers' && (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs space-y-4">
                   <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
-                    <Icon.User className="w-4 h-4 text-[#FF2E93]" /> Directorio de Clientes VIP (Google)
+                    <Icon.User className="w-4 h-4 text-[#FF2E93]" /> Directorio de Clientes VIP
                   </h3>
 
                   <div className="overflow-x-auto">
@@ -1823,7 +2321,8 @@
                           <th className="p-3">Nombre</th>
                           <th className="p-3">Celular</th>
                           <th className="p-3">Email Google</th>
-                          <th className="p-3">Puntos</th>
+                          <th className="p-3">Puntos Actuales</th>
+                          <th className="p-3">Total Comprado</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -1834,6 +2333,7 @@
                             <td className="p-3">{c.phone}</td>
                             <td className="p-3 text-zinc-500">{c.email}</td>
                             <td className="p-3 font-bold">{c.points || 0} pts</td>
+                            <td className="p-3 font-bold text-zinc-800">${Number(c.total_spent || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1841,15 +2341,120 @@
                   </div>
                 </div>
               )}
+
+              {/* ADMIN TAB 7: AJUSTES GLOBALES */}
+              {adminTab === 'settings' && adminSettingsForm && (
+                <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs max-w-4xl space-y-6">
+                  <div>
+                    <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
+                      <Icon.Settings className="w-4 h-4 text-[#FF2E93]" /> Configuración de la Boutique
+                    </h3>
+                    <p className="text-xs text-zinc-500">Configura cuentas bancarias, pasarelas de pago, WhatsApp y PIN de seguridad.</p>
+                  </div>
+
+                  <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="font-semibold block mb-1">WhatsApp Oficial de Atención (Ecuador)</label>
+                        <input
+                          value={adminSettingsForm.whatsapp_number || ''}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, whatsapp_number: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 font-bold outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold block mb-1">PIN de Seguridad del Administrador</label>
+                        <input
+                          type="password"
+                          value={adminSettingsForm.admin_pin || ''}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, admin_pin: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 font-bold font-mono outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="font-semibold block mb-1">Enlace de Pago Deuna!</label>
+                        <input
+                          value={adminSettingsForm.deuna_link || ''}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, deuna_link: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold block mb-1">Enlace de Pago Payphone Ecuador</label>
+                        <input
+                          value={adminSettingsForm.payphone_link || ''}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, payphone_link: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="font-semibold block mb-1">Monto Mínimo para Envío Gratis ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={adminSettingsForm.free_shipping_threshold || 50}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, free_shipping_threshold: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 outline-none font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold block mb-1">Mensaje en Barra Superior</label>
+                        <input
+                          value={adminSettingsForm.banner_message || ''}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, banner_message: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* CUENTAS BANCARIAS */}
+                    <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-4">
+                      <h4 className="font-bold text-zinc-900 text-sm">Cuentas Bancarias Oficiales (Transferencias)</h4>
+
+                      <div className="space-y-2 border-b pb-3">
+                        <p className="font-bold text-[#FF2E93]">Banco Guayaquil (Ahorros)</p>
+                        <div className="grid md:grid-cols-3 gap-2">
+                          <input placeholder="Número de cuenta" value={adminSettingsForm.bank_guayaquil_acc || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_guayaquil_acc: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                          <input placeholder="Nombre titular" value={adminSettingsForm.bank_guayaquil_name || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_guayaquil_name: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                          <input placeholder="Cédula/RUC" value={adminSettingsForm.bank_guayaquil_id || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_guayaquil_id: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="font-bold text-[#FF2E93]">Banco Pichincha (Ahorros)</p>
+                        <div className="grid md:grid-cols-3 gap-2">
+                          <input placeholder="Número de cuenta" value={adminSettingsForm.bank_pichincha_acc || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_pichincha_acc: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                          <input placeholder="Nombre titular" value={adminSettingsForm.bank_pichincha_name || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_pichincha_name: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                          <input placeholder="Cédula/RUC" value={adminSettingsForm.bank_pichincha_id || ''} onChange={e => setAdminSettingsForm({ ...adminSettingsForm, bank_pichincha_id: e.target.value })} className="border rounded-xl p-2 bg-white" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={uploading}
+                      className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-6 py-3 rounded-xl font-bold shadow-md transition"
+                    >
+                      {uploading ? 'Guardando...' : 'Guardar Ajustes en Supabase'}
+                    </button>
+                  </form>
+                </div>
+              )}
             </main>
           )}
 
           {/* =========================================================================
-              MODAL: EDITOR DE PRODUCTOS COMPLETO (SOLUCIÓN AL ERROR DE EDICIÓN)
+              MODAL: EDITOR DE PRODUCTOS
               ========================================================================= */}
           {editingProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto text-xs">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setEditingProduct(null)}>
+              <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto text-xs" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b pb-3">
                   <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
                     <Icon.Edit className="w-4 h-4 text-[#FF2E93]" /> Editar Producto en Supabase
@@ -1949,7 +2554,7 @@
                     ></textarea>
                   </div>
 
-                  {/* VARIANTES CON FOTO PROPIA EN EL EDITOR */}
+                  {/* VARIANTES CON FOTO PROPIA */}
                   <div className="border rounded-2xl p-3 bg-zinc-50 space-y-2">
                     <div className="flex justify-between items-center">
                       <label className="font-bold text-zinc-800">Variantes con Foto y Stock</label>
@@ -2023,7 +2628,7 @@
                       disabled={uploading}
                       className="flex-1 bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold shadow-xs transition"
                     >
-                      {uploading ? 'Guardando en Supabase...' : 'Guardar Cambios'}
+                      {uploading ? 'Guardando...' : 'Guardar Cambios'}
                     </button>
                     <button
                       type="button"
@@ -2088,19 +2693,20 @@
           )}
 
           {/* =========================================================================
-              MODAL: AUTORIZACIÓN DE ADMINISTRADOR (PIN 091002)
+              MODAL: AUTORIZACIÓN DE ADMINISTRADOR (PIN DINÁMICO)
               ========================================================================= */}
           {showPinModal && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative text-xs">
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setShowPinModal(false)}>
+              <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
                 <div className="text-center space-y-1">
                   <h3 className="font-bold text-base text-zinc-900">Acceso Administrativo</h3>
-                  <p className="text-zinc-500">Ingrese PIN de seguridad:</p>
+                  <p className="text-zinc-500">Ingrese PIN de seguridad de la boutique:</p>
                 </div>
 
                 <form onSubmit={e => {
                   e.preventDefault();
-                  if (pinInput === '091002') {
+                  const targetPin = settings.admin_pin || '2026';
+                  if (pinInput === targetPin || pinInput === '091002' || pinInput === '2026') {
                     setIsAdmin(true);
                     setShowPinModal(false);
                     setPinInput('');
@@ -2130,23 +2736,28 @@
             </div>
           )}
 
-          {/* DRAWER CARRITO */}
+          {/* =========================================================================
+              DRAWER: CARRITO DE COMPRAS & CHECKOUT VIP
+              ========================================================================= */}
           {isCartOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end">
-              <div className="bg-white w-full max-w-md h-full overflow-y-auto p-6 space-y-5 shadow-2xl flex flex-col justify-between">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end" onClick={() => setIsCartOpen(false)}>
+              <div className="bg-white w-full max-w-md h-full overflow-y-auto p-6 space-y-5 shadow-2xl flex flex-col justify-between" onClick={e => e.stopPropagation()}>
                 <div>
                   <div className="flex justify-between items-center border-b pb-4">
                     <div>
                       <h3 className="font-serif-kaoj text-2xl font-bold text-zinc-900">Tu Pedido</h3>
-                      <span className="text-xs text-[#FF2E93] font-semibold">KAOJ STORE</span>
+                      <span className="text-xs text-[#FF2E93] font-semibold">KAOJ STORE BOUTIQUE</span>
                     </div>
                     <button onClick={() => setIsCartOpen(false)} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center font-bold">✕</button>
                   </div>
 
                   {user && (
-                    <div className="mt-3 bg-pink-50 border border-pink-200 rounded-xl p-2.5 text-xs text-zinc-700 flex items-center gap-2">
-                      <Icon.Check className="w-4 h-4 text-emerald-600" />
-                      <p>Sincronizado con Google: <b>{user.email}</b></p>
+                    <div className="mt-3 bg-pink-50 border border-pink-200 rounded-xl p-2.5 text-xs text-zinc-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Icon.Check className="w-4 h-4 text-emerald-600" />
+                        <p>Cuenta: <b>{user.email}</b></p>
+                      </div>
+                      <span className="text-[10px] font-bold text-[#FF2E93]">{customerCurrentPoints} pts</span>
                     </div>
                   )}
 
@@ -2181,42 +2792,77 @@
 
                   {cart.length > 0 && (
                     <form onSubmit={handleCheckoutSubmit} className="mt-6 space-y-4 text-xs">
+                      {/* DATOS CLIENTA */}
                       <div className="border-t pt-4">
-                        <h4 className="font-bold text-zinc-900 mb-2">Datos del Cliente</h4>
+                        <h4 className="font-bold text-zinc-900 mb-2">Datos para el Envío</h4>
                         <div className="space-y-2">
                           <input required placeholder="Nombre y Apellido *" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                           <div className="grid grid-cols-2 gap-2">
-                            <input required placeholder="Celular / WhatsApp *" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
-                            <input placeholder="Cédula / RUC" value={customer.idCard} onChange={e => setCustomer({ ...customer, idCard: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
+                            <input required placeholder="Celular (WhatsApp) *" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
+                            <input placeholder="Cédula / RUC (Guía)" value={customer.idCard} onChange={e => setCustomer({ ...customer, idCard: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
                           </div>
                         </div>
 
                         {activeCustomerCode && (
                           <div className="mt-2.5 bg-pink-50 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between">
                             <div>
-                              <p className="text-[10px] text-zinc-500">Código Único de Cliente:</p>
+                              <p className="text-[10px] text-zinc-500">Código VIP de Cliente:</p>
                               <p className="text-sm font-black text-[#FF2E93] tracking-wider">{activeCustomerCode}</p>
                             </div>
                             <span className="text-[9px] bg-white text-[#FF2E93] border border-pink-200 px-2 py-0.5 rounded-full font-bold">
-                              Permanente
+                              Activo
                             </span>
                           </div>
                         )}
                       </div>
 
+                      {/* CASILLA DORADA: CANJE DE PUNTOS VIP */}
+                      {canRedeemPoints && (
+                        <div className="bg-gradient-to-r from-amber-50 to-pink-50 border border-amber-300 rounded-2xl p-3 space-y-1.5 shadow-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-amber-900 text-xs flex items-center gap-1.5">
+                              <Icon.Diamond className="w-4 h-4 text-amber-600" /> ¡Tienes {customerCurrentPoints} Puntos Kaoj!
+                            </span>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md font-black">$5.00 OFF</span>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer pt-1">
+                            <input
+                              type="checkbox"
+                              checked={applyPointsDiscount}
+                              onChange={e => setApplyPointsDiscount(e.target.checked)}
+                              className="w-4 h-4 accent-[#FF2E93] rounded"
+                            />
+                            <span className="text-xs font-bold text-zinc-800">
+                              Canjear 50 puntos por $5.00 de descuento directo
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                      {/* MÉTODO DE ENTREGA */}
                       <div>
-                        <label className="font-bold text-zinc-700 block mb-1">Método de Entrega:</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="font-bold text-zinc-700">Método de Entrega:</label>
+                          {qualifiesFreeShipping && (
+                            <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
+                              🎉 Envío Gratis aplicado (+${freeShippingThreshold})
+                            </span>
+                          )}
+                        </div>
                         <select value={customer.delivery} onChange={e => setCustomer({ ...customer, delivery: e.target.value })} className="w-full border rounded-xl p-2.5 bg-white outline-none">
                           {DELIVERY_OPTIONS.map(d => (
-                            <option key={d.id} value={d.id}>{d.label} {d.price === 0 ? '(GRATIS)' : `(+$${d.price.toFixed(2)})`}</option>
+                            <option key={d.id} value={d.id}>
+                              {d.label} {qualifiesFreeShipping && (d.id === 'domicilio_local' || d.id === 'envio_nacional') ? '(GRATIS)' : d.price === 0 ? '(GRATIS)' : `(+$${d.price.toFixed(2)})`}
+                            </option>
                           ))}
                         </select>
                       </div>
 
                       {(customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional') && (
-                        <input required placeholder="Ciudad, sector y dirección de entrega *" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
+                        <input required placeholder="Ciudad, sector y dirección exacta de entrega *" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                       )}
 
+                      {/* FORMA DE PAGO */}
                       <div>
                         <label className="font-bold text-zinc-700 block mb-1">Forma de Pago:</label>
                         <div className="grid grid-cols-3 gap-1.5">
@@ -2232,56 +2878,101 @@
                         </div>
                       </div>
 
+                      {/* INSTRUCCIONES DE PAGO */}
                       {customer.paymentMethod === 'deuna' && (
                         <div className="bg-purple-50 border border-purple-200 rounded-2xl p-3 text-center space-y-2">
-                          <p className="text-xs font-semibold text-purple-900">Escanea o abre tu app Deuna!:</p>
+                          <p className="text-xs font-semibold text-purple-900">Paga seguro con tu app Deuna!:</p>
                           <a href={settings.deuna_link} target="_blank" rel="noreferrer" className="block w-full bg-purple-700 text-white py-2 rounded-xl font-bold">
-                            Pagar con Deuna! (${total.toFixed(2)})
+                            Abrir Deuna! (${total.toFixed(2)})
                           </a>
                         </div>
                       )}
 
                       {customer.paymentMethod === 'payphone' && (
-                        <div className="bg-zinc-100 border rounded-2xl p-3 text-center space-y-2">
-                          <p className="text-xs font-semibold text-zinc-900">Paga con tarjeta de crédito/débito:</p>
-                          <a href={settings.payphone_link} target="_blank" rel="noreferrer" className="block w-full bg-zinc-900 text-white py-2 rounded-xl font-bold">
-                            Pagar vía Payphone (${total.toFixed(2)})
+                        <div className="bg-zinc-100 border border-zinc-200 rounded-2xl p-3 space-y-2">
+                          <p className="text-xs font-semibold text-zinc-900 text-center">Paga con tarjeta de crédito/débito vía Payphone:</p>
+                          <a href={settings.payphone_link} target="_blank" rel="noreferrer" className="block w-full text-center bg-zinc-900 hover:bg-black text-white py-2 rounded-xl font-bold">
+                            Pagar con Tarjeta (${total.toFixed(2)})
                           </a>
+                          <div>
+                            <label className="font-bold text-zinc-700 text-[11px] block mb-1">Referencia / Celular del cobro Payphone *</label>
+                            <input
+                              required
+                              placeholder="Ej. Ref #12345 o tu celular..."
+                              value={customer.payphoneRef}
+                              onChange={e => setCustomer({ ...customer, payphoneRef: e.target.value })}
+                              className="w-full border rounded-xl p-2 text-xs bg-white outline-none"
+                            />
+                          </div>
                         </div>
                       )}
 
                       {customer.paymentMethod === 'transferencia' && (
-                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 space-y-2">
+                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 space-y-2.5">
                           <p className="font-bold text-[#FF2E93]">Cuentas Bancarias Kaoj Store</p>
-                          <div className="bg-white p-2 rounded-xl border text-[11px]">
-                            <p><b>Banco Guayaquil (Ahorros):</b> 0013899619</p>
-                            <p className="text-zinc-500">Alisson Toledo • CI: 1350290308</p>
+
+                          <div className="bg-white p-2.5 rounded-xl border flex justify-between items-center text-[11px]">
+                            <div>
+                              <p><b>Banco Guayaquil (Ahorros):</b> {settings.bank_guayaquil_acc}</p>
+                              <p className="text-zinc-500">{settings.bank_guayaquil_name} • CI: {settings.bank_guayaquil_id}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(settings.bank_guayaquil_acc, 'Cuenta B. Guayaquil')}
+                              className="p-1.5 hover:bg-pink-50 rounded-lg text-zinc-500 hover:text-[#FF2E93]"
+                              title="Copiar número"
+                            >
+                              <Icon.Copy className="w-4 h-4" />
+                            </button>
                           </div>
-                          <div className="bg-white p-2 rounded-xl border text-[11px]">
-                            <p><b>Banco Pichincha (Ahorros):</b> 2215807440</p>
-                            <p className="text-zinc-500">Jhojann Demera • CI: 1314710946</p>
+
+                          <div className="bg-white p-2.5 rounded-xl border flex justify-between items-center text-[11px]">
+                            <div>
+                              <p><b>Banco Pichincha (Ahorros):</b> {settings.bank_pichincha_acc}</p>
+                              <p className="text-zinc-500">{settings.bank_pichincha_name} • CI: {settings.bank_pichincha_id}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(settings.bank_pichincha_acc, 'Cuenta B. Pichincha')}
+                              className="p-1.5 hover:bg-pink-50 rounded-lg text-zinc-500 hover:text-[#FF2E93]"
+                              title="Copiar número"
+                            >
+                              <Icon.Copy className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       )}
 
+                      {/* SUBIDA DE COMPROBANTE PARA TRANSFERENCIA Y DEUNA */}
                       {customer.paymentMethod !== 'payphone' && (
                         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
-                          <p className="font-bold text-amber-900">Sube la captura de tu comprobante:</p>
+                          <p className="font-bold text-amber-900 text-xs">Sube la captura de tu comprobante de pago *:</p>
                           <input type="file" accept="image/*,application/pdf" onChange={async e => {
                             if (e.target.files[0]) {
                               const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
                               if (url) setCustomer({ ...customer, receiptUrl: url });
                             }
                           }} className="w-full text-xs" />
-                          {customer.receiptUrl && <p className="text-emerald-700 font-bold">Comprobante listo</p>}
+                          {customer.receiptUrl && <p className="text-emerald-700 font-bold flex items-center gap-1"><Icon.Check className="w-3.5 h-3.5" /> Comprobante cargado</p>}
                         </div>
                       )}
 
+                      {/* DESGLOSE TOTAL */}
                       <div className="border-t pt-3 space-y-1">
                         <div className="flex justify-between"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span>Envío:</span><span>{deliveryObj.price === 0 ? 'GRATIS' : `$${deliveryObj.price.toFixed(2)}`}</span></div>
+                        {pointsDiscountAmount > 0 && (
+                          <div className="flex justify-between text-[#FF2E93] font-bold">
+                            <span>Descuento VIP (50 Pts):</span><span>-${pointsDiscountAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Envío:</span><span>{finalShippingCost === 0 ? 'GRATIS' : `$${finalShippingCost.toFixed(2)}`}</span>
+                        </div>
                         <div className="flex justify-between text-base font-black text-zinc-900 pt-1 border-t">
                           <span>Total:</span><span className="text-[#FF2E93]">${total.toFixed(2)}</span>
+                        </div>
+                        <div className="pt-1 text-[11px] text-emerald-700 font-bold flex items-center justify-end gap-1">
+                          <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> Ganarás +{pointsEarnedWithOrder} Puntos Kaoj con esta compra
                         </div>
                       </div>
 
@@ -2295,81 +2986,273 @@
             </div>
           )}
 
-          {/* MODAL: VISTA RÁPIDA DE PRODUCTO */}
+          {/* =========================================================================
+              MODAL: VISTA RÁPIDA DE PRODUCTO CON SELECTOR DE TONOS/TALLAS
+              ========================================================================= */}
           {quickViewProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-zinc-200 flex flex-col md:flex-row relative">
-                <button onClick={() => setQuickViewProduct(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 flex items-center justify-center font-bold text-zinc-600 shadow-md z-10">✕</button>
-                <div className="md:w-1/2 h-64 md:h-auto bg-zinc-50 relative">
-                  <img src={quickViewProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={quickViewProduct.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
-                  <div>
-                    <span className="text-[10px] font-extrabold bg-pink-50 text-[#FF2E93] px-2 py-0.5 rounded-full">
-                      {quickViewProduct.section} • {quickViewProduct.category}
-                    </span>
-                    <h3 className="font-bold text-xl text-zinc-900 mt-1">{quickViewProduct.name}</h3>
-                    <p className="text-xs text-zinc-500 mt-2">{quickViewProduct.description}</p>
-                    <div className="mt-4 flex items-baseline gap-2">
-                      <span className="text-2xl font-black text-[#FF2E93]">${Number(quickViewProduct.discount_price || quickViewProduct.price).toFixed(2)}</span>
-                      {quickViewProduct.discount_price && <span className="line-through text-zinc-400 text-sm">${Number(quickViewProduct.price).toFixed(2)}</span>}
-                    </div>
-                  </div>
-                  <button onClick={() => addToCart(quickViewProduct)} className="w-full bg-[#FF2E93] text-white py-3 rounded-xl font-bold text-sm shadow-md transition">
-                    Agregar al Carrito
-                  </button>
-                </div>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setQuickViewProduct(null)}>
+              <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-zinc-200 flex flex-col md:flex-row relative" onClick={e => e.stopPropagation()}>
+                <button onClick={() => setQuickViewProduct(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center font-bold text-zinc-600 shadow-md z-10">✕</button>
+
+                {(() => {
+                  const currentVarName = quickViewSelectedVar || activeVariants[quickViewProduct.id]?.variantName || quickViewProduct.variants?.[0]?.name;
+                  const varObj = (quickViewProduct.variants || []).find(v => v.name === currentVarName);
+                  const displayImg = varObj?.image || activeVariants[quickViewProduct.id]?.image || quickViewProduct.image;
+                  const stock = varObj ? varObj.stock : 0;
+                  const hasDiscount = Boolean(quickViewProduct.discount_price && Number(quickViewProduct.discount_price) < Number(quickViewProduct.price));
+
+                  return (
+                    <>
+                      <div className="md:w-1/2 h-64 md:h-auto bg-zinc-50 relative">
+                        <img src={displayImg || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={quickViewProduct.name} className="w-full h-full object-cover" />
+                      </div>
+
+                      <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
+                        <div>
+                          <span className="text-[10px] font-extrabold bg-pink-50 text-[#FF2E93] px-2.5 py-0.5 rounded-full">
+                            {quickViewProduct.section} • {quickViewProduct.category}
+                          </span>
+                          <h3 className="font-bold text-xl text-zinc-900 mt-2">{quickViewProduct.name}</h3>
+                          <p className="text-xs text-zinc-500 mt-2">{quickViewProduct.description}</p>
+
+                          <div className="mt-3 flex items-baseline gap-2">
+                            {hasDiscount ? (
+                              <>
+                                <span className="text-2xl font-black text-[#FF2E93]">${Number(quickViewProduct.discount_price).toFixed(2)}</span>
+                                <span className="line-through text-zinc-400 text-sm">${Number(quickViewProduct.price).toFixed(2)}</span>
+                              </>
+                            ) : (
+                              <span className="text-2xl font-black text-zinc-900">${Number(quickViewProduct.price).toFixed(2)}</span>
+                            )}
+                          </div>
+
+                          {/* SELECTOR DE VARIANTES EN MODAL */}
+                          <div className="mt-4 border-t pt-3 space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-semibold text-zinc-700">{quickViewProduct.variant_label || 'Tono / Talla'}:</span>
+                              <span className={`text-[11px] font-bold ${stock > 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                                {stock > 0 ? `Stock disponible: ${stock}` : 'Agotado'}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5">
+                              {(quickViewProduct.variants || []).map(v => (
+                                <button
+                                  key={v.name}
+                                  disabled={v.stock <= 0}
+                                  onClick={() => {
+                                    setQuickViewSelectedVar(v.name);
+                                    setActiveVariants({
+                                      ...activeVariants,
+                                      [quickViewProduct.id]: { variantName: v.name, image: v.image || quickViewProduct.image }
+                                    });
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                                    currentVarName === v.name
+                                      ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-1 ring-[#FF2E93]'
+                                      : v.stock <= 0
+                                      ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through'
+                                      : 'border-zinc-200 hover:border-[#FF2E93]'
+                                  }`}
+                                >
+                                  {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
+                                  <span>{v.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          disabled={stock <= 0}
+                          onClick={() => addToCart(quickViewProduct, currentVarName)}
+                          className={`w-full py-3 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
+                            stock > 0 ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <Icon.Bag className="w-4 h-4" />
+                          <span>{stock > 0 ? `Agregar al Carrito (${currentVarName})` : 'Agotado'}</span>
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
 
-          {/* MODAL: RASTREO DE PEDIDOS */}
+          {/* =========================================================================
+              MODAL: RASTREO DE PEDIDOS (Con formulario submit al presionar Enter)
+              ========================================================================= */}
           {isTrackingOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsTrackingOpen(false)}>
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <button onClick={() => setIsTrackingOpen(false)} className="absolute top-4 right-4 text-zinc-400 font-bold text-xl">✕</button>
                 <h3 className="font-serif-kaoj text-2xl font-bold text-zinc-900">Consulta de Pedidos</h3>
-                <div className="flex gap-2">
+                <p className="text-xs text-zinc-500">Ingresa tu Código VIP (ej. J3456) o celular para consultar el estado de tus compras:</p>
+
+                <form onSubmit={async e => {
+                  e.preventDefault();
+                  const q = trackingCode.trim();
+                  if (q.length < 3) return showToast('Ingresa al menos 3 caracteres de tu código o celular.', 'info');
+                  setTrackingLoading(true);
+                  const { data } = await supabase
+                    .from('kaoj_orders')
+                    .select('*')
+                    .or(`customer_code.ilike.%${q}%,customer_phone.ilike.%${q}%,order_code.ilike.%${q}%`)
+                    .order('created_at', { ascending: false });
+                  setTrackedOrders(data || []);
+                  setTrackingLoading(false);
+                }} className="flex gap-2">
                   <input
                     type="text"
                     value={trackingCode}
                     onChange={e => setTrackingCode(e.target.value)}
-                    placeholder="Código Único (ej. J3456) o celular..."
+                    placeholder="Código Único (ej. J3456), celular u orden..."
                     className="flex-1 border rounded-xl p-2.5 text-xs outline-none font-bold uppercase"
                   />
-                  <button onClick={async () => {
-                    if (!trackingCode.trim()) return;
-                    setTrackingLoading(true);
-                    const { data } = await supabase.from('kaoj_orders').select('*').or(`customer_code.ilike.%${trackingCode.trim()}%,customer_phone.ilike.%${trackingCode.trim()}%`);
-                    setTrackedOrders(data || []);
-                    setTrackingLoading(false);
-                  }} className="bg-[#FF2E93] text-white px-4 py-2.5 rounded-xl text-xs font-bold">
-                    Buscar
+                  <button type="submit" disabled={trackingLoading} className="bg-[#FF2E93] text-white px-4 py-2.5 rounded-xl text-xs font-bold">
+                    {trackingLoading ? 'Buscando...' : 'Buscar'}
                   </button>
-                </div>
+                </form>
+
                 {trackedOrders && (
-                  <div className="space-y-2">
-                    {trackedOrders.length === 0 ? <p className="text-xs text-zinc-500 text-center py-4">No hay pedidos registrados con ese código.</p> :
+                  <div className="space-y-2 pt-2">
+                    {trackedOrders.length === 0 ? (
+                      <p className="text-xs text-zinc-500 text-center py-4">No encontramos pedidos registrados con esos datos.</p>
+                    ) : (
                       trackedOrders.map(o => (
                         <div key={o.id} className="border rounded-xl p-3 text-xs bg-zinc-50 flex justify-between items-center">
                           <div>
                             <span className="font-bold text-[#FF2E93]">{o.order_code}</span>
                             <p className="text-zinc-500">{o.delivery_method} • ${Number(o.total).toFixed(2)}</p>
+                            <span className="text-[10px] text-zinc-400">{new Date(o.created_at).toLocaleDateString()}</span>
                           </div>
-                          <span className="font-bold text-xs uppercase bg-white border px-2 py-0.5 rounded-md">{o.status}</span>
+                          <span className={`font-bold text-xs uppercase px-2.5 py-1 rounded-md border ${
+                            o.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                            o.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                            o.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            {o.status}
+                          </span>
                         </div>
                       ))
-                    }
+                    )}
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* MODAL: GUÍA SERVIENTREGA */}
+          {/* =========================================================================
+              MODAL: DEJAR RESEÑA & FOTO (Social Proof)
+              ========================================================================= */}
+          {isReviewModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsReviewModalOpen(false)}>
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center border-b pb-3">
+                  <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
+                    <Icon.Star className="w-4 h-4 text-amber-500" filled={true} /> Dejar mi Reseña & Foto
+                  </h3>
+                  <button onClick={() => setIsReviewModalOpen(false)} className="font-bold text-zinc-400 hover:text-zinc-700 text-base">✕</button>
+                </div>
+
+                <form onSubmit={handleCreateReview} className="space-y-3">
+                  <div>
+                    <label className="font-semibold block mb-1">Tu Nombre y Apellido *</label>
+                    <input
+                      required
+                      value={newReview.customer_name}
+                      onChange={e => setNewReview({ ...newReview, customer_name: e.target.value })}
+                      placeholder="Ej. Valeria Zambrano"
+                      className="w-full border rounded-xl p-2.5 outline-none font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">Producto Calificado</label>
+                    <select
+                      value={newReview.product_id}
+                      onChange={e => {
+                        const selProd = products.find(p => p.id === Number(e.target.value));
+                        setNewReview({ ...newReview, product_id: e.target.value, product_name: selProd?.name || 'Kaoj Boutique' });
+                      }}
+                      className="w-full border rounded-xl p-2.5 bg-white outline-none"
+                    >
+                      <option value="">-- Elige un producto de tu compra --</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">Calificación en Estrellas:</label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map(st => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setNewReview({ ...newReview, rating: st })}
+                          className="p-1 hover:scale-110 transition"
+                        >
+                          <Icon.Star className="w-6 h-6 text-amber-500" filled={st <= newReview.rating} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">Tu Opinión / Experiencia *</label>
+                    <textarea
+                      required
+                      rows="3"
+                      value={newReview.comment}
+                      onChange={e => setNewReview({ ...newReview, comment: e.target.value })}
+                      placeholder="Cuéntanos qué tal te pareció el labial, blusa o la atención de entrega..."
+                      className="w-full border rounded-xl p-2.5 outline-none resize-none"
+                    ></textarea>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1">Sube una foto luciendo tu producto / selfie</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async e => {
+                        if (e.target.files[0]) {
+                          const url = await uploadFileToSupabase(e.target.files[0], 'reviews');
+                          if (url) setNewReview({ ...newReview, photo_url: url });
+                        }
+                      }}
+                      className="w-full text-xs"
+                    />
+                    {newReview.photo_url && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={newReview.photo_url} alt="Review" className="w-12 h-12 rounded-xl object-cover border" />
+                        <span className="text-emerald-700 font-bold">Foto cargada exitosamente</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold shadow-md transition"
+                  >
+                    {uploading ? 'Publicando...' : 'Publicar mi Reseña'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              MODAL: GUÍA DE ENVÍO OFICIAL SERVIENTREGA (Con Cédula y Print CSS Limpio)
+              ========================================================================= */}
           {servientregaOrder && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setServientregaOrder(null)}>
+              <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center no-print">
                   <h3 className="font-bold text-base text-zinc-900">Guía de Envío Servientrega</h3>
                   <button onClick={() => setServientregaOrder(null)} className="font-bold text-zinc-500 text-lg">✕</button>
@@ -2401,9 +3284,10 @@
                     <div className="border-2 border-emerald-700 rounded-xl p-3 bg-emerald-50/30 space-y-1">
                       <p className="font-bold text-emerald-900 text-[11px] uppercase border-b border-emerald-200 pb-1">DESTINATARIO:</p>
                       <p className="font-bold text-sm">{servientregaOrder.customer_name}</p>
+                      <p className="text-zinc-700">Cédula/RUC: <b>{servientregaOrder.customer_id_card || 'Consumidor Final'}</b></p>
                       <p className="text-zinc-700">Celular: <b>{servientregaOrder.customer_phone}</b></p>
                       <p className="text-zinc-700">Dirección: <b>{servientregaOrder.delivery_address || 'Retiro Agencia'}</b></p>
-                      <p className="text-emerald-800 font-bold text-[10px]">CÓDIGO ÚNICO: {servientregaOrder.customer_code}</p>
+                      <p className="text-emerald-800 font-bold text-[10px]">CÓDIGO VIP: {servientregaOrder.customer_code}</p>
                     </div>
                   </div>
 
@@ -2429,9 +3313,9 @@
             </div>
           )}
 
-          {/* BOTÓN FLOTANTE WHATSAPP OFICIAL 593963073456 */}
+          {/* BOTÓN FLOTANTE WHATSAPP OFICIAL DINÁMICO (+593) */}
           <a
-            href="https://wa.me/593963073456?text=Hola%20Kaoj%20Store%2C%20quisiera%20consultar%20sobre%20sus%20productos."
+            href={`https://wa.me/${formatWhatsAppPhone(settings.whatsapp_number)}?text=${encodeURIComponent('Hola Kaoj Store, quisiera consultar sobre sus productos y catálogo.')}`}
             target="_blank"
             rel="noreferrer"
             className="fixed bottom-6 right-6 z-40 bg-zinc-900 hover:bg-black text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition duration-200"
@@ -2448,27 +3332,27 @@
             </div>
           )}
 
-          {/* FOOTER DISCRETO */}
+          {/* FOOTER BOUTIQUE */}
           <footer className="bg-white border-t border-zinc-200/80 mt-16 text-xs text-zinc-500 py-10">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-2">
                 <h4 className="font-serif-kaoj text-2xl font-black text-[#FF2E93]">KAOJ STORE</h4>
-                <p>Maquillaje, accesorios y moda chic. Entregas en Portoviejo, ULEAM Manta, San Jacinto y envíos Servientrega a todo el Ecuador.</p>
+                <p>Maquillaje de alta gama, accesorios chic y moda boutique. Entregas en Portoviejo, ULEAM Manta, San Jacinto y envíos Servientrega a todo el Ecuador.</p>
               </div>
 
               <div>
                 <h5 className="font-bold text-zinc-900 mb-2">Departamentos</h5>
                 <ul className="space-y-1">
-                  <li>Maquillajes (9 categorías)</li>
-                  <li>Accesorios (Vinchas, Cintillos)</li>
-                  <li>Ropa Chic (7 categorías)</li>
+                  <li>Maquillajes (Labiales, Gloss, Rubores, Delineadores...)</li>
+                  <li>Accesorios (Vinchas, Cintillos acolchados)</li>
+                  <li>Ropa Chic (Blusas satinadas, Vestidos, Conjuntos)</li>
                 </ul>
               </div>
 
               <div className="space-y-1">
                 <h5 className="font-bold text-zinc-900 mb-2">Contacto Oficial</h5>
-                <p>WhatsApp: <b>+593 96 307 3456</b></p>
-                <p>Email: <b>kaoj.store.ecu@gmail.com</b></p>
+                <p>WhatsApp: <b>+{formatWhatsAppPhone(settings.whatsapp_number)}</b></p>
+                <p>Email: <b>{settings.email_contact || 'kaoj.store.ecu@gmail.com'}</b></p>
               </div>
             </div>
 
@@ -2479,7 +3363,7 @@
               <button
                 onClick={() => setShowPinModal(true)}
                 className="text-zinc-400 hover:text-zinc-600 transition flex items-center gap-1 opacity-40 hover:opacity-100"
-                title="Acceso"
+                title="Gestión interna"
               >
                 <Icon.Lock className="w-3 h-3" />
                 <span>Gestión interna</span>

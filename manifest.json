@@ -1,0 +1,39 @@
+{
+  "name": "KAOJ STORE | Maquillaje, Skincare & Moda",
+  "short_name": "Kaoj Store",
+  "description": "Tu boutique favorita de maquillaje, skincare dermatológico y moda con entregas en Portoviejo, Manta y envíos a todo el Ecuador.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FDFAFC",
+  "theme_color": "#FF2E93",
+  "lang": "es-EC",
+  "categories": ["shopping", "lifestyle", "beauty"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%23FF2E93'/><text x='50' y='65' font-size='50' text-anchor='middle'>💅</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%23FF2E93'/><text x='50' y='65' font-size='50' text-anchor='middle'>💅</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ver Ofertas",
+      "url": "./index.html?cat=Ofertas",
+      "description": "Descuentos en labiales y moda"
+    },
+    {
+      "name": "Rastrear Pedido",
+      "url": "./index.html?action=tracking",
+      "description": "Consultar estado con tu código único"
+    }
+  ]
+}

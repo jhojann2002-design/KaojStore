@@ -1,160 +1,86 @@
-# 💅 KAOJ STORE - E-commerce Boutique con Supabase y GitHub Pages
+# 💅 KAOJ STORE - E-commerce Boutique con Supabase, PWA y GitHub Pages
 
-Plataforma de comercio electrónico moderna, rápida y elegante para **KAOJ STORE** (Maquillaje, Skincare & Moda). Diseñada con arquitectura **Zero-Build**, 100% compatible con **GitHub Pages**, conectada a **Supabase** (Base de Datos PostgreSQL, Autenticación con Google y Storage de Comprobantes) y con sistema de **Código Único de Cliente**.
-
----
-
-## 🌟 Características Principales
-
-1. **🏷️ Código Único de Cliente VIP:**
-   - Generación automática en vivo basada en la fórmula: **1ª Letra del Nombre (Mayúscula) + Últimos 4 dígitos del Celular**.
-   - *Ejemplo:* Si el cliente se llama **Jhojann** y su número es **0991234567**, su código único es **`J4567`**.
-   - Vinculado al historial de pedidos, base de datos y mensaje de WhatsApp para fidelización.
-   - **Módulo de Rastreo de Pedidos:** Cualquier clienta puede ingresar su código único (ej. `J4567`) para ver el estado de sus pedidos en tiempo real (`Pendiente`, `Verificado`, `En Camino`, `Entregado`).
-
-2. **📦 Inventario y Pedidos en Base de Datos Supabase:**
-   - Catálogo administrado en tiempo real mediante la tabla `kaoj_products`.
-   - Soporte para **variantes con control de stock individual** (tonos, tallas, medidas) y alerta de stock bajo.
-   - Ajuste rápido de stock con botones `+` y `-` en vivo desde el panel de control.
-   - Historial de pedidos con registro de cliente, entrega, método de pago, comprobante y selector de estado.
-   - Notificación de estado automatizada al cliente vía WhatsApp con un solo clic.
-
-3. **🔐 Iniciar Sesión con Google y Carritos Persistentes:**
-   - Inicio de sesión con un clic usando **Google OAuth** mediante Supabase Auth.
-   - **Sincronización en la Nube:** El carrito de compras se guarda en la tabla `kaoj_carts`. Si la clienta cambia de dispositivo (del celular a la laptop o tablet) o recarga la página, su carrito se mantiene intacto.
-   - Autocompletado del nombre y correo del cliente al iniciar sesión.
-
-4. **💳 Métodos de Pago y Comprobantes:**
-   - **Deuna!:** Deep-link directo para abrir la app oficial en el celular y visualización del código QR.
-   - **Transferencia Bancaria:** Cuentas de Banco Guayaquil y Banco Pichincha con botones interactivos para copiar el número de cuenta al portapapeles con un clic.
-   - **Carga de Comprobantes:** Subida directa de imágenes/capturas a Supabase Storage (`kaoj-assets/receipts`) con previsualización en vivo.
-
-5. **⚡ Listo para GitHub Pages (Zero-Build):**
-   - Sin necesidad de instalar Node.js ni compilar paquetes pesados. Funciona directamente en cualquier navegador y se despliega en segundos.
+Plataforma de comercio electrónico de alta gama para **KAOJ STORE** (Maquillaje, Skincare Dermatológico & Moda Chic). Construida con arquitectura **Zero-Build** lista para **GitHub Pages**, base de datos PostgreSQL en **Supabase**, autenticación con **Google**, **PWA instalable**, pasarela **Payphone Ecuador**, generador de guías **Servientrega**, muro de **Social Proof** y sistema de **Puntos VIP con Código Único de Cliente**.
 
 ---
 
-## 📁 Estructura del Repositorio
+## 🌟 Las 5 Nuevas Funcionalidades Avanzadas
 
-```text
-Kaoj Store Ecommerce/
-├── index.html            # Aplicación web completa (React 18 + Tailwind CSS + Supabase Client)
-├── supabase_schema.sql   # Script SQL con tablas, índices, políticas RLS, storage y datos semilla
-├── .gitignore            # Archivos ignorados por Git
-└── README.md             # Guía completa de instalación, despliegue y administración
-```
+### 1. 💎 Sistema de Puntos y Recompensas con el Código Único
+- **Fórmula de Acumulación:** Cada clienta gana **1 Punto Kaoj por cada $1.00 gastado** en compras verificadas.
+- **Canje de Descuentos Automático:**
+  - Al acumular **50 puntos**, se habilita en el carrito una casilla dorada para canjear **$5.00 de descuento directo** en el total de la orden.
+  - La clienta ve su saldo de puntos en vivo en la barra superior y en el checkout.
+  - Al completar la compra, los puntos ganados se acreditan a su perfil (`kaoj_customers`) asociados a su `customer_code`.
 
----
+### 2. 📸 Muro de Reseñas y Fotos de Clientas (Social Proof)
+- **Opiniones Reales con Fotos:** Muro estilo carrusel en la página principal con reseñas de 5 estrellas, producto comprado y fotos de clientas luciendo sus labiales o prendas.
+- **Modal "Dejar mi Reseña & Foto":** Cualquier clienta puede calificar su producto con estrellas, redactar su opinión y subir una selfie o foto del producto directamente a Supabase Storage (`kaoj-assets/reviews`).
+- **Control en Panel Admin:** El administrador puede revisar, aprobar o eliminar opiniones desde la pestaña **"Reseñas"**.
 
-## 🚀 Paso a Paso: Subir a GitHub y Desplegar en GitHub Pages
+### 3. 💳 Pasarela de Cobro Automática con Tarjeta (Payphone Ecuador)
+- Opción de pago con **Tarjeta de Crédito / Débito (Payphone)** junto a Deuna! y Transferencias bancarias.
+- Procesamiento de tarjetas Visa, Mastercard, Diners, Discover y bancos nacionales (Pichincha, Guayaquil, Produbanco, etc.).
+- **Botón Inteligente de Pago:** Redirige al Deep Link oficial de Payphone con el monto exacto de la orden calculado.
+- Configurable desde el panel de administración con el link personal o de comercio de Payphone.
 
-### 1. Inicializar Git y Crear el Repositorio
+### 4. 📲 PWA (Progressive Web App) Instalable en Móviles
+- Archivo [`manifest.json`](./manifest.json) configurado con iconos, colores oficiales de Kaoj Store y modo `standalone`.
+- Service Worker [`sw.js`](./sw.js) que almacena en caché local la aplicación para carga instantánea y funcionamiento fluido.
+- **Banner de Instalación en 1 Clic:** Detecta navegadores móviles en Android y iOS ofreciendo la instalación de la app directamente en la pantalla de inicio del teléfono celular.
 
-Abre tu terminal en la carpeta del proyecto y ejecuta:
-
-```bash
-# Inicializar repositorio local
-git init
-
-# Agregar todos los archivos
-git add .
-
-# Hacer el commit inicial
-git commit -m "feat: Lanzamiento Kaoj Store E-commerce con Supabase y Google Auth"
-
-# Cambiar la rama a main
-git branch -M main
-```
-
-### 2. Conectar con tu Repositorio en GitHub
-
-1. Entra a [GitHub.com](https://github.com) y crea un nuevo repositorio (por ejemplo: `kaoj-store`).
-2. Copia la URL del repositorio y ejecuta:
-
-```bash
-git remote add origin https://github.com/TU_USUARIO/kaoj-store.git
-git push -u origin main
-```
-
-### 3. Activar GitHub Pages (¡En 2 Clics!)
-
-1. En tu repositorio de GitHub, ve a **Settings** (Configuración) -> pestaña **Pages** (en el menú lateral izquierdo).
-2. En la sección **Build and deployment**:
-   - **Source:** Selecciona `Deploy from a branch`.
-   - **Branch:** Selecciona `main` y la carpeta `/ (root)`.
-3. Haz clic en **Save** (Guardar).
-4. Espera 1 minuto y tu tienda estará en línea en:
-   `https://TU_USUARIO.github.io/kaoj-store/`
+### 5. 📦 Generador de Etiquetas de Envío para Servientrega
+- En el panel de **Administración -> Pedidos**, cada orden cuenta con el botón **"📦 Guía Servientrega"**.
+- Genera en pantalla una **etiqueta de envío oficial de Servientrega** con:
+  - Logotipo y formato oficial de Guía Nacional.
+  - **Código de barras interactivo** generado con el código de orden (ej. `*KAOJ-123456*`).
+  - Datos del remitente: KAOJ STORE (Portoviejo / Manta - Manabí, RUC y teléfono).
+  - Datos completos de la clienta: Nombre, Cédula/RUC, Celular, Dirección exacta y Código Único VIP.
+  - Desglose del contenido declarado (cosméticos/ropa) y valor total.
+  - Estilos de impresión `@media print`: Presiona **"🖨️ Imprimir Guía"** para imprimir directamente en papel adhesivo térmico (10x15 cm) o en hojas A4 sin elementos extra de la página web.
 
 ---
 
-## 🗄️ Configuración de Supabase (Paso a Paso)
+## 🏷️ ¿Cómo funciona el Código Único de Cliente?
 
-### 1. Crear tu Proyecto en Supabase
-1. Ingresa a [supabase.com](https://supabase.com) y crea un nuevo proyecto gratuito (por ejemplo, `kaoj-store-db`).
-2. Guarda la contraseña de la base de datos y selecciona la región más cercana (ej. `us-east-1`).
+$$\text{Código VIP} = \text{1ª Letra del Nombre (Mayúscula)} + \text{Últimos 4 dígitos del Celular}$$
 
-### 2. Ejecutar el Script SQL
-1. En tu panel de Supabase, ve al menú lateral izquierdo y haz clic en **SQL Editor** (Editor SQL).
-2. Haz clic en **New Query** (Nueva consulta).
-3. Abre el archivo [`supabase_schema.sql`](./supabase_schema.sql) de este repositorio, copia todo su contenido, pégalo en el editor y presiona **Run** (Ejecutar).
-4. Esto creará automáticamente:
-   - Tabla `kaoj_products` (con 6 productos iniciales listos para vender).
-   - Tabla `kaoj_settings` (con datos de Deuna, WhatsApp y bancos).
-   - Tabla `kaoj_orders` (con código único de cliente y estados de entrega).
-   - Tabla `kaoj_carts` (para sincronizar carritos con Google).
-   - Tabla `kaoj_customers` (para perfiles VIP).
-   - Bucket de almacenamiento público `kaoj-assets` para fotos y comprobantes.
-   - Todas las políticas de seguridad (Row Level Security).
-
-### 3. Obtener tus Credenciales de Supabase
-1. En Supabase, ve a **Project Settings** (el icono de engranaje abajo a la izquierda) -> **API**.
-2. Copia:
-   - **Project URL** (ej: `https://xyzabc123.supabase.co`)
-   - **Project API Keys:** La clave `anon` / `public`.
-3. Puedes pegarlas directamente en la tienda abriendo la web y haciendo clic en **"⚙️ Configuración Supabase"** en el pie de página o en el panel de Admin. Se guardarán en el navegador de inmediato.
+- *Ejemplo:* **Jhojann** con celular **0991234567** $\rightarrow$ **`J4567`**.
+- Se autocalcula en tiempo real conforme la clienta escribe sus datos.
+- Permite rastrear pedidos pasados, acumular puntos de fidelidad y se envía en el mensaje automático de WhatsApp para atención inmediata.
 
 ---
 
-## 🔑 Activar Inicio de Sesión con Google (Google OAuth)
+## 🚀 Despliegue en GitHub Pages (Zero-Build)
 
-Para que tus clientas puedan iniciar sesión con Google y sincronizar sus carritos:
-
-1. Ve a [Google Cloud Console](https://console.cloud.google.com/).
-2. Crea un proyecto y ve a **APIs & Services** -> **Credentials**.
-3. Configura la **OAuth Consent Screen** (Pantalla de consentimiento) como Externa con el nombre "KAOJ STORE".
-4. Crea unas credenciales de tipo **OAuth 2.0 Client ID**:
-   - **Application Type:** Web Application.
-   - **Authorized redirect URIs:** Añade la URL que te da Supabase en:
-     *Supabase Dashboard -> Authentication -> Providers -> Google -> Callback URL (for OAuth)*.
-5. Copia el **Client ID** y **Client Secret** generados por Google.
-6. En Supabase, ve a **Authentication** -> **Providers** -> activa **Google**, pega el Client ID y Secret, y guarda.
-7. En Supabase -> **Authentication** -> **URL Configuration**:
-   - En **Site URL** pon la URL de tu GitHub Pages: `https://TU_USUARIO.github.io/kaoj-store/`
-   - En **Redirect URLs** añade: `https://TU_USUARIO.github.io/kaoj-store/*` y `http://localhost:*`
+1. En la carpeta del proyecto, sube los cambios a tu repositorio de GitHub:
+   ```bash
+   git add .
+   git commit -m "feat: Integrar PWA, Payphone, Servientrega, Reseñas y Puntos VIP"
+   git push origin main
+   ```
+2. En GitHub ve a **Settings** -> **Pages**:
+   - **Source:** `Deploy from a branch`
+   - **Branch:** `main` / `(root)`
+   - Haz clic en **Save**. En un par de minutos estará online en:
+     `https://TU_USUARIO.github.io/kaoj-store/`
 
 ---
 
-## 👩‍💼 Uso del Panel de Administrador
+## 🗄️ Actualización de Base de Datos en Supabase
 
-- Para ingresar, haz clic en **"⚙️ Admin"** en el menú superior.
-- **PIN por defecto:** `2026` (puedes cambiarlo en la pestaña de Ajustes).
-- **Funcionalidades:**
-  - **Inventario:** Sube fotos, crea productos con precios de oferta y gestiona stock de variantes (+ / -).
-  - **Pedidos:** Visualiza comprobantes en tamaño completo, cambia el estado (`Pendiente` -> `Verificado` -> `En Camino` -> `Entregado`) y envía una notificación automática por WhatsApp a la clienta con un botón.
-  - **Configuración:** Actualiza el número de WhatsApp receptor, tu QR de Deuna! y números de cuenta bancaria.
+1. Abre tu panel en [supabase.com](https://supabase.com) -> **SQL Editor**.
+2. Copia todo el contenido de [`supabase_schema.sql`](./supabase_schema.sql) y haz clic en **Run**.
+3. El script creará y actualizará automáticamente las tablas `kaoj_products`, `kaoj_orders`, `kaoj_settings`, `kaoj_customers`, `kaoj_reviews`, el bucket de storage `kaoj-assets` y todas las políticas de seguridad RLS.
 
 ---
 
-## 💡 Recomendaciones de Mejoras Futuras para KAOJ STORE
+## 🔐 Panel de Control de Administración
 
-1. **Programa de Puntos y Fidelidad con el Código Único:**
-   - Aprovechando el `customer_code`, acumular puntos por cada dólar comprado (ej. 100 puntos = $5 de descuento en el siguiente pedido).
-2. **Reseñas y Fotos de Clientas:**
-   - Permitir a las clientas subir fotos luciendo los labiales o blusas recibidas, aumentando la prueba social (*Social Proof*).
-3. **Generador de Enlaces de Pago Automáticos:**
-   - Integración con pasarelas de cobro con tarjeta de crédito/débito nacional e internacional (Payphone Ecuador, Kushki o Stripe).
-4. **Notificaciones Push / PWA (Progressive Web App):**
-   - Convertir la web en una aplicación instalable en el celular de las clientas para enviar alertas de ofertas flash y descuentos de temporada.
-5. **Cálculo Dinámico de Envíos con Geolocalización:**
-   - Integración con APIs de mapas o tarifas por cantón (Manta, Portoviejo, Chone, Guayaquil, Quito, etc.).
+- Botón **"⚙️ Admin"** en la barra superior.
+- **PIN por defecto:** `2026` (modificable en la pestaña de Ajustes).
+- **Pestañas disponibles:**
+  - **📦 Inventario:** Creación de productos, fotos en la nube y control de stock (+ / -).
+  - **🛍️ Pedidos:** Cambio de estado (`Pendiente`, `Verificado`, `En Camino`, `Entregado`), botón de **Guía Servientrega** imprimible y notificación a la clienta por WhatsApp.
+  - **📸 Reseñas:** Moderación de opiniones y fotos compartidas por compradoras.
+  - **⚙️ Ajustes:** Link de Payphone, WhatsApp, Deuna QR, cuentas bancarias y PIN de seguridad.

@@ -4,8 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KAOJ STORE | Maquillaje, Skincare & Moda Boutique</title>
-  <meta name="description" content="Kaoj Store - Tu tienda favorita de maquillaje, skincare y moda con entregas en Portoviejo, Manta, San Jacinto y envíos a todo el Ecuador." />
+  <meta name="description" content="Kaoj Store - Tu tienda boutique favorita de maquillaje, skincare dermatológico y moda chic con entregas en Portoviejo, Manta y envíos a todo el Ecuador." />
   <meta name="theme-color" content="#FF2E93" />
+
+  <!-- PWA Manifest & iOS Meta Tags -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Kaoj Store" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='25' fill='%23FF2E93'/><text x='50' y='65' font-size='50' text-anchor='middle'>💅</text></svg>" />
 
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💅</text></svg>">
@@ -29,10 +36,9 @@
               800: '#940E4F',
               900: '#7A1143',
             },
-            gold: {
-              400: '#FBBF24',
-              500: '#EAB308',
-              600: '#CA8A04'
+            payphone: {
+              500: '#FF6400',
+              600: '#E65A00',
             }
           },
           fontFamily: {
@@ -44,12 +50,12 @@
     }
   </script>
 
-  <!-- Google Fonts: Playfair Display (Luxury) + Plus Jakarta Sans (Modern Body) -->
+  <!-- Google Fonts: Playfair Display + Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Libre+Barcode+39+Text&display=swap" rel="stylesheet">
 
-  <!-- React 18 & Babel CDN (Zero-build deployment for GitHub Pages) -->
+  <!-- React 18 & Babel CDN (Zero-build para GitHub Pages) -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -65,7 +71,9 @@
     .font-serif-kaoj {
       font-family: 'Playfair Display', Georgia, serif;
     }
-    /* Estilos de scrollbar elegante */
+    .font-barcode {
+      font-family: 'Libre Barcode 39 Text', monospace;
+    }
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -87,12 +95,26 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
-    @keyframes pulse-subtle {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
-    }
-    .animate-subtle {
-      animation: pulse-subtle 2s infinite ease-in-out;
+    /* Estilos específicos para impresión de Guías Servientrega */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #servientrega-print-area, #servientrega-print-area * {
+        visibility: visible;
+      }
+      #servientrega-print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 10px;
+        background: white !important;
+      }
+      .no-print {
+        display: none !important;
+      }
     }
   </style>
 </head>
@@ -103,10 +125,21 @@
     const { useState, useEffect, useMemo, useRef } = React;
 
     // =========================================================================
+    // REGISTRO DE SERVICE WORKER PWA
+    // =========================================================================
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then(() => {
+          console.log('Kaoj Store PWA Service Worker registrado con éxito.');
+        }).catch(err => {
+          console.warn('PWA SW registro fallido:', err);
+        });
+      });
+    }
+
+    // =========================================================================
     // CONFIGURACIÓN DE SUPABASE
     // =========================================================================
-    // Puedes colocar tus credenciales aquí o configurarlas directamente en la web
-    // mediante el panel de configuración (se guardan en localStorage).
     const DEFAULT_SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
     const DEFAULT_SUPABASE_ANON_KEY = 'TU_SUPABASE_ANON_KEY';
 
@@ -127,22 +160,19 @@
         supabase = window.supabase.createClient(supabaseConfig.url, supabaseConfig.key);
       }
     } catch (e) {
-      console.warn('Supabase no inicializado con credenciales válidas:', e);
+      console.warn('Supabase no inicializado:', e);
     }
 
-    // Categorías del catálogo
     const CATEGORIES = ['Todos', 'Labiales', 'Skincare', 'Blusas', 'Vestidos', 'Accesorios', 'Ofertas'];
 
-    // Opciones de Entrega oficiales de KAOJ STORE
     const DELIVERY_OPTIONS = [
       { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo (Gratis)', price: 0, tag: 'Portoviejo' },
       { id: 'retiro_uleam', label: 'Retiro personal en ULEAM Manta (Gratis)', price: 0, tag: 'Manta' },
       { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto (Gratis)', price: 0, tag: 'San Jacinto' },
       { id: 'domicilio_local', label: 'Entrega a Domicilio Local (Manta / Portoviejo)', price: 2.50, tag: 'Local' },
-      { id: 'envio_nacional', label: 'Envío Nacional Seguro (Servientrega)', price: 5.50, tag: 'Todo el país' }
+      { id: 'envio_nacional', label: 'Envío Nacional Seguro (Servientrega)', price: 5.50, tag: 'Servientrega' }
     ];
 
-    // Productos iniciales de demostración en caso de que Supabase esté recién creado
     const DEMO_PRODUCTS = [
       {
         id: 1,
@@ -234,11 +264,42 @@
       }
     ];
 
-    // =========================================================================
-    // FUNCIÓN DEL CÓDIGO ÚNICO DE CLIENTE
-    // Regla: 1ª letra del nombre (mayúscula) + últimos 4 dígitos del celular
-    // Ejemplo: Jhojann + 0991234567 -> "J4567"
-    // =========================================================================
+    const DEMO_REVIEWS = [
+      {
+        id: 1,
+        customer_name: 'Camila Moreira',
+        customer_code: 'C3829',
+        rating: 5,
+        comment: '¡El labial Velvet tono Rosa Nude es un sueño! No reseca nada los labios y dura todo el día intacto. Llegó el mismo día a Manta súper bien empacado. 💅💖',
+        photo_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Labial Líquido Velvet Matte Longwear',
+        is_verified_buyer: true,
+        created_at: '2026-03-15T12:00:00Z'
+      },
+      {
+        id: 2,
+        customer_name: 'Valeria Zambrano',
+        customer_code: 'V9102',
+        rating: 5,
+        comment: 'Me encanta el Serum de Vitamina C, me dejó la piel con un glow natural increíble desde la primera semana. Además acumulé 18 puntos con mi código único!',
+        photo_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Serum Facial Vitamina C',
+        is_verified_buyer: true,
+        created_at: '2026-03-20T15:30:00Z'
+      },
+      {
+        id: 3,
+        customer_name: 'Alisson Cedeño',
+        customer_code: 'A4918',
+        rating: 5,
+        comment: 'La blusa satinada en color champagne tiene una tela exquisita y el calce es perfecto. Pagué facilísimo con Deuna y me la entregaron en Portoviejo gratis. 10/10 ✨',
+        photo_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80',
+        product_name: 'Blusa Satinada Elegance Cuello Halter',
+        is_verified_buyer: true,
+        created_at: '2026-03-28T18:45:00Z'
+      }
+    ];
+
     function calculateCustomerCode(name, phone) {
       if (!name || !phone) return '';
       const cleanName = name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -251,16 +312,18 @@
     }
 
     // =========================================================================
-    // COMPONENTE PRINCIPAL APP
+    // COMPONENTE PRINCIPAL
     // =========================================================================
     function App() {
-      // Estado de Base de Datos y Tienda
       const [products, setProducts] = useState(DEMO_PRODUCTS);
       const [orders, setOrders] = useState([]);
+      const [reviews, setReviews] = useState(DEMO_REVIEWS);
       const [settings, setSettings] = useState({
         whatsapp_number: '593999999999',
         deuna_link: 'https://deuna.app/',
         deuna_qr_url: '',
+        payphone_link: 'https://payphone.app/',
+        payphone_token: '',
         admin_pin: '2026',
         bank_guayaquil_acc: '0013899619',
         bank_guayaquil_name: 'Toledo Mendoza Alisson Kandy',
@@ -269,23 +332,29 @@
         bank_pichincha_name: 'Demera García Jhojann Alberto',
         bank_pichincha_id: '1314710946',
         email_contact: 'kaoj.store.ecu@gmail.com',
-        banner_message: '✨ Recuerda: No es un gasto, es una inversión en ti misma. 💅✨ | Entregas en Portoviejo, Manta, San Jacinto y Envíos a todo Ecuador'
+        banner_message: '✨ Recuerda: No es un gasto, es una inversión en ti misma. 💅✨ | Envíos a todo el Ecuador',
+        points_per_dollar: 1,
+        points_redeem_ratio: 10, // 10 puntos = $1.00 de descuento
+        points_min_redeem: 50 // Mínimo 50 puntos = $5.00 de descuento
       });
 
-      // Estados de UI y Navegación
       const [category, setCategory] = useState('Todos');
       const [searchQuery, setSearchQuery] = useState('');
-      const [sortBy, setSortBy] = useState('destacados'); // 'destacados', 'precio_menor', 'precio_mayor', 'ofertas'
+      const [sortBy, setSortBy] = useState('destacados');
       const [selectedVariants, setSelectedVariants] = useState({});
       const [quickViewProduct, setQuickViewProduct] = useState(null);
       const [isCartOpen, setIsCartOpen] = useState(false);
       const [isAdmin, setIsAdmin] = useState(false);
-      const [adminTab, setAdminTab] = useState('inventory'); // 'inventory', 'orders', 'settings'
+      const [adminTab, setAdminTab] = useState('inventory'); // 'inventory', 'orders', 'reviews', 'settings'
       const [adminOrderFilter, setAdminOrderFilter] = useState('todos');
       const [adminSearch, setAdminSearch] = useState('');
       const [uploading, setUploading] = useState(false);
 
-      // Estado de Autenticación con Google
+      // PWA Install Prompt State
+      const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
+      const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+      // Auth y Perfil
       const [user, setUser] = useState(null);
       const [isProfileOpen, setIsProfileOpen] = useState(false);
       const [isTrackingOpen, setIsTrackingOpen] = useState(false);
@@ -293,18 +362,36 @@
       const [trackedOrders, setTrackedOrders] = useState(null);
       const [trackingLoading, setTrackingLoading] = useState(false);
 
-      // Modal de configuración de credenciales Supabase
+      // Puntos y Recompensas
+      const [customerPoints, setCustomerPoints] = useState(() => {
+        return parseInt(localStorage.getItem('kaoj_cust_points') || '0', 10);
+      });
+      const [applyPointsDiscount, setApplyPointsDiscount] = useState(false);
+
+      // Muro de Reseñas Modal
+      const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+      const [newReview, setNewReview] = useState({
+        name: '',
+        customerCode: '',
+        product_name: '',
+        rating: 5,
+        comment: '',
+        photo_url: ''
+      });
+
+      // Generador de Guía Servientrega
+      const [servientregaOrder, setServientregaOrder] = useState(null);
+
+      // Modal Config Supabase
       const [isConfigOpen, setIsConfigOpen] = useState(false);
       const [configInputUrl, setConfigInputUrl] = useState(supabaseConfig.url || '');
       const [configInputKey, setConfigInputKey] = useState(supabaseConfig.key || '');
 
-      // Modal para ver imagen de comprobante en pantalla completa
+      // Modal Comprobante y Edición
       const [previewReceiptUrl, setPreviewReceiptUrl] = useState(null);
-
-      // Modal de edición de producto en Admin
       const [editingProduct, setEditingProduct] = useState(null);
 
-      // Carrito con persistencia en localStorage y Supabase
+      // Carrito
       const [cart, setCart] = useState(() => {
         try {
           const saved = localStorage.getItem('kaoj_cart');
@@ -314,33 +401,28 @@
         }
       });
 
-      // Toasts / Notificaciones
       const [toast, setToast] = useState(null);
       const showToast = (message, type = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3800);
       };
 
-      // Formulario del Cliente en Checkout
-      const [customer, setCustomer] = useState(() => {
-        return {
-          name: localStorage.getItem('kaoj_cust_name') || '',
-          phone: localStorage.getItem('kaoj_cust_phone') || '',
-          idCard: localStorage.getItem('kaoj_cust_id') || '',
-          email: '',
-          delivery: 'retiro_portoviejo',
-          address: localStorage.getItem('kaoj_cust_addr') || '',
-          paymentMethod: 'deuna',
-          receiptUrl: ''
-        };
-      });
+      const [customer, setCustomer] = useState(() => ({
+        name: localStorage.getItem('kaoj_cust_name') || '',
+        phone: localStorage.getItem('kaoj_cust_phone') || '',
+        idCard: localStorage.getItem('kaoj_cust_id') || '',
+        email: '',
+        delivery: 'retiro_portoviejo',
+        address: localStorage.getItem('kaoj_cust_addr') || '',
+        paymentMethod: 'deuna', // 'deuna', 'transferencia', 'payphone'
+        receiptUrl: '',
+        payphoneRef: ''
+      }));
 
-      // Código único de cliente calculado en vivo
       const customerCode = useMemo(() => {
         return calculateCustomerCode(customer.name, customer.phone);
       }, [customer.name, customer.phone]);
 
-      // Formulario de nuevo producto en Admin
       const [newProd, setNewProd] = useState({
         name: '',
         category: 'Labiales',
@@ -353,26 +435,27 @@
       });
 
       // =======================================================================
-      // CARGAR DATOS Y ESCUCHAR SESIÓN DE GOOGLE
+      // EFECTOS: PWA PROMPT Y SUPABASE AUTH
       // =======================================================================
       useEffect(() => {
+        // Capturar evento de instalación de PWA
+        window.addEventListener('beforeinstallprompt', e => {
+          e.preventDefault();
+          setDeferredInstallPrompt(e);
+          setShowInstallBanner(true);
+        });
+
         initSupabaseAndAuth();
       }, []);
 
       async function initSupabaseAndAuth() {
         if (!supabase) return;
-
-        // 1. Cargar productos, configuración y pedidos desde Supabase
         await fetchStoreData();
 
-        // 2. Comprobar sesión activa de Google
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            handleUserLoggedIn(session.user);
-          }
+          if (session?.user) handleUserLoggedIn(session.user);
 
-          // Escuchar cambios de autenticación
           supabase.auth.onAuthStateChange(async (event, session) => {
             if (session?.user) {
               handleUserLoggedIn(session.user);
@@ -381,13 +464,12 @@
             }
           });
         } catch (err) {
-          console.warn('Error en auth listener:', err);
+          console.warn('Auth check error:', err);
         }
       }
 
       function handleUserLoggedIn(currentUser) {
         setUser(currentUser);
-        // Pre-llenar datos del cliente desde Google
         const googleName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || '';
         const googleEmail = currentUser.email || '';
         setCustomer(prev => ({
@@ -396,24 +478,16 @@
           email: googleEmail
         }));
 
-        // Sincronizar carrito desde Supabase (kaoj_carts)
         syncCartFromCloud(currentUser.id);
+        fetchCustomerPoints(currentUser.email);
       }
 
-      // Cargar productos y configuración desde Supabase
       async function fetchStoreData() {
         if (!supabase) return;
         try {
-          // Cargar productos
-          const { data: prods, error: pErr } = await supabase
-            .from('kaoj_products')
-            .select('*')
-            .eq('is_active', true)
-            .order('id', { ascending: false });
-
+          const { data: prods } = await supabase.from('kaoj_products').select('*').eq('is_active', true).order('id', { ascending: false });
           if (prods && prods.length > 0) {
             setProducts(prods);
-            // Inicializar variante por defecto para cada producto
             const initVars = {};
             prods.forEach(p => {
               const firstAvail = (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
@@ -422,43 +496,55 @@
             setSelectedVariants(initVars);
           }
 
-          // Cargar configuración de tienda
           const { data: cfg } = await supabase.from('kaoj_settings').select('*').eq('id', 1).single();
-          if (cfg) {
-            setSettings(prev => ({ ...prev, ...cfg }));
-          }
+          if (cfg) setSettings(prev => ({ ...prev, ...cfg }));
 
-          // Cargar pedidos para admin
           const { data: ords } = await supabase.from('kaoj_orders').select('*').order('created_at', { ascending: false });
-          if (ords) {
-            setOrders(ords);
-          }
+          if (ords) setOrders(ords);
+
+          const { data: revs } = await supabase.from('kaoj_reviews').select('*').eq('is_approved', true).order('created_at', { ascending: false });
+          if (revs && revs.length > 0) setReviews(revs);
         } catch (err) {
-          console.warn('Error fetching data from Supabase:', err);
+          console.warn('Supabase fetch error:', err);
         }
       }
 
-      // =======================================================================
-      // PERSISTENCIA Y SINCRONIZACIÓN DE CARRITO
-      // =======================================================================
-      // Guardar en localStorage siempre
+      // Buscar puntos del cliente en Supabase o en pedidos pasados
+      async function fetchCustomerPoints(identifier) {
+        if (!supabase || !identifier) return;
+        try {
+          const { data: cust } = await supabase.from('kaoj_customers').select('points').or(`customer_code.eq.${identifier},email.eq.${identifier}`).single();
+          if (cust && cust.points !== undefined) {
+            setCustomerPoints(cust.points);
+            localStorage.setItem('kaoj_cust_points', cust.points.toString());
+          }
+        } catch (err) {}
+      }
+
+      // Al cambiar customerCode, consultar si ya tiene puntos acumulados
+      useEffect(() => {
+        if (customerCode) {
+          fetchCustomerPoints(customerCode);
+        }
+      }, [customerCode]);
+
+      // Guardar carrito en local y en la nube
       useEffect(() => {
         try {
           localStorage.setItem('kaoj_cart', JSON.stringify(cart));
         } catch (e) {}
 
-        // Si el usuario está conectado con Google, guardar en Supabase kaoj_carts
         if (user && supabase) {
           supabase.from('kaoj_carts').upsert({
             user_id: user.id,
             customer_code: customerCode || '',
             items: cart,
             updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' }).then(() => {});
+          }, { onConflict: 'user_id' });
         }
       }, [cart, user, customerCode]);
 
-      // Guardar datos básicos del cliente para agilizar futuras compras
+      // Guardar datos básicos
       useEffect(() => {
         if (customer.name) localStorage.setItem('kaoj_cust_name', customer.name);
         if (customer.phone) localStorage.setItem('kaoj_cust_phone', customer.phone);
@@ -466,7 +552,6 @@
         if (customer.address) localStorage.setItem('kaoj_cust_addr', customer.address);
       }, [customer.name, customer.phone, customer.idCard, customer.address]);
 
-      // Traer carrito desde la nube al iniciar sesión con Google
       async function syncCartFromCloud(userId) {
         if (!supabase) return;
         try {
@@ -474,7 +559,6 @@
           if (data && Array.isArray(data.items) && data.items.length > 0) {
             setCart(prevCart => {
               if (prevCart.length === 0) return data.items;
-              // Fusionar sin duplicar
               const merged = [...data.items];
               prevCart.forEach(localItem => {
                 const existing = merged.find(i => i.key === localItem.key);
@@ -486,63 +570,61 @@
               });
               return merged;
             });
-            showToast('☁️ Tu carrito se ha sincronizado con tu cuenta de Google');
+            showToast('☁️ Carrito sincronizado con tu cuenta Google');
           }
-        } catch (err) {
-          console.warn('Sync cart error:', err);
-        }
+        } catch (err) {}
       }
 
       // =======================================================================
-      // GOOGLE AUTH
+      // ACCIONES PWA Y GOOGLE LOGIN
       // =======================================================================
+      async function handleInstallPwaClick() {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          showToast('💅 ¡Gracias por instalar Kaoj Store!');
+        }
+        setDeferredInstallPrompt(null);
+        setShowInstallBanner(false);
+      }
+
       async function handleGoogleLogin() {
         if (!supabase) {
           setIsConfigOpen(true);
-          showToast('Por favor configura tus credenciales de Supabase primero.', 'info');
-          return;
+          return showToast('Configura Supabase primero.', 'info');
         }
-
         const redirectUrl = window.location.origin + window.location.pathname;
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: {
-            redirectTo: redirectUrl
-          }
+          options: { redirectTo: redirectUrl }
         });
-
-        if (error) {
-          showToast('Error al conectar con Google: ' + error.message, 'error');
-        }
+        if (error) showToast('Error Google: ' + error.message, 'error');
       }
 
       async function handleLogout() {
-        if (supabase) {
-          await supabase.auth.signOut();
-        }
+        if (supabase) await supabase.auth.signOut();
         setUser(null);
         setIsProfileOpen(false);
-        showToast('Has cerrado sesión correctamente.');
+        showToast('Sesión cerrada');
       }
 
       // =======================================================================
-      // GESTIÓN DE CARRITO
+      // CARRITO Y CÁLCULOS (CON SISTEMA DE PUNTOS)
       // =======================================================================
       function addToCart(product, specificVariant = null) {
         const varName = specificVariant || selectedVariants[product.id] || (product.variants?.[0]?.name);
         const variantObj = (product.variants || []).find(v => v.name === varName);
 
         if (!variantObj || variantObj.stock <= 0) {
-          showToast(`El tono o talla "${varName}" está agotado.`, 'error');
-          return;
+          return showToast(`"${varName}" está agotado.`, 'error');
         }
 
         const key = `${product.id}_${varName}`;
         const existing = cart.find(i => i.key === key);
 
         if (existing && existing.qty >= variantObj.stock) {
-          showToast(`Solo quedan ${variantObj.stock} unidades disponibles de "${varName}".`, 'error');
-          return;
+          return showToast(`Máximo disponible: ${variantObj.stock} unidades.`, 'error');
         }
 
         const unitPrice = product.discount_price ? Number(product.discount_price) : Number(product.price);
@@ -561,7 +643,7 @@
           }]);
         }
 
-        showToast(`✨ ¡"${product.name}" agregado al carrito!`);
+        showToast(`✨ ¡"${product.name}" agregado!`);
         setIsCartOpen(true);
         if (quickViewProduct) setQuickViewProduct(null);
       }
@@ -570,13 +652,12 @@
         setCart(cart.map(item => {
           if (item.key === key) {
             const newQty = item.qty + delta;
-            // Verificar stock disponible en producto
             const prod = products.find(p => p.id === item.productId);
             const varObj = prod?.variants?.find(v => v.name === item.variant);
             const maxStock = varObj ? varObj.stock : 99;
 
             if (newQty > maxStock) {
-              showToast(`Stock máximo disponible: ${maxStock} unidades.`, 'info');
+              showToast(`Stock máximo: ${maxStock}`, 'info');
               return item;
             }
             return newQty > 0 ? { ...item, qty: newQty } : null;
@@ -590,14 +671,20 @@
         showToast('Producto retirado del carrito', 'info');
       }
 
-      // Cálculos de Totales
+      // Cálculos Financieros y Descuento de Puntos
       const subtotal = cart.reduce((acc, i) => acc + (i.price * i.qty), 0);
       const deliveryObj = DELIVERY_OPTIONS.find(d => d.id === customer.delivery) || DELIVERY_OPTIONS[0];
-      const total = subtotal + deliveryObj.price;
 
-      // =======================================================================
-      // SUBIDA DE COMPROBANTES / IMÁGENES A SUPABASE STORAGE
-      // =======================================================================
+      // Regla de Puntos: 50 puntos = $5.00 de descuento
+      const pointsDiscountValue = (settings.points_min_redeem || 50) / (settings.points_redeem_ratio || 10);
+      const canRedeemPoints = customerPoints >= (settings.points_min_redeem || 50);
+      const discountApplied = (applyPointsDiscount && canRedeemPoints) ? pointsDiscountValue : 0;
+
+      const total = Math.max(0, subtotal + deliveryObj.price - discountApplied);
+      // Puntos generados con esta compra (1 dólar = 1 punto)
+      const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - discountApplied));
+
+      // Subida de archivos
       async function uploadFileToSupabase(file, folder = 'receipts') {
         if (!supabase) {
           showToast('Conecta Supabase primero para subir imágenes a la nube.', 'error');
@@ -613,9 +700,7 @@
             .from('kaoj-assets')
             .upload(fileName, file, { cacheControl: '3600', upsert: true });
 
-          if (uploadError) {
-            throw uploadError;
-          }
+          if (uploadError) throw uploadError;
 
           const { data } = supabase.storage.from('kaoj-assets').getPublicUrl(fileName);
           setUploading(false);
@@ -623,22 +708,24 @@
           return data.publicUrl;
         } catch (err) {
           setUploading(false);
-          showToast('Error al subir imagen: ' + err.message, 'error');
+          showToast('Error subida: ' + err.message, 'error');
           return null;
         }
       }
 
       // =======================================================================
-      // FINALIZAR PEDIDO (CHECKOUT)
+      // FINALIZAR PEDIDO (CON DESCUENTO DE PUNTOS Y PAYPHONE)
       // =======================================================================
       async function handleCheckoutSubmit(e) {
         e.preventDefault();
-        if (cart.length === 0) return showToast('Tu carrito está vacío', 'error');
+        if (cart.length === 0) return showToast('El carrito está vacío', 'error');
         if (!customer.name.trim() || !customer.phone.trim()) {
-          return showToast('Por favor ingresa tu nombre y número de celular.', 'error');
+          return showToast('Ingresa tu nombre y celular para generar tu código.', 'error');
         }
-        if (!customer.receiptUrl) {
-          return showToast('⚠️ Por favor sube la foto de tu comprobante de pago para validar tu orden.', 'error');
+
+        // Si el método no es Payphone ni efectivo, requerir comprobante
+        if (customer.paymentMethod !== 'payphone' && !customer.receiptUrl) {
+          return showToast('⚠️ Sube la captura de tu pago para asegurar tus productos.', 'error');
         }
 
         const generatedCode = customerCode || calculateCustomerCode(customer.name, customer.phone);
@@ -656,22 +743,23 @@
           delivery_address: customer.address.trim(),
           shipping_cost: deliveryObj.price,
           subtotal: subtotal,
+          discount_amount: discountApplied,
           total: total,
-          payment_method: customer.paymentMethod === 'deuna' ? 'Deuna!' : 'Transferencia Bancaria',
-          receipt_url: customer.receiptUrl,
+          points_earned: pointsEarnedWithOrder,
+          points_redeemed: applyPointsDiscount ? (settings.points_min_redeem || 50) : 0,
+          payment_method:
+            customer.paymentMethod === 'deuna' ? 'Deuna!' :
+            customer.paymentMethod === 'payphone' ? 'Payphone (Tarjeta)' : 'Transferencia Bancaria',
+          receipt_url: customer.receiptUrl || (customer.payphoneRef ? `Payphone Ref: ${customer.payphoneRef}` : ''),
           items: cart,
           status: 'pendiente'
         };
 
-        // 1. Guardar en Supabase si está disponible
         if (supabase) {
           try {
-            const { error: ordErr } = await supabase.from('kaoj_orders').insert([orderData]);
-            if (ordErr) {
-              console.warn('Error guardando en Supabase:', ordErr);
-            }
+            await supabase.from('kaoj_orders').insert([orderData]);
 
-            // Descontar inventario en Supabase
+            // Descontar inventario
             for (const item of cart) {
               const prod = products.find(p => p.id === item.productId);
               if (prod && Array.isArray(prod.variants)) {
@@ -682,55 +770,109 @@
               }
             }
 
-            // Limpiar carrito en la nube si está conectado
+            // Actualizar Puntos de la Clienta
+            const newPointBalance = Math.max(0, customerPoints - (applyPointsDiscount ? 50 : 0)) + pointsEarnedWithOrder;
+            setCustomerPoints(newPointBalance);
+            localStorage.setItem('kaoj_cust_points', newPointBalance.toString());
+
+            await supabase.from('kaoj_customers').upsert({
+              customer_code: generatedCode,
+              name: customer.name.trim(),
+              phone: customer.phone.trim(),
+              email: customer.email || '',
+              points: newPointBalance
+            }, { onConflict: 'customer_code' });
+
             if (user) {
               await supabase.from('kaoj_carts').delete().eq('user_id', user.id);
             }
           } catch (err) {
-            console.warn('Checkout DB error:', err);
+            console.warn('Checkout error:', err);
           }
+        } else {
+          // Modo offline
+          const newPointBalance = Math.max(0, customerPoints - (applyPointsDiscount ? 50 : 0)) + pointsEarnedWithOrder;
+          setCustomerPoints(newPointBalance);
+          localStorage.setItem('kaoj_cust_points', newPointBalance.toString());
         }
 
-        // 2. Armar mensaje detallado para WhatsApp oficial de Kaoj Store
+        // Armar mensaje WhatsApp
         const itemsList = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
-        const paymentLabel = customer.paymentMethod === 'deuna' ? '💜 Deuna!' : '🏦 Transferencia Bancaria';
+        const paymentLabel =
+          customer.paymentMethod === 'deuna' ? '💜 Deuna!' :
+          customer.paymentMethod === 'payphone' ? '💳 Tarjeta de Crédito/Débito (Payphone)' : '🏦 Transferencia Bancaria';
 
         const whatsappMsg =
           `✨ *NUEVO PEDIDO KAOJ STORE* ✨\n\n` +
           `📦 *Orden:* ${orderCode}\n` +
           `🏷️ *CÓDIGO ÚNICO DE CLIENTE:* *${generatedCode}*\n` +
+          `💎 *PUNTOS KAOJ GANADOS:* *+${pointsEarnedWithOrder} pts*\n` +
+          (discountApplied > 0 ? `🎁 *Descuento de Puntos Canjeado:* -$${discountApplied.toFixed(2)}\n` : '') +
           `👤 *Cliente:* ${customer.name}\n` +
           `📱 *Celular:* ${customer.phone}\n` +
           (customer.idCard ? `🪪 *Cédula:* ${customer.idCard}\n` : '') +
           `🚚 *Entrega:* ${deliveryObj.label}\n` +
           (customer.address ? `📍 *Dirección:* ${customer.address}\n` : '') +
-          `💳 *Método de Pago:* ${paymentLabel}\n\n` +
-          `🛍️ *DETALLE DE PRODUCTOS:*\n${itemsList}\n\n` +
+          `💳 *Forma de Pago:* ${paymentLabel}\n\n` +
+          `🛍️ *PRODUCTOS:*\n${itemsList}\n\n` +
           `💵 *Subtotal:* $${subtotal.toFixed(2)}\n` +
+          (discountApplied > 0 ? `🏷️ *Descuento:* -$${discountApplied.toFixed(2)}\n` : '') +
           `🚚 *Envío:* $${deliveryObj.price.toFixed(2)}\n` +
           `💰 *TOTAL PAGADO:* *$${total.toFixed(2)}*\n\n` +
-          `📸 *Comprobante de Pago alojado:* \n${customer.receiptUrl}\n\n` +
-          `¡Hola! Acabo de realizar este pedido en la web y adjunto mi comprobante para dejar mis productos asegurados. 💅✨`;
+          (customer.receiptUrl ? `📸 *Comprobante de Pago:* \n${customer.receiptUrl}\n\n` : '') +
+          (customer.payphoneRef ? `🧾 *Ref. Transacción Payphone:* ${customer.payphoneRef}\n\n` : '') +
+          `¡Hola Kaoj Store! Acabo de hacer este pedido en la web con mi código único de cliente. 💅✨`;
 
-        // 3. Abrir WhatsApp
         const cleanNumber = settings.whatsapp_number.replace(/\D/g, '');
         window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(whatsappMsg)}`, '_blank');
 
-        // 4. Limpiar estado local
         setCart([]);
         setIsCartOpen(false);
-        setCustomer(prev => ({ ...prev, receiptUrl: '' }));
-        showToast(`🎉 ¡Pedido ${orderCode} generado con éxito! Código: ${generatedCode}`);
+        setApplyPointsDiscount(false);
+        setCustomer(prev => ({ ...prev, receiptUrl: '', payphoneRef: '' }));
+        showToast(`🎉 ¡Pedido ${orderCode} recibido! Acumulaste +${pointsEarnedWithOrder} Puntos Kaoj.`);
 
-        // Recargar inventario
         fetchStoreData();
       }
 
       // =======================================================================
-      // CONSULTAR PEDIDOS POR CÓDIGO ÚNICO DE CLIENTE
+      // MURO DE RESEÑAS: PUBLICAR NUEVA OPINIÓN
+      // =======================================================================
+      async function handleCreateReview(e) {
+        e.preventDefault();
+        if (!newReview.name.trim() || !newReview.comment.trim()) {
+          return showToast('Ingresa tu nombre y tu comentario sobre el producto', 'error');
+        }
+
+        const reviewPayload = {
+          customer_name: newReview.name.trim(),
+          customer_code: newReview.customerCode.trim() || customerCode || '',
+          product_name: newReview.product_name.trim() || 'Kaoj Store Boutique',
+          rating: parseInt(newReview.rating, 10) || 5,
+          comment: newReview.comment.trim(),
+          photo_url: newReview.photo_url || '',
+          is_verified_buyer: true,
+          is_approved: true
+        };
+
+        if (supabase) {
+          const { data, error } = await supabase.from('kaoj_reviews').insert([reviewPayload]).select();
+          if (error) return showToast('Error al publicar reseña: ' + error.message, 'error');
+          if (data && data[0]) setReviews([data[0], ...reviews]);
+        } else {
+          setReviews([{ ...reviewPayload, id: Date.now(), created_at: new Date().toISOString() }, ...reviews]);
+        }
+
+        showToast('💖 ¡Gracias por tu reseña y por ser parte de Kaoj Store!');
+        setIsReviewModalOpen(false);
+        setNewReview({ name: '', customerCode: '', product_name: '', rating: 5, comment: '', photo_url: '' });
+      }
+
+      // =======================================================================
+      // RASTREO DE PEDIDOS
       // =======================================================================
       async function handleSearchOrders() {
-        if (!trackingCode.trim()) return showToast('Ingresa tu código único o número de celular', 'info');
+        if (!trackingCode.trim()) return showToast('Ingresa tu código único o celular', 'info');
         setTrackingLoading(true);
         setTrackedOrders(null);
 
@@ -738,7 +880,6 @@
         const digits = trackingCode.replace(/\D/g, '');
 
         if (!supabase) {
-          // Búsqueda en memoria local si no hay Supabase
           const filtered = orders.filter(o =>
             (o.customer_code && o.customer_code.toUpperCase() === cleanInput) ||
             (o.order_code && o.order_code.toUpperCase() === cleanInput) ||
@@ -750,10 +891,6 @@
         }
 
         try {
-          // Búsqueda en Supabase
-          let query = supabase.from('kaoj_orders').select('*').order('created_at', { ascending: false });
-
-          // Filtrar por código único, número de orden o teléfono
           const { data, error } = await supabase
             .from('kaoj_orders')
             .select('*')
@@ -763,22 +900,21 @@
           if (error) throw error;
           setTrackedOrders(data || []);
         } catch (err) {
-          showToast('Error al buscar pedidos: ' + err.message, 'error');
+          showToast('Error: ' + err.message, 'error');
         } finally {
           setTrackingLoading(false);
         }
       }
 
       // =======================================================================
-      // ADMINISTRACIÓN: GESTIÓN DE PRODUCTOS E INVENTARIO
+      // ADMINISTRACIÓN: INVENTARIO, ESTADOS Y SERVIENTREGA
       // =======================================================================
       async function handleCreateProduct(e) {
         e.preventDefault();
         if (!newProd.name.trim() || !newProd.price) {
-          return showToast('Ingresa al menos el nombre y precio del producto', 'error');
+          return showToast('Ingresa nombre y precio del producto', 'error');
         }
 
-        // Parsear variantes (Formato: "Nombre:Stock, Nombre:Stock")
         const parsedVariants = newProd.variantsText.split(',').map(pair => {
           const parts = pair.split(':');
           const name = (parts[0] || '').trim();
@@ -800,32 +936,20 @@
 
         if (supabase) {
           const { data, error } = await supabase.from('kaoj_products').insert([prodPayload]).select();
-          if (error) {
-            return showToast('Error al crear producto: ' + error.message, 'error');
-          }
-          if (data && data[0]) {
-            setProducts([data[0], ...products]);
-          }
+          if (error) return showToast('Error al crear: ' + error.message, 'error');
+          if (data && data[0]) setProducts([data[0], ...products]);
         } else {
-          // Modo local
-          const localNew = { ...prodPayload, id: Date.now() };
-          setProducts([localNew, ...products]);
+          setProducts([{ ...prodPayload, id: Date.now() }, ...products]);
         }
 
-        showToast('✅ Producto agregado al inventario de Supabase');
+        showToast('✅ Producto guardado en Supabase');
         setNewProd({
-          name: '',
-          category: 'Labiales',
-          price: '',
-          discount_price: '',
-          image: '',
-          description: '',
-          variant_label: 'Tono / Talla',
+          name: '', category: 'Labiales', price: '', discount_price: '',
+          image: '', description: '', variant_label: 'Tono / Talla',
           variantsText: 'Rosa Nude:5, Rojo Carmesí:4'
         });
       }
 
-      // Actualizar stock rápido de una variante en el panel Admin (+ / -)
       async function handleQuickStockChange(productId, variantName, delta) {
         const prod = products.find(p => p.id === productId);
         if (!prod || !prod.variants) return;
@@ -835,101 +959,62 @@
         );
 
         if (supabase) {
-          const { error } = await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', productId);
-          if (error) return showToast('Error al actualizar stock: ' + error.message, 'error');
+          await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', productId);
         }
 
         setProducts(products.map(p => p.id === productId ? { ...p, variants: updatedVariants } : p));
-        showToast(`Stock de "${variantName}" ajustado`);
+        showToast(`Stock de "${variantName}" actualizado`);
       }
 
-      // Eliminar producto
       async function handleDeleteProduct(productId) {
-        if (!confirm('¿Estás segura de eliminar este producto del inventario?')) return;
-
+        if (!confirm('¿Eliminar este producto del inventario?')) return;
         if (supabase) {
-          const { error } = await supabase.from('kaoj_products').delete().eq('id', productId);
-          if (error) return showToast('Error al eliminar: ' + error.message, 'error');
+          await supabase.from('kaoj_products').delete().eq('id', productId);
         }
-
         setProducts(products.filter(p => p.id !== productId));
-        showToast('Producto eliminado del inventario', 'info');
+        showToast('Producto eliminado');
       }
 
-      // Guardar edición de producto
-      async function handleUpdateProduct(e) {
-        e.preventDefault();
-        if (!editingProduct) return;
-
-        if (supabase) {
-          const { error } = await supabase.from('kaoj_products').update({
-            name: editingProduct.name,
-            category: editingProduct.category,
-            price: parseFloat(editingProduct.price),
-            discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
-            image: editingProduct.image,
-            description: editingProduct.description,
-            variant_label: editingProduct.variant_label,
-            variants: editingProduct.variants
-          }).eq('id', editingProduct.id);
-
-          if (error) return showToast('Error actualizando producto: ' + error.message, 'error');
-        }
-
-        setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p));
-        setEditingProduct(null);
-        showToast('✅ Producto actualizado correctamente');
-      }
-
-      // Actualizar estado de orden en Admin
       async function handleOrderStatusChange(orderId, newStatus) {
         if (supabase) {
-          const { error } = await supabase.from('kaoj_orders').update({ status: newStatus }).eq('id', orderId);
-          if (error) return showToast('Error actualizando estado: ' + error.message, 'error');
+          await supabase.from('kaoj_orders').update({ status: newStatus }).eq('id', orderId);
         }
-
         setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-        showToast(`Estado cambiado a "${newStatus}"`);
+        showToast(`Estado actualizado a "${newStatus}"`);
       }
 
-      // Notificar al cliente por WhatsApp del cambio de estado
       function notifyCustomerWhatsApp(order) {
         const statusMap = {
-          'pendiente': 'recibido y está pendiente de verificación.',
-          'verificado': 'aprobado con éxito y estamos preparando tus productos con amor. 💅✨',
-          'en_camino': 'despachado y va en camino a tu dirección. 🚚💨',
-          'entregado': 'entregado. ¡Esperamos que disfrutes tus productos! Recuerda etiquetarnos en Instagram. 💖',
-          'cancelado': 'cancelado. Por favor contáctanos si tienes alguna duda.'
+          'pendiente': 'recibido y está en revisión de comprobante.',
+          'verificado': 'aprobado y estamos empaquetando tus productos con amor. 💅✨',
+          'en_camino': 'despachado con Servientrega / Domicilio y va en camino a ti. 🚚💨',
+          'entregado': 'entregado con éxito. ¡Esperamos que te encante tu compra! 💖',
+          'cancelado': 'cancelado. Comunícate con nosotras si necesitas ayuda.'
         };
 
         const msg =
           `Hola *${order.customer_name}*, te saludamos desde *KAOJ STORE* 💖\n\n` +
-          `Te informamos que tu pedido *${order.order_code}* (Código de Cliente: *${order.customer_code}*) ha sido ${statusMap[order.status] || 'actualizado.'}\n\n` +
+          `Te informamos que tu pedido *${order.order_code}* (Código Único: *${order.customer_code}*) ha sido ${statusMap[order.status] || 'actualizado.'}\n\n` +
           `Total: $${Number(order.total).toFixed(2)}\n\n` +
-          `¡Gracias por tu confianza! Si tienes cualquier inquietud, estamos para servirte. ✨`;
+          `¡Gracias por preferirnos! Siempre a tus órdenes. ✨`;
 
         const cleanNumber = order.customer_phone.replace(/\D/g, '');
         window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(msg)}`, '_blank');
       }
 
-      // Guardar Ajustes Generales
       async function handleSaveSettings() {
         if (supabase) {
-          const { error } = await supabase.from('kaoj_settings').upsert([settings]);
-          if (error) return showToast('Error guardando ajustes: ' + error.message, 'error');
+          await supabase.from('kaoj_settings').upsert([settings]);
         }
-        showToast('⚙️ Configuración de tienda guardada en Supabase');
+        showToast('⚙️ Ajustes guardados en Supabase');
       }
 
-      // Guardar conexión Supabase desde el asistente
       function handleSaveSupabaseConfig(e) {
         e.preventDefault();
         const trimmedUrl = configInputUrl.trim();
         const trimmedKey = configInputKey.trim();
 
-        if (!trimmedUrl || !trimmedKey) {
-          return showToast('Ingresa tanto la URL como la Anon Key de Supabase', 'error');
-        }
+        if (!trimmedUrl || !trimmedKey) return showToast('Ingresa URL y Anon Key', 'error');
 
         try {
           supabase = window.supabase.createClient(trimmedUrl, trimmedKey);
@@ -937,20 +1022,16 @@
           localStorage.setItem('kaoj_supabase_anon_key', trimmedKey);
           supabaseConfig = { url: trimmedUrl, key: trimmedKey };
           setIsConfigOpen(false);
-          showToast('🚀 Conexión con Supabase configurada con éxito');
+          showToast('🚀 Conexión con Supabase configurada');
           fetchStoreData();
         } catch (err) {
-          showToast('Error al conectar con Supabase: ' + err.message, 'error');
+          showToast('Error Supabase: ' + err.message, 'error');
         }
       }
 
-      // =======================================================================
-      // FILTRADO Y BÚSQUEDA DE PRODUCTOS
-      // =======================================================================
+      // Filtrado y ordenamiento de productos
       const filteredProducts = useMemo(() => {
         let result = [...products];
-
-        // Filtro por categoría
         if (category !== 'Todos') {
           if (category === 'Ofertas') {
             result = result.filter(p => Boolean(p.discount_price));
@@ -958,8 +1039,6 @@
             result = result.filter(p => p.category === category);
           }
         }
-
-        // Filtro por texto de búsqueda
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           result = result.filter(p =>
@@ -968,8 +1047,6 @@
             p.category.toLowerCase().includes(q)
           );
         }
-
-        // Ordenamiento
         if (sortBy === 'precio_menor') {
           result.sort((a, b) => (a.discount_price || a.price) - (b.discount_price || b.price));
         } else if (sortBy === 'precio_mayor') {
@@ -977,11 +1054,9 @@
         } else if (sortBy === 'ofertas') {
           result.sort((a, b) => (b.discount_price ? 1 : 0) - (a.discount_price ? 1 : 0));
         }
-
         return result;
       }, [products, category, searchQuery, sortBy]);
 
-      // Filtrado de pedidos en Admin
       const filteredOrders = useMemo(() => {
         return orders.filter(o => {
           const matchStatus = adminOrderFilter === 'todos' || o.status === adminOrderFilter;
@@ -996,23 +1071,50 @@
       }, [orders, adminOrderFilter, adminSearch]);
 
       // =======================================================================
-      // RENDERIZADO
+      // RENDERIZADO PRINCIPAL
       // =======================================================================
       return (
         <div className="min-h-screen flex flex-col bg-[#FDFAFC]">
 
-          {/* BANNER ANUNCIO SUPERIOR */}
-          <div className="bg-gradient-to-r from-[#FF2E93] via-[#E0157A] to-[#B80D61] text-white text-xs py-2 px-4 text-center font-medium tracking-wide shadow-sm flex items-center justify-center gap-2">
-            <span>✨</span>
-            <p className="truncate max-w-4xl">{settings.banner_message}</p>
-            <span>✨</span>
+          {/* BANNER INSTALAR PWA (MÓVILES Y ESCRITORIO) */}
+          {showInstallBanner && (
+            <div className="bg-gray-900 text-white text-xs px-4 py-2.5 flex items-center justify-between gap-3 shadow-md border-b border-pink-500/30">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📲</span>
+                <div>
+                  <p className="font-bold">¡Instala la App de KAOJ STORE en tu celular!</p>
+                  <p className="text-[11px] text-gray-300">Acceso rápido a tus labiales favoritos y ofertas instantáneas.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleInstallPwaClick}
+                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow-xs"
+                >
+                  Instalar App
+                </button>
+                <button onClick={() => setShowInstallBanner(false)} className="text-gray-400 hover:text-white px-1">✕</button>
+              </div>
+            </div>
+          )}
+
+          {/* BANNER PROMO SUPERIOR CON SALDO DE PUNTOS */}
+          <div className="bg-gradient-to-r from-[#FF2E93] via-[#E0157A] to-[#B80D61] text-white text-xs py-2 px-4 text-center font-medium tracking-wide shadow-xs flex items-center justify-center gap-3">
+            <span className="hidden sm:inline">✨</span>
+            <p className="truncate max-w-2xl">{settings.banner_message}</p>
+            {customerPoints > 0 && (
+              <span className="bg-white/20 backdrop-blur-xs text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                💎 Tienes {customerPoints} Puntos Kaoj
+              </span>
+            )}
+            <span className="hidden sm:inline">✨</span>
           </div>
 
-          {/* NAVBAR / HEADER */}
+          {/* HEADER PRINCIPAL */}
           <header className="bg-white/95 backdrop-blur-md border-b border-pink-100 sticky top-0 z-30 shadow-xs">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
 
-              {/* LOGO KAOJ STORE */}
+              {/* LOGO */}
               <div
                 onClick={() => { setIsAdmin(false); setCategory('Todos'); }}
                 className="cursor-pointer select-none text-left group"
@@ -1028,12 +1130,10 @@
                 </span>
               </div>
 
-              {/* BARRA DE BÚSQUEDA EN HEADER (PANTALLAS MEDIANAS EN ADELANTE) */}
+              {/* BARRA DE BÚSQUEDA */}
               {!isAdmin && (
                 <div className="hidden md:flex flex-1 max-w-md mx-4 relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    🔍
-                  </span>
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">🔍</span>
                   <input
                     type="text"
                     value={searchQuery}
@@ -1042,37 +1142,45 @@
                     className="w-full pl-10 pr-8 py-2 text-xs sm:text-sm bg-pink-50/50 border border-pink-200 rounded-full focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2E93] transition"
                   />
                   {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-gray-600"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400">✕</button>
                   )}
                 </div>
               )}
 
-              {/* ACCIONES Y BOTONES DEL HEADER */}
+              {/* ACCIONES DEL HEADER */}
               <div className="flex items-center gap-2 sm:gap-3">
 
-                {/* BOTÓN RASTREAR PEDIDO / CONSULTAR CÓDIGO */}
+                {/* BOTÓN RASTREAR PEDIDOS */}
                 {!isAdmin && (
                   <button
                     onClick={() => setIsTrackingOpen(true)}
                     className="text-xs px-3 py-2 rounded-full border border-pink-200 hover:border-[#FF2E93] hover:bg-pink-50 text-gray-700 font-semibold transition flex items-center gap-1.5"
-                    title="Rastrear pedido por Código Único de Cliente"
+                    title="Rastrear pedido por Código Único"
                   >
                     <span>🏷️</span>
                     <span className="hidden sm:inline">Mis Pedidos</span>
                   </button>
                 )}
 
-                {/* BOTÓN INICIAR SESIÓN CON GOOGLE / PERFIL */}
+                {/* BOTÓN PUNTOS KAOJ VIP */}
+                {!isAdmin && customerPoints > 0 && (
+                  <button
+                    onClick={() => {
+                      showToast(`💎 Tienes ${customerPoints} puntos acumulados. ¡Canjea 50 puntos por $5 de descuento en el carrito!`);
+                    }}
+                    className="hidden lg:flex items-center gap-1 text-xs px-3 py-2 rounded-full bg-pink-50 border border-pink-200 text-[#FF2E93] font-extrabold"
+                  >
+                    <span>💎</span>
+                    <span>{customerPoints} pts</span>
+                  </button>
+                )}
+
+                {/* GOOGLE LOGIN / PERFIL */}
                 {!user ? (
                   <button
                     onClick={handleGoogleLogin}
                     className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 text-xs px-3 py-2 rounded-full font-semibold flex items-center gap-2 shadow-xs transition hover:border-pink-300"
-                    title="Iniciar sesión con Google para sincronizar tus carritos"
+                    title="Iniciar sesión con Google para sincronizar carritos y puntos"
                   >
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -1080,7 +1188,7 @@
                       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                     </svg>
-                    <span className="hidden sm:inline">Google Login</span>
+                    <span className="hidden sm:inline">Google</span>
                   </button>
                 ) : (
                   <div className="relative">
@@ -1105,17 +1213,19 @@
                       )}
                     </button>
 
-                    {/* MENÚ DESPLEGABLE DE PERFIL */}
                     {isProfileOpen && (
                       <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-pink-100 p-4 z-50 text-xs space-y-3">
                         <div className="border-b pb-2">
-                          <p className="font-bold text-gray-900 truncate">{user.user_metadata?.full_name || 'Cliente Kaoj'}</p>
+                          <p className="font-bold text-gray-900 truncate">{user.user_metadata?.full_name || 'Clienta Kaoj'}</p>
                           <p className="text-gray-500 truncate">{user.email}</p>
                           {customerCode && (
                             <div className="mt-1.5 bg-pink-50 border border-pink-200 text-[#FF2E93] rounded-lg p-1.5 text-center font-bold">
                               🏷️ Código Único: {customerCode}
                             </div>
                           )}
+                          <div className="mt-1.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-1.5 text-center font-bold">
+                            💎 Saldo: {customerPoints} Puntos Kaoj
+                          </div>
                         </div>
                         <div className="space-y-1 text-gray-600">
                           <p className="text-[11px] text-green-700 font-semibold flex items-center gap-1">
@@ -1125,7 +1235,7 @@
                             onClick={() => { setIsProfileOpen(false); setIsTrackingOpen(true); }}
                             className="w-full text-left py-1.5 hover:text-[#FF2E93] font-medium"
                           >
-                            📦 Ver mi historial de pedidos
+                            📦 Ver historial de pedidos
                           </button>
                         </div>
                         <button
@@ -1139,7 +1249,7 @@
                   </div>
                 )}
 
-                {/* BOTÓN ADMIN / INVENTARIO */}
+                {/* BOTÓN ADMIN */}
                 <button
                   onClick={() => {
                     if (isAdmin) {
@@ -1154,19 +1264,16 @@
                     }
                   }}
                   className={`text-xs px-3 py-2 rounded-full border transition font-medium ${
-                    isAdmin
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'border-gray-200 hover:border-pink-300 text-gray-700'
+                    isAdmin ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 hover:border-pink-300 text-gray-700'
                   }`}
-                  title="Panel de inventario y configuración"
                 >
                   {isAdmin ? '← Tienda' : '⚙️ Admin'}
                 </button>
 
-                {/* BOTÓN CARRITO CON CONTADOR */}
+                {/* BOTÓN CARRITO */}
                 <button
                   onClick={() => setIsCartOpen(true)}
-                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3.5 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 shadow-sm transition active:scale-95"
+                  className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3.5 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 shadow-xs transition active:scale-95"
                 >
                   <span>🛍️</span>
                   <span className="hidden sm:inline">Carrito</span>
@@ -1177,41 +1284,27 @@
               </div>
             </div>
 
-            {/* BARRA DE CATEGORÍAS HORIZONTAL (SOLO EN TIENDA) */}
+            {/* BARRA DE CATEGORÍAS */}
             {!isAdmin && (
               <div className="border-t border-pink-50 bg-[#FFFBFD]">
                 <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-4 overflow-x-auto no-scrollbar">
                   <div className="flex gap-2">
-                    {CATEGORIES.map(cat => {
-                      const isSelected = category === cat;
-                      const icons = {
-                        'Todos': '✨',
-                        'Labiales': '💄',
-                        'Skincare': '🌸',
-                        'Blusas': '👚',
-                        'Vestidos': '👗',
-                        'Accesorios': '💍',
-                        'Ofertas': '🔥'
-                      };
-
-                      return (
-                        <button
-                          key={cat}
-                          onClick={() => setCategory(cat)}
-                          className={`px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
-                            isSelected
-                              ? 'bg-[#FF2E93] text-white shadow-xs'
-                              : 'bg-white border border-pink-100 text-gray-700 hover:border-[#FF2E93] hover:bg-pink-50/50'
-                          }`}
-                        >
-                          <span>{icons[cat] || '✨'}</span>
-                          <span>{cat}</span>
-                        </button>
-                      );
-                    })}
+                    {CATEGORIES.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setCategory(cat)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
+                          category === cat
+                            ? 'bg-[#FF2E93] text-white shadow-xs'
+                            : 'bg-white border border-pink-100 text-gray-700 hover:border-[#FF2E93] hover:bg-pink-50/50'
+                        }`}
+                      >
+                        <span>{cat === 'Todos' ? '✨' : cat === 'Labiales' ? '💄' : cat === 'Skincare' ? '🌸' : cat === 'Blusas' ? '👚' : cat === 'Vestidos' ? '👗' : cat === 'Accesorios' ? '💍' : '🔥'}</span>
+                        <span>{cat}</span>
+                      </button>
+                    ))}
                   </div>
 
-                  {/* SELECTOR DE ORDEN */}
                   <div className="hidden lg:flex items-center gap-2 text-xs text-gray-500 whitespace-nowrap">
                     <span>Ordenar por:</span>
                     <select
@@ -1230,49 +1323,46 @@
             )}
           </header>
 
-          {/* VISTA 1: TIENDA PÚBLICA (CLIENTES) */}
+          {/* VISTA 1: TIENDA PÚBLICA */}
           {!isAdmin ? (
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-8">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-10">
 
               {/* HERO BANNER BOUTIQUE */}
               <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-pink-100 via-rose-50 to-pink-50 border border-pink-200 p-6 sm:p-10 shadow-xs">
                 <div className="max-w-xl space-y-3 z-10 relative">
                   <span className="bg-[#FF2E93] text-white text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block">
-                    Nueva Colección 2026
+                    Club de Puntos VIP 2026
                   </span>
                   <h2 className="font-serif-kaoj text-3xl sm:text-5xl font-black text-gray-900 leading-tight">
-                    Resalta tu belleza única con <span className="text-[#FF2E93]">KAOJ</span>
+                    Belleza y moda con <span className="text-[#FF2E93]">KAOJ</span>
                   </h2>
                   <p className="text-gray-600 text-xs sm:text-sm">
-                    Cosméticos importados, skincare dermatológico y moda chic. Trabajamos con sistema de <b>Código Único de Cliente</b> para darte atención personalizada y seguimiento directo a WhatsApp.
+                    Acumula <b>1 punto por cada dólar</b> con tu Código Único de Cliente. Al llegar a 50 puntos recibe <b>$5.00 de descuento automático</b>. Aceptamos Deuna, Transferencia y <b>Tarjetas con Payphone</b>.
                   </p>
                   <div className="pt-2 flex flex-wrap gap-3">
                     <button
                       onClick={() => setCategory('Ofertas')}
                       className="bg-[#FF2E93] hover:bg-[#e0157a] text-white text-xs sm:text-sm font-bold px-5 py-2.5 rounded-full shadow-sm transition active:scale-95"
                     >
-                      Ver Ofertas Especiales 🔥
+                      Ver Ofertas 🔥
                     </button>
                     <button
-                      onClick={() => setIsTrackingOpen(true)}
-                      className="bg-white hover:bg-pink-50 text-[#FF2E93] border border-pink-300 text-xs sm:text-sm font-bold px-4 py-2.5 rounded-full transition"
+                      onClick={() => setIsReviewModalOpen(true)}
+                      className="bg-white hover:bg-pink-50 text-[#FF2E93] border border-pink-300 text-xs sm:text-sm font-bold px-4 py-2.5 rounded-full transition flex items-center gap-1.5"
                     >
-                      Consultar mi Pedido 🏷️
+                      <span>📸</span> Dejar mi Reseña
                     </button>
                   </div>
                 </div>
-                {/* Elementos decorativos */}
                 <div className="absolute right-4 bottom-0 opacity-15 sm:opacity-25 pointer-events-none select-none text-9xl">
                   💄
                 </div>
               </div>
 
-              {/* BARRA DE BÚSQUEDA MÓVIL */}
+              {/* BARRA BÚSQUEDA MÓVIL */}
               <div className="md:hidden">
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    🔍
-                  </span>
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">🔍</span>
                   <input
                     type="text"
                     value={searchQuery}
@@ -1281,12 +1371,7 @@
                     className="w-full pl-10 pr-8 py-2.5 text-xs bg-white border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2E93]"
                   />
                   {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400">✕</button>
                   )}
                 </div>
               </div>
@@ -1295,22 +1380,16 @@
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900">
-                    {category === 'Todos' ? 'Catálogo Completo' : category}
-                    <span className="text-xs font-normal text-gray-500 ml-2">
-                      ({filteredProducts.length} {filteredProducts.length === 1 ? 'producto' : 'productos'})
-                    </span>
+                    {category === 'Todos' ? 'Catálogo Exclusivo' : category}
+                    <span className="text-xs font-normal text-gray-500 ml-2">({filteredProducts.length} productos)</span>
                   </h3>
                 </div>
 
                 {filteredProducts.length === 0 ? (
                   <div className="bg-white rounded-2xl border border-pink-100 p-12 text-center space-y-3">
                     <span className="text-4xl block">🔍</span>
-                    <p className="font-bold text-gray-700">No encontramos productos en esta búsqueda o categoría.</p>
-                    <p className="text-xs text-gray-500">Prueba cambiando los filtros o borrando el texto de búsqueda.</p>
-                    <button
-                      onClick={() => { setCategory('Todos'); setSearchQuery(''); }}
-                      className="text-xs bg-pink-50 text-[#FF2E93] font-bold px-4 py-2 rounded-full border border-pink-200"
-                    >
+                    <p className="font-bold text-gray-700">No encontramos productos en esta búsqueda.</p>
+                    <button onClick={() => { setCategory('Todos'); setSearchQuery(''); }} className="text-xs bg-pink-50 text-[#FF2E93] font-bold px-4 py-2 rounded-full border border-pink-200">
                       Ver todos los productos
                     </button>
                   </div>
@@ -1321,76 +1400,46 @@
                       const varObj = (prod.variants || []).find(v => v.name === currentVar);
                       const stock = varObj ? varObj.stock : 0;
                       const hasDiscount = Boolean(prod.discount_price && prod.discount_price < prod.price);
-                      const discountPercent = hasDiscount
-                        ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100)
-                        : 0;
+                      const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
 
                       return (
-                        <div
-                          key={prod.id}
-                          className="bg-white rounded-2xl border border-pink-100 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group"
-                        >
-                          {/* FOTO DEL PRODUCTO CON BADGES */}
+                        <div key={prod.id} className="bg-white rounded-2xl border border-pink-100 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group">
                           <div className="relative h-64 bg-pink-50 overflow-hidden cursor-pointer" onClick={() => setQuickViewProduct(prod)}>
-                            <img
-                              src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
-                              alt={prod.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                              loading="lazy"
-                            />
-                            {/* Badge de Categoría */}
+                            <img src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={prod.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
                             <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-full text-[10px] font-bold text-[#FF2E93] shadow-xs">
                               {prod.category}
                             </span>
-                            {/* Badge de Descuento */}
                             {hasDiscount && (
                               <span className="absolute top-3 right-3 bg-[#FF2E93] text-white px-2 py-0.5 rounded-full text-[10px] font-extrabold shadow-xs">
                                 -{discountPercent}%
                               </span>
                             )}
-                            {/* Botón Vista Rápida */}
                             <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                              <span className="bg-white text-gray-900 text-xs font-bold px-3 py-1.5 rounded-full shadow-md">
-                                👁️ Vista Rápida
-                              </span>
+                              <span className="bg-white text-gray-900 text-xs font-bold px-3 py-1.5 rounded-full shadow-md">👁️ Vista Rápida</span>
                             </div>
                           </div>
 
-                          {/* INFORMACIÓN Y PRECIO */}
                           <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
                             <div>
-                              <h4
-                                onClick={() => setQuickViewProduct(prod)}
-                                className="font-bold text-gray-900 hover:text-[#FF2E93] transition line-clamp-2 text-sm sm:text-base cursor-pointer"
-                              >
+                              <h4 onClick={() => setQuickViewProduct(prod)} className="font-bold text-gray-900 hover:text-[#FF2E93] transition line-clamp-2 text-sm sm:text-base cursor-pointer">
                                 {prod.name}
                               </h4>
                               <p className="text-xs text-gray-500 mt-1 line-clamp-2">{prod.description}</p>
 
-                              {/* PRECIOS */}
                               <div className="mt-3 flex items-baseline gap-2">
                                 {hasDiscount ? (
                                   <>
-                                    <span className="text-xl font-extrabold text-[#FF2E93]">
-                                      ${Number(prod.discount_price).toFixed(2)}
-                                    </span>
-                                    <span className="text-xs line-through text-gray-400">
-                                      ${Number(prod.price).toFixed(2)}
-                                    </span>
+                                    <span className="text-xl font-extrabold text-[#FF2E93]">${Number(prod.discount_price).toFixed(2)}</span>
+                                    <span className="text-xs line-through text-gray-400">${Number(prod.price).toFixed(2)}</span>
                                   </>
                                 ) : (
-                                  <span className="text-xl font-extrabold text-gray-900">
-                                    ${Number(prod.price).toFixed(2)}
-                                  </span>
+                                  <span className="text-xl font-extrabold text-gray-900">${Number(prod.price).toFixed(2)}</span>
                                 )}
                               </div>
 
-                              {/* SELECTOR DE VARIANTES / TONOS / TALLAS */}
                               <div className="mt-3">
                                 <div className="flex justify-between items-center text-xs mb-1.5">
-                                  <span className="font-semibold text-gray-600">
-                                    {prod.variant_label || 'Tono / Talla'}:
-                                  </span>
+                                  <span className="font-semibold text-gray-600">{prod.variant_label || 'Tono / Talla'}:</span>
                                   {varObj && (
                                     <span className={`text-[10px] font-bold ${varObj.stock > 0 ? 'text-green-600' : 'text-red-500'}`}>
                                       {varObj.stock > 0 ? `Stock: ${varObj.stock}` : 'Agotado'}
@@ -1418,18 +1467,15 @@
                               </div>
                             </div>
 
-                            {/* BOTÓN AGREGAR */}
                             <button
                               disabled={stock <= 0}
                               onClick={() => addToCart(prod)}
                               className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-xs ${
-                                stock > 0
-                                  ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95'
-                                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                stock > 0 ? 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                               }`}
                             >
                               <span>🛍️</span>
-                              <span>{stock > 0 ? 'Agregar al Carrito' : 'Agotado en este tono'}</span>
+                              <span>{stock > 0 ? 'Agregar al Carrito' : 'Agotado'}</span>
                             </button>
                           </div>
                         </div>
@@ -1439,42 +1485,89 @@
                 )}
               </div>
 
-              {/* SECCIÓN DE BENEFICIOS Y GARANTÍA KAOJ */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-8 border-t border-pink-100">
-                <div className="bg-white p-5 rounded-2xl border border-pink-100 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-pink-50 flex items-center justify-center text-2xl">
-                    🏷️
-                  </div>
+              {/* MURO DE RESEÑAS Y CLIENTAS REALES (SOCIAL PROOF) */}
+              <div className="pt-6 border-t border-pink-100 space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div>
-                    <h5 className="font-bold text-gray-900 text-sm">Código Único de Cliente</h5>
-                    <p className="text-xs text-gray-500">1ª letra de tu nombre + 4 dígitos de celular para seguimiento VIP.</p>
+                    <span className="text-xs font-bold text-[#FF2E93] uppercase tracking-wider">Social Proof</span>
+                    <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900 flex items-center gap-2">
+                      <span>✨ Clientas Reales Kaoj</span>
+                      <span className="text-xs bg-pink-50 text-[#FF2E93] px-2.5 py-0.5 rounded-full font-bold">5.0 ★★★★★</span>
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsReviewModalOpen(true)}
+                    className="bg-white hover:bg-pink-50 text-[#FF2E93] border border-pink-200 text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5"
+                  >
+                    <span>📸</span> Dejar mi Reseña & Foto
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {reviews.slice(0, 3).map(rev => (
+                    <div key={rev.id} className="bg-white rounded-2xl border border-pink-100 p-5 shadow-xs flex flex-col justify-between space-y-3">
+                      <div className="space-y-3">
+                        {rev.photo_url && (
+                          <div className="h-44 rounded-xl overflow-hidden bg-pink-50 border">
+                            <img src={rev.photo_url} alt="Clienta Kaoj" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 text-amber-400 text-sm">
+                          {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                        </div>
+                        <p className="text-xs text-gray-600 italic">"{rev.comment}"</p>
+                      </div>
+                      <div className="border-t pt-3 flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-bold text-gray-900">{rev.customer_name}</p>
+                          <span className="text-[10px] text-gray-400">{rev.product_name}</span>
+                        </div>
+                        {rev.customer_code && (
+                          <span className="bg-pink-100 text-[#FF2E93] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            🏷️ VIP {rev.customer_code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* SECCIÓN BENEFICIOS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-6 border-t border-pink-100">
+                <div className="bg-white p-4 rounded-2xl border border-pink-100 flex items-center gap-3">
+                  <span className="text-3xl">💎</span>
+                  <div>
+                    <h5 className="font-bold text-gray-900 text-xs">Puntos y Recompensas</h5>
+                    <p className="text-[11px] text-gray-500">1 USD = 1 Punto. 50 puntos = $5 de descuento.</p>
                   </div>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-pink-100 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-2xl">
-                    💜
-                  </div>
+                <div className="bg-white p-4 rounded-2xl border border-pink-100 flex items-center gap-3">
+                  <span className="text-3xl">💳</span>
                   <div>
-                    <h5 className="font-bold text-gray-900 text-sm">Pagos con Deuna! y Bancos</h5>
-                    <p className="text-xs text-gray-500">Paga al instante con tu app Deuna o transferencia Banco Guayaquil / Pichincha.</p>
+                    <h5 className="font-bold text-gray-900 text-xs">Tarjetas con Payphone</h5>
+                    <p className="text-[11px] text-gray-500">Paga con tarjeta de crédito/débito al instante.</p>
                   </div>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-pink-100 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-2xl">
-                    🚚
-                  </div>
+                <div className="bg-white p-4 rounded-2xl border border-pink-100 flex items-center gap-3">
+                  <span className="text-3xl">📦</span>
                   <div>
-                    <h5 className="font-bold text-gray-900 text-sm">Retiros y Envíos Seguros</h5>
-                    <p className="text-xs text-gray-500">Retiro gratis en Portoviejo, ULEAM Manta, San Jacinto o Servientrega nacional.</p>
+                    <h5 className="font-bold text-gray-900 text-xs">Guías Servientrega</h5>
+                    <p className="text-[11px] text-gray-500">Envíos asegurados a todo el Ecuador 24/48h.</p>
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-pink-100 flex items-center gap-3">
+                  <span className="text-3xl">📲</span>
+                  <div>
+                    <h5 className="font-bold text-gray-900 text-xs">App Móvil PWA</h5>
+                    <p className="text-[11px] text-gray-500">Instala Kaoj Store en tu pantalla de inicio.</p>
                   </div>
                 </div>
               </div>
             </main>
           ) : (
-            /* VISTA 2: PANEL DE ADMINISTRADOR CONECTADO A SUPABASE */
+            /* VISTA 2: PANEL DE ADMINISTRADOR */
             <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
-
-              {/* HEADER DEL PANEL DE ADMINISTRADOR */}
               <div className="bg-white p-6 rounded-3xl border border-pink-100 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1484,264 +1577,123 @@
                     </h2>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Gestión total de inventario, variantes, pedidos recibidos y configuración de pagos con Supabase.
+                    Inventario en Supabase, Pedidos, Guías de Servientrega, Payphone y Reseñas.
                   </p>
                 </div>
 
-                {/* PESTAÑAS DEL ADMIN */}
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setAdminTab('inventory')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      adminTab === 'inventory' ? 'bg-[#FF2E93] text-white shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <span>📦</span>
-                    <span>Inventario ({products.length})</span>
+                  <button onClick={() => setAdminTab('inventory')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'inventory' ? 'bg-[#FF2E93] text-white' : 'bg-gray-100 text-gray-700'}`}>
+                    <span>📦</span><span>Inventario ({products.length})</span>
                   </button>
-                  <button
-                    onClick={() => setAdminTab('orders')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      adminTab === 'orders' ? 'bg-[#FF2E93] text-white shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <span>🛍️</span>
-                    <span>Pedidos ({orders.length})</span>
+                  <button onClick={() => setAdminTab('orders')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'orders' ? 'bg-[#FF2E93] text-white' : 'bg-gray-100 text-gray-700'}`}>
+                    <span>🛍️</span><span>Pedidos ({orders.length})</span>
                   </button>
-                  <button
-                    onClick={() => setAdminTab('settings')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      adminTab === 'settings' ? 'bg-[#FF2E93] text-white shadow-xs' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    <span>⚙️</span>
-                    <span>Configuración</span>
+                  <button onClick={() => setAdminTab('reviews')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'reviews' ? 'bg-[#FF2E93] text-white' : 'bg-gray-100 text-gray-700'}`}>
+                    <span>📸</span><span>Reseñas ({reviews.length})</span>
+                  </button>
+                  <button onClick={() => setAdminTab('settings')} className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-gray-100 text-gray-700'}`}>
+                    <span>⚙️</span><span>Ajustes & Payphone</span>
                   </button>
                 </div>
               </div>
 
-              {/* PESTAÑA ADMIN 1: INVENTARIO */}
+              {/* ADMIN TAB 1: INVENTARIO */}
               {adminTab === 'inventory' && (
                 <div className="grid lg:grid-cols-3 gap-6">
-
-                  {/* FORMULARIO: CREAR NUEVO PRODUCTO */}
                   <div className="bg-white p-6 rounded-3xl border border-pink-100 shadow-xs h-fit space-y-4">
                     <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                      <span className="text-[#FF2E93]">➕</span> Agregar Producto al Inventario
+                      <span className="text-[#FF2E93]">➕</span> Agregar Producto
                     </h3>
-
                     <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
                       <div>
-                        <label className="font-semibold text-gray-700 block mb-1">Nombre del Producto *</label>
-                        <input
-                          required
-                          value={newProd.name}
-                          onChange={e => setNewProd({ ...newProd, name: e.target.value })}
-                          placeholder="Ej. Labial Velvet Matte"
-                          className="w-full border rounded-xl p-2.5 focus:ring-1 focus:ring-[#FF2E93] outline-none"
-                        />
+                        <label className="font-semibold text-gray-700 block mb-1">Nombre *</label>
+                        <input required value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Ej. Labial Velvet Matte" className="w-full border rounded-xl p-2.5 outline-none" />
                       </div>
-
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="font-semibold text-gray-700 block mb-1">Categoría</label>
-                          <select
-                            value={newProd.category}
-                            onChange={e => setNewProd({ ...newProd, category: e.target.value })}
-                            className="w-full border rounded-xl p-2.5 bg-white outline-none"
-                          >
-                            {CATEGORIES.filter(c => c !== 'Todos' && c !== 'Ofertas').map(c => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
+                          <select value={newProd.category} onChange={e => setNewProd({ ...newProd, category: e.target.value })} className="w-full border rounded-xl p-2.5 bg-white outline-none">
+                            {CATEGORIES.filter(c => c !== 'Todos' && c !== 'Ofertas').map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="font-semibold text-gray-700 block mb-1">Etiqueta de Variante</label>
-                          <input
-                            value={newProd.variant_label}
-                            onChange={e => setNewProd({ ...newProd, variant_label: e.target.value })}
-                            placeholder="Ej. Tono, Talla, Tamaño"
-                            className="w-full border rounded-xl p-2.5 outline-none"
-                          />
+                          <label className="font-semibold text-gray-700 block mb-1">Etiqueta</label>
+                          <input value={newProd.variant_label} onChange={e => setNewProd({ ...newProd, variant_label: e.target.value })} placeholder="Tono, Talla" className="w-full border rounded-xl p-2.5 outline-none" />
                         </div>
                       </div>
-
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="font-semibold text-gray-700 block mb-1">Precio Normal ($) *</label>
-                          <input
-                            required
-                            type="number"
-                            step="0.01"
-                            value={newProd.price}
-                            onChange={e => setNewProd({ ...newProd, price: e.target.value })}
-                            placeholder="0.00"
-                            className="w-full border rounded-xl p-2.5 outline-none"
-                          />
+                          <input required type="number" step="0.01" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="0.00" className="w-full border rounded-xl p-2.5 outline-none" />
                         </div>
                         <div>
                           <label className="font-semibold text-gray-700 block mb-1">Precio Oferta ($)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={newProd.discount_price}
-                            onChange={e => setNewProd({ ...newProd, discount_price: e.target.value })}
-                            placeholder="Opcional"
-                            className="w-full border rounded-xl p-2.5 outline-none"
-                          />
+                          <input type="number" step="0.01" value={newProd.discount_price} onChange={e => setNewProd({ ...newProd, discount_price: e.target.value })} placeholder="Opcional" className="w-full border rounded-xl p-2.5 outline-none" />
                         </div>
                       </div>
-
                       <div>
-                        <label className="font-semibold text-gray-700 block mb-1">Foto del Producto (Subir o URL)</label>
-                        <div className="space-y-1.5">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={async e => {
-                              if (e.target.files[0]) {
-                                const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                if (url) setNewProd({ ...newProd, image: url });
-                              }
-                            }}
-                            className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-pink-50 file:text-[#FF2E93] hover:file:bg-pink-100"
-                          />
-                          <input
-                            value={newProd.image}
-                            onChange={e => setNewProd({ ...newProd, image: e.target.value })}
-                            placeholder="O pega URL de la imagen..."
-                            className="w-full border rounded-xl p-2 text-xs outline-none"
-                          />
-                        </div>
-                        {newProd.image && (
-                          <img src={newProd.image} alt="Preview" className="h-20 w-20 object-cover rounded-xl mt-2 border p-1" />
-                        )}
+                        <label className="font-semibold text-gray-700 block mb-1">Foto del Producto</label>
+                        <input type="file" accept="image/*" onChange={async e => {
+                          if (e.target.files[0]) {
+                            const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                            if (url) setNewProd({ ...newProd, image: url });
+                          }
+                        }} className="w-full text-xs text-gray-500 mb-1" />
+                        <input value={newProd.image} onChange={e => setNewProd({ ...newProd, image: e.target.value })} placeholder="O pega URL de la imagen..." className="w-full border rounded-xl p-2 text-xs outline-none" />
+                        {newProd.image && <img src={newProd.image} alt="Preview" className="h-16 w-16 object-cover rounded-xl mt-1 border" />}
                       </div>
-
                       <div>
-                        <label className="font-semibold text-gray-700 block mb-1">
-                          Variantes y Stock (Nombre:Stock separados por coma)
-                        </label>
-                        <input
-                          value={newProd.variantsText}
-                          onChange={e => setNewProd({ ...newProd, variantsText: e.target.value })}
-                          placeholder="Ej: Rosa Nude:5, Rojo:4, Vino:0"
-                          className="w-full border rounded-xl p-2.5 outline-none"
-                        />
-                        <span className="text-[10px] text-gray-400 block mt-0.5">
-                          Formato: Tono:Cantidad (ej. S:5, M:3, L:2)
-                        </span>
+                        <label className="font-semibold text-gray-700 block mb-1">Variantes y Stock (Nombre:Stock)</label>
+                        <input value={newProd.variantsText} onChange={e => setNewProd({ ...newProd, variantsText: e.target.value })} placeholder="Rosa Nude:5, Rojo:4" className="w-full border rounded-xl p-2.5 outline-none" />
                       </div>
-
                       <div>
-                        <label className="font-semibold text-gray-700 block mb-1">Descripción del Producto</label>
-                        <textarea
-                          rows="3"
-                          value={newProd.description}
-                          onChange={e => setNewProd({ ...newProd, description: e.target.value })}
-                          placeholder="Beneficios, ingredientes, fórmula..."
-                          className="w-full border rounded-xl p-2.5 outline-none resize-none"
-                        ></textarea>
+                        <label className="font-semibold text-gray-700 block mb-1">Descripción</label>
+                        <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Beneficios..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
                       </div>
-
-                      <button
-                        type="submit"
-                        disabled={uploading}
-                        className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-sm transition active:scale-95"
-                      >
-                        {uploading ? 'Subiendo imagen a la nube...' : 'Guardar Producto en Supabase'}
+                      <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-xs transition">
+                        {uploading ? 'Subiendo imagen...' : 'Guardar en Supabase'}
                       </button>
                     </form>
                   </div>
 
-                  {/* LISTA DE PRODUCTOS Y CONTROL RÁPIDO DE STOCK */}
                   <div className="lg:col-span-2 space-y-4">
                     <div className="bg-white p-4 rounded-3xl border border-pink-100 shadow-xs flex items-center justify-between gap-4">
                       <div className="relative flex-1">
                         <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 text-xs">🔍</span>
-                        <input
-                          type="text"
-                          value={adminSearch}
-                          onChange={e => setAdminSearch(e.target.value)}
-                          placeholder="Buscar en el inventario por nombre o categoría..."
-                          className="w-full pl-8 pr-4 py-2 border rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                        />
+                        <input type="text" value={adminSearch} onChange={e => setAdminSearch(e.target.value)} placeholder="Buscar en inventario..." className="w-full pl-8 pr-4 py-2 border rounded-xl text-xs outline-none" />
                       </div>
-                      <span className="text-xs font-bold text-gray-600 whitespace-nowrap">
-                        {products.length} productos
-                      </span>
+                      <span className="text-xs font-bold text-gray-600">{products.length} productos</span>
                     </div>
 
                     <div className="space-y-3">
                       {products
-                        .filter(p => !adminSearch || p.name.toLowerCase().includes(adminSearch.toLowerCase()) || p.category.toLowerCase().includes(adminSearch.toLowerCase()))
+                        .filter(p => !adminSearch || p.name.toLowerCase().includes(adminSearch.toLowerCase()))
                         .map(prod => (
                           <div key={prod.id} className="bg-white p-4 rounded-2xl border border-pink-100 shadow-xs flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex gap-3">
                               <img src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={prod.name} className="w-16 h-16 rounded-xl object-cover border" />
                               <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <h4 className="font-bold text-gray-900 text-sm">{prod.name}</h4>
-                                  <span className="text-[10px] bg-pink-50 text-[#FF2E93] font-bold px-2 py-0.5 rounded-full">
-                                    {prod.category}
-                                  </span>
-                                </div>
+                                <h4 className="font-bold text-gray-900 text-sm">{prod.name}</h4>
                                 <div className="text-xs flex items-center gap-2">
-                                  <span className="font-extrabold text-[#FF2E93]">
-                                    ${Number(prod.discount_price || prod.price).toFixed(2)}
-                                  </span>
-                                  {prod.discount_price && (
-                                    <span className="line-through text-gray-400 text-[10px]">
-                                      ${Number(prod.price).toFixed(2)}
-                                    </span>
-                                  )}
+                                  <span className="font-extrabold text-[#FF2E93]">${Number(prod.discount_price || prod.price).toFixed(2)}</span>
+                                  {prod.discount_price && <span className="line-through text-gray-400 text-[10px]">${Number(prod.price).toFixed(2)}</span>}
                                 </div>
-
-                                {/* VARIANTES Y CONTROL DE STOCK (+ / -) */}
                                 <div className="flex flex-wrap gap-1.5 pt-1">
                                   {(prod.variants || []).map(v => (
-                                    <div
-                                      key={v.name}
-                                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] ${
-                                        v.stock <= 2 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-gray-50 border-gray-200 text-gray-700'
-                                      }`}
-                                    >
+                                    <div key={v.name} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] ${v.stock <= 2 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-gray-50 border-gray-200'}`}>
                                       <span>{v.name}: <b>{v.stock}</b></span>
                                       <div className="flex items-center gap-0.5 ml-1">
-                                        <button
-                                          onClick={() => handleQuickStockChange(prod.id, v.name, -1)}
-                                          disabled={v.stock <= 0}
-                                          className="w-4 h-4 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
-                                        >
-                                          -
-                                        </button>
-                                        <button
-                                          onClick={() => handleQuickStockChange(prod.id, v.name, 1)}
-                                          className="w-4 h-4 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold text-gray-700"
-                                        >
-                                          +
-                                        </button>
+                                        <button onClick={() => handleQuickStockChange(prod.id, v.name, -1)} disabled={v.stock <= 0} className="w-4 h-4 rounded bg-gray-200 hover:bg-gray-300 font-bold">-</button>
+                                        <button onClick={() => handleQuickStockChange(prod.id, v.name, 1)} className="w-4 h-4 rounded bg-gray-200 hover:bg-gray-300 font-bold">+</button>
                                       </div>
                                     </div>
                                   ))}
                                 </div>
                               </div>
                             </div>
-
-                            {/* BOTONES ACCIÓN: EDITAR Y BORRAR */}
                             <div className="flex md:flex-col justify-end items-end gap-2 text-xs">
-                              <button
-                                onClick={() => setEditingProduct({ ...prod })}
-                                className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-lg font-bold border border-pink-200"
-                              >
-                                ✏️ Editar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteProduct(prod.id)}
-                                className="px-3 py-1.5 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg font-semibold border border-gray-200"
-                              >
-                                🗑️ Eliminar
-                              </button>
+                              <button onClick={() => setEditingProduct({ ...prod })} className="px-3 py-1.5 bg-pink-50 text-[#FF2E93] rounded-lg font-bold border border-pink-200">✏️ Editar</button>
+                              <button onClick={() => handleDeleteProduct(prod.id)} className="px-3 py-1.5 bg-gray-50 text-gray-600 hover:text-red-600 rounded-lg font-semibold border">🗑️ Eliminar</button>
                             </div>
                           </div>
                         ))}
@@ -1750,27 +1702,17 @@
                 </div>
               )}
 
-              {/* PESTAÑA ADMIN 2: PEDIDOS Y COMPROBANTES */}
+              {/* ADMIN TAB 2: PEDIDOS Y GUÍAS SERVIENTREGA */}
               {adminTab === 'orders' && (
                 <div className="space-y-4">
-                  {/* FILTROS DE PEDIDOS */}
                   <div className="bg-white p-4 rounded-3xl border border-pink-100 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                       {['todos', 'pendiente', 'verificado', 'en_camino', 'entregado', 'cancelado'].map(st => (
-                        <button
-                          key={st}
-                          onClick={() => setAdminOrderFilter(st)}
-                          className={`px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition ${
-                            adminOrderFilter === st
-                              ? 'bg-[#FF2E93] text-white shadow-xs'
-                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          }`}
-                        >
+                        <button key={st} onClick={() => setAdminOrderFilter(st)} className={`px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-[10px] ${adminOrderFilter === st ? 'bg-[#FF2E93] text-white' : 'bg-gray-100 text-gray-600'}`}>
                           {st}
                         </button>
                       ))}
                     </div>
-
                     <div className="flex items-center gap-2">
                       <span className="text-gray-500 font-semibold">Total en pedidos:</span>
                       <span className="text-base font-extrabold text-[#FF2E93]">
@@ -1779,224 +1721,158 @@
                     </div>
                   </div>
 
-                  {/* LISTA DE PEDIDOS */}
-                  {filteredOrders.length === 0 ? (
-                    <div className="bg-white rounded-3xl border border-pink-100 p-12 text-center text-gray-500 text-xs">
-                      No hay pedidos con este filtro.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {filteredOrders.map(order => (
-                        <div key={order.id || order.order_code} className="bg-white rounded-2xl border border-pink-100 shadow-xs p-5 space-y-4">
-                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-3">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-[#FF2E93] text-base">{order.order_code}</span>
-                                {/* BADGE DE CÓDIGO ÚNICO DE CLIENTE */}
-                                <span className="bg-pink-100 text-[#FF2E93] px-2.5 py-0.5 rounded-full text-xs font-black">
-                                  🏷️ VIP: {order.customer_code}
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                  {new Date(order.created_at || Date.now()).toLocaleDateString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-700">
-                                <b>{order.customer_name}</b> ({order.customer_phone})
-                                {order.customer_id_card && ` • CI: ${order.customer_id_card}`}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                🚚 {order.delivery_method} {order.delivery_address && `| 📍 ${order.delivery_address}`}
-                              </p>
-                            </div>
-
-                            {/* ESTADO SELECTOR Y TOTAL */}
-                            <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-                              <div className="text-right">
-                                <span className="text-xs text-gray-400 block">Total</span>
-                                <span className="text-xl font-black text-gray-900">${Number(order.total).toFixed(2)}</span>
-                              </div>
-
-                              <select
-                                value={order.status || 'pendiente'}
-                                onChange={e => handleOrderStatusChange(order.id, e.target.value)}
-                                className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none ${
-                                  order.status === 'entregado' ? 'bg-green-50 border-green-300 text-green-700' :
-                                  order.status === 'verificado' ? 'bg-blue-50 border-blue-300 text-blue-700' :
-                                  order.status === 'en_camino' ? 'bg-purple-50 border-purple-300 text-purple-700' :
-                                  order.status === 'cancelado' ? 'bg-red-50 border-red-300 text-red-700' :
-                                  'bg-amber-50 border-amber-300 text-amber-700'
-                                }`}
-                              >
-                                <option value="pendiente">🟡 Pendiente</option>
-                                <option value="verificado">🔵 Verificado / Pagado</option>
-                                <option value="en_camino">🟣 En Camino</option>
-                                <option value="entregado">🟢 Entregado</option>
-                                <option value="cancelado">🔴 Cancelado</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* PRODUCTOS DEL PEDIDO */}
-                          <div className="bg-pink-50/50 rounded-xl p-3 text-xs space-y-1">
-                            <p className="font-bold text-gray-700 mb-1">Productos:</p>
-                            {(order.items || []).map((item, idx) => (
-                              <div key={idx} className="flex justify-between items-center text-gray-600">
-                                <span>• {item.qty}x <b>{item.name}</b> ({item.variant})</span>
-                                <span className="font-semibold">${(item.price * item.qty).toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* ACCIONES DEL PEDIDO: VER COMPROBANTE Y NOTIFICAR POR WHATSAPP */}
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="space-y-3">
+                    {filteredOrders.map(order => (
+                      <div key={order.id || order.order_code} className="bg-white rounded-2xl border border-pink-100 shadow-xs p-5 space-y-4">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-3">
+                          <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500 font-medium">Método: <b>{order.payment_method}</b></span>
-                              {order.receipt_url && (
-                                <button
-                                  onClick={() => setPreviewReceiptUrl(order.receipt_url)}
-                                  className="text-xs bg-pink-100 hover:bg-pink-200 text-[#FF2E93] font-bold px-3 py-1.5 rounded-lg border border-pink-300 flex items-center gap-1"
-                                >
-                                  <span>📸</span> Ver Comprobante
-                                </button>
+                              <span className="font-extrabold text-[#FF2E93] text-base">{order.order_code}</span>
+                              <span className="bg-pink-100 text-[#FF2E93] px-2.5 py-0.5 rounded-full text-xs font-black">
+                                🏷️ VIP: {order.customer_code}
+                              </span>
+                              {order.points_earned > 0 && (
+                                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                  💎 +{order.points_earned} pts
+                                </span>
                               )}
                             </div>
+                            <p className="text-xs text-gray-700">
+                              <b>{order.customer_name}</b> ({order.customer_phone})
+                              {order.customer_id_card && ` • CI: ${order.customer_id_card}`}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              🚚 {order.delivery_method} {order.delivery_address && `| 📍 ${order.delivery_address}`}
+                            </p>
+                          </div>
 
-                            <button
-                              onClick={() => notifyCustomerWhatsApp(order)}
-                              className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+                            <div className="text-right">
+                              <span className="text-xs text-gray-400 block">Total</span>
+                              <span className="text-xl font-black text-gray-900">${Number(order.total).toFixed(2)}</span>
+                            </div>
+
+                            <select
+                              value={order.status || 'pendiente'}
+                              onChange={e => handleOrderStatusChange(order.id, e.target.value)}
+                              className="text-xs font-bold px-3 py-2 rounded-xl border outline-none bg-pink-50 text-[#FF2E93]"
                             >
-                              <span>💬</span> Notificar Estado por WhatsApp
+                              <option value="pendiente">🟡 Pendiente</option>
+                              <option value="verificado">🔵 Verificado / Pagado</option>
+                              <option value="en_camino">🟣 En Camino</option>
+                              <option value="entregado">🟢 Entregado</option>
+                              <option value="cancelado">🔴 Cancelado</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* ACCIONES: GUÍA SERVIENTREGA, COMPROBANTE Y WHATSAPP */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Pago: <b>{order.payment_method}</b></span>
+                            {order.receipt_url && (
+                              <button onClick={() => setPreviewReceiptUrl(order.receipt_url)} className="text-xs bg-pink-100 text-[#FF2E93] font-bold px-3 py-1.5 rounded-lg border border-pink-300">
+                                📸 Comprobante
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* BOTÓN GENERADOR DE GUÍA SERVIENTREGA */}
+                            <button
+                              onClick={() => setServientregaOrder(order)}
+                              className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                              title="Generar guía de envío Servientrega lista para imprimir"
+                            >
+                              <span>📦</span> Guía Servientrega
+                            </button>
+
+                            <button onClick={() => notifyCustomerWhatsApp(order)} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition">
+                              <span>💬</span> WhatsApp
                             </button>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* PESTAÑA ADMIN 3: CONFIGURACIÓN GENERAL */}
+              {/* ADMIN TAB 3: RESEÑAS */}
+              {adminTab === 'reviews' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-3xl border border-pink-100 shadow-xs flex items-center justify-between">
+                    <h3 className="font-bold text-gray-900 text-sm">Reseñas y Fotos Publicadas por Clientas ({reviews.length})</h3>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {reviews.map(rev => (
+                      <div key={rev.id} className="bg-white p-4 rounded-2xl border border-pink-100 shadow-xs space-y-2 text-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-gray-900">{rev.customer_name} ({rev.customer_code})</span>
+                          <span className="text-amber-400 font-bold">{'★'.repeat(rev.rating)}</span>
+                        </div>
+                        {rev.photo_url && <img src={rev.photo_url} alt="Review" className="h-32 rounded-xl object-cover border" />}
+                        <p className="text-gray-600 italic">"{rev.comment}"</p>
+                        <p className="text-[10px] text-gray-400">Producto: {rev.product_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ADMIN TAB 4: AJUSTES Y PAYPHONE */}
               {adminTab === 'settings' && (
-                <div className="bg-white p-6 rounded-3xl border border-pink-100 shadow-xs max-w-3xl space-y-6">
+                <div className="bg-white p-6 rounded-3xl border border-pink-100 shadow-xs max-w-3xl space-y-6 text-xs">
                   <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                    <span>⚙️</span> Ajustes de Pagos, WhatsApp y Supabase
+                    <span>⚙️</span> Ajustes de Pagos, Payphone y Puntos
                   </h3>
 
-                  <div className="space-y-4 text-xs">
+                  <div className="space-y-4">
                     <div>
-                      <label className="font-bold text-gray-700 block mb-1">WhatsApp de la Tienda (con código de país 593):</label>
-                      <input
-                        value={settings.whatsapp_number}
-                        onChange={e => setSettings({ ...settings, whatsapp_number: e.target.value })}
-                        placeholder="593999999999"
-                        className="w-full border rounded-xl p-2.5 outline-none"
-                      />
+                      <label className="font-bold text-gray-700 block mb-1">WhatsApp de la Tienda (con 593):</label>
+                      <input value={settings.whatsapp_number} onChange={e => setSettings({ ...settings, whatsapp_number: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                     </div>
 
-                    <div>
-                      <label className="font-bold text-gray-700 block mb-1">Link de Cobro Deuna! (Deep Link):</label>
-                      <input
-                        value={settings.deuna_link}
-                        onChange={e => setSettings({ ...settings, deuna_link: e.target.value })}
-                        placeholder="https://deuna.app/..."
-                        className="w-full border rounded-xl p-2.5 outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-bold text-gray-700 block mb-1">Imagen del QR de Deuna!:</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={async e => {
-                          if (e.target.files[0]) {
-                            const url = await uploadFileToSupabase(e.target.files[0], 'config');
-                            if (url) setSettings({ ...settings, deuna_qr_url: url });
-                          }
-                        }}
-                        className="text-xs mb-2 block"
-                      />
-                      {settings.deuna_qr_url && (
-                        <img src={settings.deuna_qr_url} alt="QR Deuna" className="h-32 rounded-xl border p-1 bg-white" />
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                      <div className="border p-3 rounded-2xl space-y-2">
-                        <p className="font-bold text-[#FF2E93]">🏦 Banco Guayaquil</p>
-                        <input
-                          value={settings.bank_guayaquil_acc}
-                          onChange={e => setSettings({ ...settings, bank_guayaquil_acc: e.target.value })}
-                          placeholder="Número de cuenta"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
-                        <input
-                          value={settings.bank_guayaquil_name}
-                          onChange={e => setSettings({ ...settings, bank_guayaquil_name: e.target.value })}
-                          placeholder="Titular"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
-                        <input
-                          value={settings.bank_guayaquil_id}
-                          onChange={e => setSettings({ ...settings, bank_guayaquil_id: e.target.value })}
-                          placeholder="Cédula"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
-                      </div>
-
-                      <div className="border p-3 rounded-2xl space-y-2">
-                        <p className="font-bold text-[#FF2E93]">🏦 Banco Pichincha</p>
-                        <input
-                          value={settings.bank_pichincha_acc}
-                          onChange={e => setSettings({ ...settings, bank_pichincha_acc: e.target.value })}
-                          placeholder="Número de cuenta"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
-                        <input
-                          value={settings.bank_pichincha_name}
-                          onChange={e => setSettings({ ...settings, bank_pichincha_name: e.target.value })}
-                          placeholder="Titular"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
-                        <input
-                          value={settings.bank_pichincha_id}
-                          onChange={e => setSettings({ ...settings, bank_pichincha_id: e.target.value })}
-                          placeholder="Cédula"
-                          className="w-full border rounded-lg p-2 text-xs"
-                        />
+                    <div className="border p-4 rounded-2xl space-y-3 bg-amber-50/50 border-amber-200">
+                      <p className="font-bold text-amber-900 text-sm flex items-center gap-1.5">
+                        <span>💳</span> Configuración de Cobro con Tarjeta (Payphone Ecuador)
+                      </p>
+                      <div>
+                        <label className="font-semibold block mb-1 text-gray-700">Link Personal o Web de Cobro Payphone (Deep Link):</label>
+                        <input value={settings.payphone_link} onChange={e => setSettings({ ...settings, payphone_link: e.target.value })} placeholder="https://payphone.app/kaojstore o https://paybox..." className="w-full border rounded-xl p-2.5 bg-white outline-none" />
+                        <span className="text-[10px] text-gray-500 block mt-1">
+                          Las clientas que elijan pagar con tarjeta serán dirigidas a tu pasarela oficial Payphone para procesar Visa o Mastercard.
+                        </span>
                       </div>
                     </div>
 
                     <div>
-                      <label className="font-bold text-gray-700 block mb-1">PIN de Acceso a este panel de Admin:</label>
-                      <input
-                        value={settings.admin_pin}
-                        onChange={e => setSettings({ ...settings, admin_pin: e.target.value })}
-                        className="w-full border rounded-xl p-2.5 outline-none max-w-xs font-mono font-bold"
-                      />
+                      <label className="font-bold text-gray-700 block mb-1">Link de Cobro Deuna!:</label>
+                      <input value={settings.deuna_link} onChange={e => setSettings({ ...settings, deuna_link: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                     </div>
 
                     <div>
-                      <label className="font-bold text-gray-700 block mb-1">Mensaje del Banner Superior:</label>
-                      <input
-                        value={settings.banner_message}
-                        onChange={e => setSettings({ ...settings, banner_message: e.target.value })}
-                        className="w-full border rounded-xl p-2.5 outline-none"
-                      />
+                      <label className="font-bold text-gray-700 block mb-1">QR de Deuna!:</label>
+                      <input type="file" accept="image/*" onChange={async e => {
+                        if (e.target.files[0]) {
+                          const url = await uploadFileToSupabase(e.target.files[0], 'config');
+                          if (url) setSettings({ ...settings, deuna_qr_url: url });
+                        }
+                      }} className="text-xs mb-2 block" />
+                      {settings.deuna_qr_url && <img src={settings.deuna_qr_url} alt="QR" className="h-28 rounded-xl border p-1" />}
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-gray-700 block mb-1">PIN de Administrador:</label>
+                      <input value={settings.admin_pin} onChange={e => setSettings({ ...settings, admin_pin: e.target.value })} className="w-full border rounded-xl p-2.5 max-w-xs font-bold" />
                     </div>
 
                     <div className="pt-2 flex gap-3">
-                      <button
-                        onClick={handleSaveSettings}
-                        className="bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 px-6 rounded-xl font-bold text-xs shadow-xs transition"
-                      >
+                      <button onClick={handleSaveSettings} className="bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 px-6 rounded-xl font-bold text-xs shadow-xs transition">
                         Guardar Ajustes en Supabase
                       </button>
-                      <button
-                        onClick={() => setIsConfigOpen(true)}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-4 rounded-xl font-bold text-xs transition"
-                      >
-                        ⚙️ Configurar Credenciales Supabase
+                      <button onClick={() => setIsConfigOpen(true)} className="bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-4 rounded-xl font-bold text-xs">
+                        ⚙️ Conexión Supabase
                       </button>
                     </div>
                   </div>
@@ -2005,50 +1881,36 @@
             </main>
           )}
 
-          {/* DRAWER / MODAL DEL CARRITO Y CHECKOUT */}
+          {/* DRAWER CARRITO Y CHECKOUT */}
           {isCartOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end">
               <div className="bg-white w-full max-w-md h-full overflow-y-auto p-6 space-y-5 shadow-2xl flex flex-col justify-between">
                 <div>
-                  {/* HEADER DEL CARRITO */}
                   <div className="flex justify-between items-center border-b pb-4">
                     <div>
                       <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900">Tu Pedido</h3>
                       <span className="text-xs text-[#FF2E93] font-semibold">KAOJ STORE</span>
                     </div>
-                    <button
-                      onClick={() => setIsCartOpen(false)}
-                      className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-bold"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setIsCartOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">✕</button>
                   </div>
 
-                  {/* NOTA DE SINCRONIZACIÓN DE GOOGLE */}
                   {user ? (
                     <div className="mt-3 bg-pink-50 border border-pink-200 rounded-xl p-2.5 text-xs text-gray-700 flex items-center gap-2">
-                      <span className="text-base">☁️</span>
-                      <p>Sincronizado con tu cuenta Google: <b>{user.email}</b></p>
+                      <span>☁️</span>
+                      <p>Sincronizado con Google: <b>{user.email}</b></p>
                     </div>
                   ) : (
                     <div className="mt-3 bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-600 flex items-center justify-between">
-                      <span>¿Quieres guardar este carrito?</span>
-                      <button onClick={handleGoogleLogin} className="text-[#FF2E93] font-bold underline">
-                        Inicia sesión con Google
-                      </button>
+                      <span>¿Guardar tu carrito?</span>
+                      <button onClick={handleGoogleLogin} className="text-[#FF2E93] font-bold underline">Conectar Google</button>
                     </div>
                   )}
 
-                  {/* LISTA DE PRODUCTOS EN EL CARRITO */}
                   {cart.length === 0 ? (
                     <div className="text-center py-16 space-y-3">
                       <span className="text-5xl block">🛍️</span>
                       <p className="font-bold text-gray-700 text-sm">Tu carrito está vacío</p>
-                      <p className="text-xs text-gray-400">Descubre nuestros labiales, blusas y skincare.</p>
-                      <button
-                        onClick={() => setIsCartOpen(false)}
-                        className="bg-[#FF2E93] text-white px-5 py-2 rounded-full font-bold text-xs"
-                      >
+                      <button onClick={() => setIsCartOpen(false)} className="bg-[#FF2E93] text-white px-5 py-2 rounded-full font-bold text-xs">
                         Explorar Productos
                       </button>
                     </div>
@@ -2059,263 +1921,206 @@
                           <img src={item.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={item.name} className="w-12 h-12 rounded-xl object-cover border" />
                           <div className="flex-1">
                             <p className="font-bold text-gray-900 leading-tight">{item.name}</p>
-                            <p className="text-gray-500 text-[11px] mt-0.5">{item.variant}</p>
+                            <p className="text-gray-500 text-[11px]">{item.variant}</p>
                             <span className="font-extrabold text-[#FF2E93]">${(item.price * item.qty).toFixed(2)}</span>
                           </div>
-
                           <div className="flex items-center gap-1.5 bg-gray-50 border rounded-lg p-1">
-                            <button
-                              onClick={() => updateCartQty(item.key, -1)}
-                              className="w-5 h-5 rounded bg-white hover:bg-gray-200 flex items-center justify-center font-bold text-gray-700"
-                            >
-                              -
-                            </button>
+                            <button onClick={() => updateCartQty(item.key, -1)} className="w-5 h-5 rounded bg-white flex items-center justify-center font-bold">-</button>
                             <span className="font-bold px-1.5">{item.qty}</span>
-                            <button
-                              onClick={() => updateCartQty(item.key, 1)}
-                              className="w-5 h-5 rounded bg-white hover:bg-gray-200 flex items-center justify-center font-bold text-gray-700"
-                            >
-                              +
-                            </button>
+                            <button onClick={() => updateCartQty(item.key, 1)} className="w-5 h-5 rounded bg-white flex items-center justify-center font-bold">+</button>
                           </div>
-
-                          <button
-                            onClick={() => removeFromCart(item.key)}
-                            className="text-gray-400 hover:text-red-500 font-bold px-1"
-                            title="Quitar"
-                          >
-                            ✕
-                          </button>
+                          <button onClick={() => removeFromCart(item.key)} className="text-gray-400 hover:text-red-500 font-bold px-1">✕</button>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* FORMULARIO DE CHECKOUT (DATOS Y COMPROBANTE) */}
                   {cart.length > 0 && (
                     <form onSubmit={handleCheckoutSubmit} className="mt-6 space-y-4 text-xs">
                       <div className="border-t pt-4">
-                        <h4 className="font-bold text-gray-900 mb-2 flex items-center gap-1.5">
-                          <span>👤</span> Datos del Cliente
-                        </h4>
-
+                        <h4 className="font-bold text-gray-900 mb-2">👤 Datos del Cliente</h4>
                         <div className="space-y-2">
-                          <input
-                            required
-                            placeholder="Nombre y Apellido *"
-                            value={customer.name}
-                            onChange={e => setCustomer({ ...customer, name: e.target.value })}
-                            className="w-full border rounded-xl p-2.5 outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                          />
+                          <input required placeholder="Nombre y Apellido *" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                           <div className="grid grid-cols-2 gap-2">
-                            <input
-                              required
-                              placeholder="Celular / WhatsApp *"
-                              value={customer.phone}
-                              onChange={e => setCustomer({ ...customer, phone: e.target.value })}
-                              className="border rounded-xl p-2.5 outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                            />
-                            <input
-                              placeholder="Cédula / RUC"
-                              value={customer.idCard}
-                              onChange={e => setCustomer({ ...customer, idCard: e.target.value })}
-                              className="border rounded-xl p-2.5 outline-none"
-                            />
+                            <input required placeholder="Celular / WhatsApp *" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
+                            <input placeholder="Cédula / RUC" value={customer.idCard} onChange={e => setCustomer({ ...customer, idCard: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
                           </div>
                         </div>
 
-                        {/* BADGE DEL CÓDIGO ÚNICO DE CLIENTE GENERADO EN VIVO */}
-                        {customerCode ? (
+                        {customerCode && (
                           <div className="mt-2.5 bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-xl">🏷️</span>
                               <div>
-                                <p className="text-[10px] text-gray-500 font-medium">Tu Código Único de Cliente:</p>
+                                <p className="text-[10px] text-gray-500">Tu Código Único de Cliente:</p>
                                 <p className="text-sm font-black text-[#FF2E93] tracking-wider">{customerCode}</p>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-pink-100 text-[#FF2E93] px-2 py-0.5 rounded-full font-bold">
-                              1ª Letra + 4 Celular
-                            </span>
+                            <span className="text-[9px] bg-pink-100 text-[#FF2E93] px-2 py-0.5 rounded-full font-bold">1ª Letra + 4 Celular</span>
                           </div>
+                        )}
+                      </div>
+
+                      {/* CANJE DE PUNTOS DE RECOMPENSA */}
+                      <div className="bg-gradient-to-r from-amber-50 to-pink-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                            <span>💎</span> Club de Puntos Kaoj
+                          </span>
+                          <span className="text-xs font-black text-[#FF2E93]">{customerPoints} pts disponibles</span>
+                        </div>
+                        {canRedeemPoints ? (
+                          <label className="flex items-center gap-2 cursor-pointer pt-1">
+                            <input
+                              type="checkbox"
+                              checked={applyPointsDiscount}
+                              onChange={e => setApplyPointsDiscount(e.target.checked)}
+                              className="rounded text-[#FF2E93] focus:ring-[#FF2E93] w-4 h-4"
+                            />
+                            <span className="text-[11px] font-bold text-gray-800">
+                              Canjear 50 puntos por <span className="text-[#FF2E93]">-$5.00 de descuento</span> en esta compra ✨
+                            </span>
+                          </label>
                         ) : (
-                          <p className="text-[10px] text-gray-400 mt-1 italic">
-                            * Escribe tu nombre y celular para generar tu Código Único de Cliente.
+                          <p className="text-[11px] text-gray-600">
+                            Acumulas 1 punto por cada dólar. Te faltan {Math.max(0, 50 - customerPoints)} puntos para tu próximo bono de $5.00.
                           </p>
                         )}
+                        <p className="text-[10px] text-emerald-700 font-bold">
+                          🎁 Con este pedido acumularás +{pointsEarnedWithOrder} Puntos Kaoj nuevos.
+                        </p>
                       </div>
 
                       {/* MÉTODO DE ENTREGA */}
                       <div>
                         <label className="font-bold text-gray-700 block mb-1">Método de Entrega:</label>
-                        <select
-                          value={customer.delivery}
-                          onChange={e => setCustomer({ ...customer, delivery: e.target.value })}
-                          className="w-full border rounded-xl p-2.5 bg-white outline-none"
-                        >
+                        <select value={customer.delivery} onChange={e => setCustomer({ ...customer, delivery: e.target.value })} className="w-full border rounded-xl p-2.5 bg-white outline-none">
                           {DELIVERY_OPTIONS.map(d => (
-                            <option key={d.id} value={d.id}>
-                              {d.label} {d.price === 0 ? '(GRATIS)' : `(+$${d.price.toFixed(2)})`}
-                            </option>
+                            <option key={d.id} value={d.id}>{d.label} {d.price === 0 ? '(GRATIS)' : `(+$${d.price.toFixed(2)})`}</option>
                           ))}
                         </select>
                       </div>
 
                       {(customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional') && (
-                        <input
-                          required
-                          placeholder="Ciudad, sector y dirección exacta de entrega *"
-                          value={customer.address}
-                          onChange={e => setCustomer({ ...customer, address: e.target.value })}
-                          className="w-full border rounded-xl p-2.5 outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                        />
+                        <input required placeholder="Ciudad, sector y dirección exacta *" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
                       )}
 
-                      {/* SELECTOR DE PAGO: DEUNA VS TRANSFERENCIA */}
+                      {/* FORMA DE PAGO: DEUNA, TRANSFERENCIA O PAYPHONE */}
                       <div>
                         <label className="font-bold text-gray-700 block mb-1">Forma de Pago:</label>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-1.5">
                           <button
                             type="button"
                             onClick={() => setCustomer({ ...customer, paymentMethod: 'deuna' })}
-                            className={`py-2 rounded-xl font-bold border transition ${
-                              customer.paymentMethod === 'deuna'
-                                ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
-                                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                            className={`py-2 px-1 rounded-xl font-bold text-[11px] border transition ${
+                              customer.paymentMethod === 'deuna' ? 'bg-purple-700 text-white border-purple-700' : 'bg-gray-50 text-gray-700'
                             }`}
                           >
-                            💜 Pagar con Deuna!
+                            💜 Deuna!
                           </button>
                           <button
                             type="button"
                             onClick={() => setCustomer({ ...customer, paymentMethod: 'transferencia' })}
-                            className={`py-2 rounded-xl font-bold border transition ${
-                              customer.paymentMethod === 'transferencia'
-                                ? 'bg-[#FF2E93] text-white border-[#FF2E93] shadow-xs'
-                                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                            className={`py-2 px-1 rounded-xl font-bold text-[11px] border transition ${
+                              customer.paymentMethod === 'transferencia' ? 'bg-[#FF2E93] text-white border-[#FF2E93]' : 'bg-gray-50 text-gray-700'
                             }`}
                           >
-                            🏦 Transferencia
+                            🏦 Bancos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomer({ ...customer, paymentMethod: 'payphone' })}
+                            className={`py-2 px-1 rounded-xl font-bold text-[11px] border transition ${
+                              customer.paymentMethod === 'payphone' ? 'bg-[#FF6400] text-white border-[#FF6400]' : 'bg-gray-50 text-gray-700'
+                            }`}
+                          >
+                            💳 Payphone
                           </button>
                         </div>
                       </div>
 
                       {/* DETALLE SEGÚN MÉTODO DE PAGO */}
-                      {customer.paymentMethod === 'deuna' ? (
-                        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center space-y-3">
-                          <p className="text-xs font-semibold text-purple-900">
-                            Escanea el QR o pulsa el botón para abrir tu aplicación Deuna!:
+                      {customer.paymentMethod === 'payphone' ? (
+                        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 text-center space-y-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="text-xl">💳</span>
+                            <span className="font-extrabold text-[#FF6400] text-sm">Cobro Oficial Payphone</span>
+                          </div>
+                          <p className="text-[11px] text-gray-600">
+                            Aceptamos tarjetas de crédito o débito Visa, Mastercard, Diners y Discover con cobro inmediato 100% seguro.
                           </p>
-                          {settings.deuna_qr_url ? (
-                            <img
-                              src={settings.deuna_qr_url}
-                              alt="QR Deuna"
-                              className="w-40 h-40 mx-auto rounded-xl border bg-white p-2 object-contain shadow-xs"
-                            />
-                          ) : (
-                            <div className="w-32 h-32 mx-auto rounded-xl border-2 border-dashed border-purple-300 flex items-center justify-center text-purple-400 font-bold text-[11px] p-2">
-                              Código QR Deuna! oficial
-                            </div>
-                          )}
                           <a
-                            href={settings.deuna_link}
+                            href={settings.payphone_link}
                             target="_blank"
                             rel="noreferrer"
-                            className="block w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold shadow-xs transition"
+                            className="block w-full bg-[#FF6400] hover:bg-[#e65a00] text-white py-2.5 rounded-xl font-bold shadow-xs transition"
                           >
+                            🚀 Pagar ${total.toFixed(2)} con Tarjeta en Payphone
+                          </a>
+                          <input
+                            placeholder="Número o referencia de pago Payphone (opcional)"
+                            value={customer.payphoneRef}
+                            onChange={e => setCustomer({ ...customer, payphoneRef: e.target.value })}
+                            className="w-full border rounded-xl p-2 bg-white text-xs outline-none"
+                          />
+                        </div>
+                      ) : customer.paymentMethod === 'deuna' ? (
+                        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center space-y-3">
+                          <p className="text-xs font-semibold text-purple-900">Escanea el QR o pulsa para abrir tu app Deuna!:</p>
+                          {settings.deuna_qr_url && (
+                            <img src={settings.deuna_qr_url} alt="QR Deuna" className="w-36 h-36 mx-auto rounded-xl border bg-white p-2 object-contain" />
+                          )}
+                          <a href={settings.deuna_link} target="_blank" rel="noreferrer" className="block w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold shadow-xs">
                             🚀 Abrir App Deuna! y Pagar ${total.toFixed(2)}
                           </a>
                         </div>
                       ) : (
-                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-4 space-y-2.5">
+                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3.5 space-y-2">
                           <p className="font-bold text-[#FF2E93] text-xs">🏦 CUENTAS BANCARIAS KAOJ STORE</p>
-
-                          <div className="bg-white p-2.5 rounded-xl border space-y-1">
-                            <p className="font-bold text-gray-900">Banco Guayaquil (Ahorros)</p>
-                            <p className="text-gray-600">Titular: {settings.bank_guayaquil_name}</p>
-                            <p className="text-gray-600">Cuenta: <b>{settings.bank_guayaquil_acc}</b> | CI: {settings.bank_guayaquil_id}</p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(settings.bank_guayaquil_acc);
-                                showToast('📋 Número de cuenta Guayaquil copiado');
-                              }}
-                              className="text-[#FF2E93] font-bold underline"
-                            >
-                              Copiar Número de Cuenta
-                            </button>
+                          <div className="bg-white p-2 rounded-xl border space-y-1">
+                            <p className="font-bold">Banco Guayaquil (Ahorros): <b>{settings.bank_guayaquil_acc}</b></p>
+                            <p className="text-[10px] text-gray-500">{settings.bank_guayaquil_name} • CI: {settings.bank_guayaquil_id}</p>
+                            <button type="button" onClick={() => { navigator.clipboard.writeText(settings.bank_guayaquil_acc); showToast('Copiado'); }} className="text-[#FF2E93] font-bold underline">Copiar Cuenta</button>
                           </div>
-
-                          <div className="bg-white p-2.5 rounded-xl border space-y-1">
-                            <p className="font-bold text-gray-900">Banco Pichincha (Ahorros)</p>
-                            <p className="text-gray-600">Titular: {settings.bank_pichincha_name}</p>
-                            <p className="text-gray-600">Cuenta: <b>{settings.bank_pichincha_acc}</b> | CI: {settings.bank_pichincha_id}</p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(settings.bank_pichincha_acc);
-                                showToast('📋 Número de cuenta Pichincha copiado');
-                              }}
-                              className="text-[#FF2E93] font-bold underline"
-                            >
-                              Copiar Número de Cuenta
-                            </button>
+                          <div className="bg-white p-2 rounded-xl border space-y-1">
+                            <p className="font-bold">Banco Pichincha (Ahorros): <b>{settings.bank_pichincha_acc}</b></p>
+                            <p className="text-[10px] text-gray-500">{settings.bank_pichincha_name} • CI: {settings.bank_pichincha_id}</p>
+                            <button type="button" onClick={() => { navigator.clipboard.writeText(settings.bank_pichincha_acc); showToast('Copiado'); }} className="text-[#FF2E93] font-bold underline">Copiar Cuenta</button>
                           </div>
                         </div>
                       )}
 
-                      {/* SUBIDA DEL COMPROBANTE A SUPABASE */}
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 space-y-2">
-                        <p className="font-bold text-amber-900">
-                          📸 Sube la captura de tu pago o transferencia para asegurar tus productos:
-                        </p>
-                        <input
-                          type="file"
-                          accept="image/*,application/pdf"
-                          onChange={async e => {
+                      {/* SUBIDA DE COMPROBANTE */}
+                      {customer.paymentMethod !== 'payphone' && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+                          <p className="font-bold text-amber-900">📸 Sube la captura de tu comprobante de pago:</p>
+                          <input type="file" accept="image/*,application/pdf" onChange={async e => {
                             if (e.target.files[0]) {
                               const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
                               if (url) setCustomer({ ...customer, receiptUrl: url });
                             }
-                          }}
-                          className="w-full text-xs text-amber-900"
-                        />
-                        {uploading && <p className="text-[#FF2E93] font-bold">Subiendo a Supabase Storage...</p>}
-                        {customer.receiptUrl && (
-                          <div className="flex items-center gap-2 pt-1 text-green-700 font-bold">
-                            <span>✅ Comprobante cargado correctamente</span>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewReceiptUrl(customer.receiptUrl)}
-                              className="text-xs underline text-[#FF2E93]"
-                            >
-                              Ver
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                          }} className="w-full text-xs text-amber-900" />
+                          {customer.receiptUrl && <p className="text-green-700 font-bold">✅ Comprobante cargado correctamente</p>}
+                        </div>
+                      )}
 
                       {/* TOTALES */}
                       <div className="border-t pt-3 space-y-1">
+                        <div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                        {discountApplied > 0 && (
+                          <div className="flex justify-between text-emerald-700 font-bold">
+                            <span>Descuento Puntos VIP:</span><span>-${discountApplied.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-gray-600">
-                          <span>Subtotal:</span>
-                          <span>${subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-gray-600">
-                          <span>Envío / Entrega:</span>
-                          <span>{deliveryObj.price === 0 ? 'GRATIS' : `$${deliveryObj.price.toFixed(2)}`}</span>
+                          <span>Envío ({deliveryObj.tag}):</span><span>{deliveryObj.price === 0 ? 'GRATIS' : `$${deliveryObj.price.toFixed(2)}`}</span>
                         </div>
                         <div className="flex justify-between text-base font-black text-gray-900 pt-1 border-t">
-                          <span>Total a Pagar:</span>
-                          <span className="text-[#FF2E93]">${total.toFixed(2)}</span>
+                          <span>Total a Pagar:</span><span className="text-[#FF2E93]">${total.toFixed(2)}</span>
                         </div>
                       </div>
 
-                      <button
-                        type="submit"
-                        disabled={uploading}
-                        className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition active:scale-95"
-                      >
+                      <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition active:scale-95">
                         Confirmar y Enviar Pedido a WhatsApp 💅✨
                       </button>
                     </form>
@@ -2325,82 +2130,178 @@
             </div>
           )}
 
+          {/* MODAL: GENERADOR DE GUÍAS SERVIENTREGA (LISTA PARA IMPRIMIR) */}
+          {servientregaOrder && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto">
+                <div className="flex justify-between items-center no-print">
+                  <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
+                    <span>📦</span> Guía de Envío Servientrega Oficial
+                  </h3>
+                  <button onClick={() => setServientregaOrder(null)} className="font-bold text-gray-500 text-lg">✕</button>
+                </div>
+
+                {/* ÁREA DE IMPRESIÓN DE GUÍA */}
+                <div id="servientrega-print-area" className="border-2 border-emerald-700 rounded-2xl p-5 bg-white text-gray-900 space-y-4">
+                  {/* HEADER SERVIENTREGA */}
+                  <div className="flex justify-between items-center border-b-2 border-emerald-700 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-emerald-700 text-white font-black text-base px-3 py-1 rounded-md tracking-wider">
+                          SERVIENTREGA
+                        </span>
+                        <span className="text-xs font-extrabold text-emerald-800">CENTRO DE SOLUCIONES</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 font-semibold mt-1">GUÍA DE ENVÍO Y TRANSPORTE NACIONAL</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-gray-400 block">Número de Guía:</span>
+                      <span className="font-mono font-black text-sm text-gray-900">{servientregaOrder.order_code}</span>
+                    </div>
+                  </div>
+
+                  {/* CÓDIGO DE BARRAS DE LA GUÍA */}
+                  <div className="text-center py-1 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                    <p className="font-barcode text-4xl tracking-widest leading-none">*{servientregaOrder.order_code}*</p>
+                    <p className="font-mono text-[10px] text-gray-500 font-bold tracking-widest">{servientregaOrder.order_code}</p>
+                  </div>
+
+                  {/* REMITENTE Y DESTINATARIO */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="border border-gray-300 rounded-xl p-3 bg-gray-50/50 space-y-1">
+                      <p className="font-bold text-emerald-800 text-[11px] uppercase border-b pb-1">REMITENTE (ORIGEN):</p>
+                      <p className="font-bold text-gray-900">KAOJ STORE BOUTIQUE</p>
+                      <p className="text-gray-600">RUC/CI: 1350290308001</p>
+                      <p className="text-gray-600">Ciudad: Portoviejo / Manta - Manabí</p>
+                      <p className="text-gray-600">Teléfono: +{settings.whatsapp_number}</p>
+                    </div>
+
+                    <div className="border-2 border-emerald-700 rounded-xl p-3 bg-emerald-50/30 space-y-1">
+                      <p className="font-bold text-emerald-900 text-[11px] uppercase border-b border-emerald-200 pb-1">DESTINATARIO (DESTINO):</p>
+                      <p className="font-bold text-gray-900 text-sm">{servientregaOrder.customer_name}</p>
+                      <p className="text-gray-700">CI / RUC: <b>{servientregaOrder.customer_id_card || 'Consumidor Final'}</b></p>
+                      <p className="text-gray-700">Celular: <b>{servientregaOrder.customer_phone}</b></p>
+                      <p className="text-gray-700">Dirección: <b>{servientregaOrder.delivery_address || 'Retiro en Agencia Servientrega'}</b></p>
+                      <p className="text-emerald-800 font-bold text-[10px]">CÓDIGO ÚNICO VIP: {servientregaOrder.customer_code}</p>
+                    </div>
+                  </div>
+
+                  {/* CONTENIDO DEL PAQUETE */}
+                  <div className="border border-gray-300 rounded-xl p-3 text-xs space-y-1">
+                    <div className="flex justify-between font-bold border-b pb-1 text-gray-700">
+                      <span>Contenido Declarado (Cosméticos / Ropa Ligera):</span>
+                      <span>Total: ${Number(servientregaOrder.total).toFixed(2)}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-600 pt-1 space-y-0.5">
+                      {(servientregaOrder.items || []).map((it, i) => (
+                        <p key={i}>• {it.qty}x {it.name} ({it.variant})</p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-gray-400 pt-1">
+                    <p>Fecha de Despacho: {new Date().toLocaleDateString('es-EC')}</p>
+                    <p>Firma de Recepción / Entrega: ________________________</p>
+                  </div>
+                </div>
+
+                {/* BOTÓN IMPRIMIR GUÍA */}
+                <div className="flex gap-2 no-print">
+                  <button
+                    onClick={() => window.print()}
+                    className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <span>🖨️</span> Imprimir Guía Servientrega (10x15cm o A4)
+                  </button>
+                  <button
+                    onClick={() => setServientregaOrder(null)}
+                    className="bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-bold text-xs"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: DEJAR RESEÑA & FOTO */}
+          {isReviewModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+                <button onClick={() => setIsReviewModalOpen(false)} className="absolute top-4 right-4 text-gray-400 font-bold text-xl">✕</button>
+
+                <div>
+                  <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900">📸 Cuéntanos tu Experiencia</h3>
+                  <p className="text-xs text-gray-500 mt-1">Califica tu compra y sube una foto luciendo tus productos para inspirar a otras clientas.</p>
+                </div>
+
+                <form onSubmit={handleCreateReview} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Tu Nombre *</label>
+                    <input required value={newReview.name} onChange={e => setNewReview({ ...newReview, name: e.target.value })} placeholder="Ej. Camila Moreira" className="w-full border rounded-xl p-2.5 outline-none" />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Producto Calificado</label>
+                    <select value={newReview.product_name} onChange={e => setNewReview({ ...newReview, product_name: e.target.value })} className="w-full border rounded-xl p-2.5 bg-white outline-none">
+                      <option value="">Selecciona un producto...</option>
+                      {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Calificación (Estrellas):</label>
+                    <div className="flex gap-2 text-2xl text-amber-400 cursor-pointer">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button type="button" key={star} onClick={() => setNewReview({ ...newReview, rating: star })}>
+                          {star <= newReview.rating ? '★' : '☆'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Foto luciendo el producto (Selfie o Foto Real):</label>
+                    <input type="file" accept="image/*" onChange={async e => {
+                      if (e.target.files[0]) {
+                        const url = await uploadFileToSupabase(e.target.files[0], 'reviews');
+                        if (url) setNewReview({ ...newReview, photo_url: url });
+                      }
+                    }} className="w-full text-xs text-gray-500" />
+                    {newReview.photo_url && <img src={newReview.photo_url} alt="Review Preview" className="h-20 rounded-xl mt-2 border object-cover" />}
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Tu Comentario *</label>
+                    <textarea rows="3" required value={newReview.comment} onChange={e => setNewReview({ ...newReview, comment: e.target.value })} placeholder="¿Qué te pareció el acabado, la textura, la entrega?..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
+                  </div>
+
+                  <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-md transition">
+                    {uploading ? 'Subiendo foto...' : 'Publicar mi Reseña ✨'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* MODAL: VISTA RÁPIDA DE PRODUCTO */}
           {quickViewProduct && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-pink-100 flex flex-col md:flex-row relative">
-                <button
-                  onClick={() => setQuickViewProduct(null)}
-                  className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center font-bold text-gray-600 shadow-md z-10"
-                >
-                  ✕
-                </button>
-
+                <button onClick={() => setQuickViewProduct(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center font-bold text-gray-600 shadow-md z-10">✕</button>
                 <div className="md:w-1/2 h-64 md:h-auto bg-pink-50 relative">
-                  <img
-                    src={quickViewProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
-                    alt={quickViewProduct.name}
-                    className="w-full h-full object-cover"
-                  />
-                  <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-full text-xs font-bold text-[#FF2E93]">
-                    {quickViewProduct.category}
-                  </span>
+                  <img src={quickViewProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={quickViewProduct.name} className="w-full h-full object-cover" />
                 </div>
-
                 <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
                   <div>
                     <h3 className="font-bold text-xl text-gray-900 leading-snug">{quickViewProduct.name}</h3>
                     <p className="text-xs text-gray-500 mt-2">{quickViewProduct.description}</p>
-
                     <div className="mt-4 flex items-baseline gap-2">
-                      {quickViewProduct.discount_price ? (
-                        <>
-                          <span className="text-2xl font-black text-[#FF2E93]">
-                            ${Number(quickViewProduct.discount_price).toFixed(2)}
-                          </span>
-                          <span className="line-through text-gray-400 text-sm">
-                            ${Number(quickViewProduct.price).toFixed(2)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-2xl font-black text-gray-900">
-                          ${Number(quickViewProduct.price).toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-4">
-                      <span className="text-xs font-bold text-gray-700 block mb-1.5">
-                        Selecciona {quickViewProduct.variant_label || 'Tono / Talla'}:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(quickViewProduct.variants || []).map(v => {
-                          const isCurrent = (selectedVariants[quickViewProduct.id] || quickViewProduct.variants[0]?.name) === v.name;
-                          return (
-                            <button
-                              key={v.name}
-                              disabled={v.stock <= 0}
-                              onClick={() => setSelectedVariants({ ...selectedVariants, [quickViewProduct.id]: v.name })}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                                isCurrent
-                                  ? 'bg-[#FF2E93] text-white border-[#FF2E93]'
-                                  : v.stock <= 0
-                                  ? 'bg-gray-100 text-gray-400 border-gray-200 line-through cursor-not-allowed'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-pink-300'
-                              }`}
-                            >
-                              {v.name} ({v.stock})
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <span className="text-2xl font-black text-[#FF2E93]">${Number(quickViewProduct.discount_price || quickViewProduct.price).toFixed(2)}</span>
+                      {quickViewProduct.discount_price && <span className="line-through text-gray-400 text-sm">${Number(quickViewProduct.price).toFixed(2)}</span>}
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => addToCart(quickViewProduct)}
-                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-sm shadow-md transition"
-                  >
+                  <button onClick={() => addToCart(quickViewProduct)} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-sm shadow-md transition">
                     Agregar al Carrito 🛍️
                   </button>
                 </div>
@@ -2408,66 +2309,35 @@
             </div>
           )}
 
-          {/* MODAL: RASTREO DE PEDIDOS POR CÓDIGO ÚNICO DE CLIENTE */}
+          {/* MODAL: RASTREO DE PEDIDOS */}
           {isTrackingOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-pink-100 relative max-h-[90vh] overflow-y-auto">
-                <button
-                  onClick={() => setIsTrackingOpen(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 font-bold text-xl"
-                >
-                  ✕
-                </button>
-
+                <button onClick={() => setIsTrackingOpen(false)} className="absolute top-4 right-4 text-gray-400 font-bold text-xl">✕</button>
                 <div>
-                  <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900">
-                    🏷️ Consulta tus Pedidos
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Ingresa tu <b>Código Único de Cliente</b> (ej. J4567), número de celular o código de orden (ej. KAOJ-123456).
-                  </p>
+                  <h3 className="font-serif-kaoj text-2xl font-bold text-gray-900">🏷️ Consulta tus Pedidos</h3>
+                  <p className="text-xs text-gray-500 mt-1">Ingresa tu <b>Código Único de Cliente</b> (ej. J4567) o número de celular.</p>
                 </div>
-
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={trackingCode}
-                    onChange={e => setTrackingCode(e.target.value)}
-                    placeholder="Ej. J4567 o 0991234567"
-                    className="flex-1 border rounded-xl p-2.5 text-xs outline-none focus:ring-1 focus:ring-[#FF2E93] uppercase font-mono font-bold"
-                  />
-                  <button
-                    onClick={handleSearchOrders}
-                    disabled={trackingLoading}
-                    className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition"
-                  >
+                  <input type="text" value={trackingCode} onChange={e => setTrackingCode(e.target.value)} placeholder="Ej. J4567 o 0991234567" className="flex-1 border rounded-xl p-2.5 text-xs outline-none uppercase font-mono font-bold" />
+                  <button onClick={handleSearchOrders} disabled={trackingLoading} className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs">
                     {trackingLoading ? 'Buscando...' : 'Buscar'}
                   </button>
                 </div>
-
-                {/* RESULTADOS DEL RASTREO */}
                 {trackedOrders && (
                   <div className="space-y-3 pt-2">
                     {trackedOrders.length === 0 ? (
-                      <p className="text-xs text-gray-500 text-center py-6">
-                        No se encontraron pedidos registrados con ese código. Verifica que esté bien escrito o consulta por WhatsApp.
-                      </p>
+                      <p className="text-xs text-gray-500 text-center py-6">No se encontraron pedidos con ese código.</p>
                     ) : (
                       trackedOrders.map(order => (
                         <div key={order.id || order.order_code} className="border rounded-2xl p-4 text-xs space-y-2 bg-pink-50/30">
                           <div className="flex justify-between items-center">
                             <span className="font-bold text-[#FF2E93] text-sm">{order.order_code}</span>
-                            <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase ${
-                              order.status === 'entregado' ? 'bg-green-100 text-green-700' :
-                              order.status === 'verificado' ? 'bg-blue-100 text-blue-700' :
-                              order.status === 'en_camino' ? 'bg-purple-100 text-purple-700' :
-                              'bg-amber-100 text-amber-700'
-                            }`}>
+                            <span className="px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase bg-pink-100 text-[#FF2E93]">
                               {order.status || 'Pendiente'}
                             </span>
                           </div>
                           <p className="text-gray-600">Cliente: <b>{order.customer_name}</b> | Código: <b>{order.customer_code}</b></p>
-                          <p className="text-gray-500">Entrega: {order.delivery_method}</p>
                           <div className="border-t pt-1.5 flex justify-between font-bold">
                             <span>Total:</span>
                             <span className="text-[#FF2E93]">${Number(order.total).toFixed(2)}</span>
@@ -2481,7 +2351,7 @@
             </div>
           )}
 
-          {/* MODAL: VER COMPROBANTE EN PANTALLA COMPLETA */}
+          {/* MODAL: VER COMPROBANTE */}
           {previewReceiptUrl && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-lg w-full p-4 relative space-y-3">
@@ -2490,145 +2360,52 @@
                   <button onClick={() => setPreviewReceiptUrl(null)} className="font-bold text-gray-500 text-lg">✕</button>
                 </div>
                 <img src={previewReceiptUrl} alt="Comprobante" className="w-full max-h-[70vh] object-contain rounded-xl border bg-gray-50" />
-                <a
-                  href={previewReceiptUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-center text-xs text-[#FF2E93] font-bold underline"
-                >
-                  Abrir imagen original en nueva pestaña ↗
-                </a>
               </div>
             </div>
           )}
 
-          {/* MODAL: EDITAR PRODUCTO EN ADMIN */}
+          {/* MODAL: EDITAR PRODUCTO */}
           {editingProduct && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-                <button
-                  onClick={() => setEditingProduct(null)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 font-bold text-xl"
-                >
-                  ✕
-                </button>
-
-                <h3 className="font-bold text-lg text-gray-900">✏️ Editar Producto en Supabase</h3>
-
-                <form onSubmit={handleUpdateProduct} className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Nombre</label>
-                    <input
-                      required
-                      value={editingProduct.name}
-                      onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                      className="w-full border rounded-xl p-2.5 outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="font-semibold text-gray-700 block mb-1">Precio Normal ($)</label>
-                      <input
-                        required
-                        type="number"
-                        step="0.01"
-                        value={editingProduct.price}
-                        onChange={e => setEditingProduct({ ...editingProduct, price: e.target.value })}
-                        className="w-full border rounded-xl p-2.5 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold text-gray-700 block mb-1">Precio Oferta ($)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editingProduct.discount_price || ''}
-                        onChange={e => setEditingProduct({ ...editingProduct, discount_price: e.target.value || null })}
-                        className="w-full border rounded-xl p-2.5 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">URL de Imagen</label>
-                    <input
-                      value={editingProduct.image}
-                      onChange={e => setEditingProduct({ ...editingProduct, image: e.target.value })}
-                      className="w-full border rounded-xl p-2.5 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Descripción</label>
-                    <textarea
-                      rows="3"
-                      value={editingProduct.description}
-                      onChange={e => setEditingProduct({ ...editingProduct, description: e.target.value })}
-                      className="w-full border rounded-xl p-2.5 outline-none resize-none"
-                    ></textarea>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-sm transition"
-                  >
-                    Guardar Cambios
-                  </button>
+                <button onClick={() => setEditingProduct(null)} className="absolute top-4 right-4 text-gray-400 font-bold text-xl">✕</button>
+                <h3 className="font-bold text-lg text-gray-900">✏️ Editar Producto</h3>
+                <form onSubmit={async e => {
+                  e.preventDefault();
+                  if (supabase) {
+                    await supabase.from('kaoj_products').update({
+                      name: editingProduct.name,
+                      price: parseFloat(editingProduct.price),
+                      discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
+                      image: editingProduct.image,
+                      description: editingProduct.description
+                    }).eq('id', editingProduct.id);
+                  }
+                  setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p));
+                  setEditingProduct(null);
+                  showToast('Producto actualizado');
+                }} className="space-y-3 text-xs">
+                  <input required value={editingProduct.name} onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
+                  <input required type="number" step="0.01" value={editingProduct.price} onChange={e => setEditingProduct({ ...editingProduct, price: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
+                  <input type="number" step="0.01" value={editingProduct.discount_price || ''} onChange={e => setEditingProduct({ ...editingProduct, discount_price: e.target.value || null })} placeholder="Precio oferta" className="w-full border rounded-xl p-2.5 outline-none" />
+                  <input value={editingProduct.image} onChange={e => setEditingProduct({ ...editingProduct, image: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
+                  <textarea rows="3" value={editingProduct.description} onChange={e => setEditingProduct({ ...editingProduct, description: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none"></textarea>
+                  <button type="submit" className="w-full bg-[#FF2E93] text-white py-3 rounded-xl font-bold text-xs">Guardar Cambios</button>
                 </form>
               </div>
             </div>
           )}
 
-          {/* MODAL: CONFIGURADOR DE SUPABASE (URL Y ANON KEY) */}
+          {/* MODAL: CONFIGURACIÓN SUPABASE */}
           {isConfigOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
-                <button
-                  onClick={() => setIsConfigOpen(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 font-bold text-xl"
-                >
-                  ✕
-                </button>
-
-                <div>
-                  <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                    <span>⚙️</span> Conectar Base de Datos Supabase
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Copia tus claves desde <b>Supabase Dashboard -> Project Settings -> API</b>. Se guardarán en tu navegador para sincronizar todo en vivo.
-                  </p>
-                </div>
-
+                <button onClick={() => setIsConfigOpen(false)} className="absolute top-4 right-4 text-gray-400 font-bold text-xl">✕</button>
+                <h3 className="font-bold text-lg text-gray-900">⚙️ Conectar Base de Datos Supabase</h3>
                 <form onSubmit={handleSaveSupabaseConfig} className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-bold text-gray-700 block mb-1">Project URL:</label>
-                    <input
-                      required
-                      placeholder="https://xyzcompany.supabase.co"
-                      value={configInputUrl}
-                      onChange={e => setConfigInputUrl(e.target.value)}
-                      className="w-full border rounded-xl p-2.5 outline-none font-mono text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-gray-700 block mb-1">Anon / Public Key:</label>
-                    <input
-                      required
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      value={configInputKey}
-                      onChange={e => setConfigInputKey(e.target.value)}
-                      className="w-full border rounded-xl p-2.5 outline-none font-mono text-xs"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-md transition"
-                  >
-                    Guardar y Conectar Supabase 🚀
-                  </button>
+                  <input required placeholder="https://xyz.supabase.co" value={configInputUrl} onChange={e => setConfigInputUrl(e.target.value)} className="w-full border rounded-xl p-2.5 font-mono text-xs outline-none" />
+                  <input required placeholder="Anon Key" value={configInputKey} onChange={e => setConfigInputKey(e.target.value)} className="w-full border rounded-xl p-2.5 font-mono text-xs outline-none" />
+                  <button type="submit" className="w-full bg-[#FF2E93] text-white py-3 rounded-xl font-bold text-xs shadow-md">Conectar Supabase 🚀</button>
                 </form>
               </div>
             </div>
@@ -2645,7 +2422,7 @@
             <span className="text-2xl">💬</span>
           </a>
 
-          {/* TOAST NOTIFICATION CONTAINER */}
+          {/* TOASTS */}
           {toast && (
             <div className="fixed top-5 right-5 z-50 flex items-center gap-2 bg-gray-900 text-white text-xs px-4 py-3 rounded-2xl shadow-2xl border border-gray-800 animate-bounce">
               <span>{toast.type === 'error' ? '⚠️' : '✨'}</span>
@@ -2658,11 +2435,8 @@
             <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 md:grid-cols-4 gap-8">
               <div className="space-y-2">
                 <h4 className="font-serif-kaoj text-2xl font-black text-[#FF2E93]">KAOJ STORE</h4>
-                <p className="text-gray-500">
-                  Maquillaje, skincare dermatológico y moda con glamour. Entregas personales en Portoviejo, ULEAM Manta, San Jacinto y envíos a todo el Ecuador.
-                </p>
+                <p>Maquillaje, skincare dermatológico y moda chic. Entregas personales en Portoviejo, ULEAM Manta, San Jacinto y envíos a todo el Ecuador.</p>
               </div>
-
               <div>
                 <h5 className="font-bold text-gray-900 mb-2">Entregas & Retiros</h5>
                 <ul className="space-y-1">
@@ -2672,35 +2446,27 @@
                   <li>🚚 Servientrega Nacional</li>
                 </ul>
               </div>
-
               <div>
-                <h5 className="font-bold text-gray-900 mb-2">Métodos de Pago</h5>
+                <h5 className="font-bold text-gray-900 mb-2">Formas de Pago</h5>
                 <ul className="space-y-1">
                   <li>💜 Deuna! (App oficial)</li>
-                  <li>🏦 Banco Guayaquil (Ahorros)</li>
-                  <li>🏦 Banco Pichincha (Ahorros)</li>
-                  <li>🏷️ Código Único de Cliente VIP</li>
+                  <li>💳 Tarjetas con Payphone</li>
+                  <li>🏦 Banco Guayaquil & Pichincha</li>
+                  <li>💎 Puntos Kaoj VIP</li>
                 </ul>
               </div>
-
               <div className="space-y-2">
                 <h5 className="font-bold text-gray-900">Contacto & Ayuda</h5>
                 <p>WhatsApp: <b>+{settings.whatsapp_number}</b></p>
                 <p>Correo: <b>{settings.email_contact}</b></p>
-                <button
-                  onClick={() => setIsConfigOpen(true)}
-                  className="text-[11px] text-[#FF2E93] underline block pt-1"
-                >
+                <button onClick={() => setIsConfigOpen(true)} className="text-[11px] text-[#FF2E93] underline block pt-1">
                   ⚙️ Configuración Supabase
                 </button>
               </div>
             </div>
-
             <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 mt-8 border-t border-pink-50 text-center flex flex-col sm:flex-row justify-between items-center gap-2">
               <p>© 2026 KAOJ STORE. Todos los derechos reservados.</p>
-              <p className="text-[11px] text-gray-400">
-                Diseñado para GitHub Pages y Supabase Database 💅
-              </p>
+              <p className="text-[11px] text-gray-400">PWA, Servientrega & Supabase E-commerce 💅</p>
             </div>
           </footer>
 

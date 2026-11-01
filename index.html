@@ -128,16 +128,21 @@
       });
     }
 
-    // Configuración de Supabase
-    const DEFAULT_SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
-    const DEFAULT_SUPABASE_ANON_KEY = 'TU_SUPABASE_ANON_KEY';
+    // Configuración oficial de Supabase para Kaoj Store
+    const DEFAULT_SUPABASE_URL = 'https://uxptcckcwcyaivurhxzh.supabase.co';
+    const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4cHRjY2tjd2N5YWl2dXJoeHpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NjY1NDgsImV4cCI6MjEwOTE0MjU0OH0.8Br_I5FuqHBdNM5GzlITJ-d8AS_6kbvuruMqYjLMo4A';
+
+    const cleanSupabaseUrl = (url) => {
+      if (!url) return '';
+      return url.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
+    };
 
     const getSupabaseConfig = () => {
       const storedUrl = localStorage.getItem('kaoj_supabase_url');
       const storedKey = localStorage.getItem('kaoj_supabase_anon_key');
       return {
-        url: storedUrl || DEFAULT_SUPABASE_URL,
-        key: storedKey || DEFAULT_SUPABASE_ANON_KEY
+        url: cleanSupabaseUrl(storedUrl || DEFAULT_SUPABASE_URL),
+        key: (storedKey || DEFAULT_SUPABASE_ANON_KEY).trim()
       };
     };
 
@@ -2221,10 +2226,12 @@
                 <h3 className="font-bold text-lg text-gray-900">⚙️ Conectar Base de Datos Supabase</h3>
                 <form onSubmit={e => {
                   e.preventDefault();
-                  if (!configInputUrl.trim() || !configInputKey.trim()) return;
-                  supabase = window.supabase.createClient(configInputUrl.trim(), configInputKey.trim());
-                  localStorage.setItem('kaoj_supabase_url', configInputUrl.trim());
-                  localStorage.setItem('kaoj_supabase_anon_key', configInputKey.trim());
+                  const cleanedUrl = cleanSupabaseUrl(configInputUrl);
+                  const cleanedKey = configInputKey.trim();
+                  if (!cleanedUrl || !cleanedKey) return;
+                  supabase = window.supabase.createClient(cleanedUrl, cleanedKey);
+                  localStorage.setItem('kaoj_supabase_url', cleanedUrl);
+                  localStorage.setItem('kaoj_supabase_anon_key', cleanedKey);
                   setIsConfigOpen(false);
                   showToast('Supabase conectado');
                   fetchStoreData();

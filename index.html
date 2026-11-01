@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAOJ STORE | Maquillaje, Skincare & Moda</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- React & Babel CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-serif-kaoj { font-family: 'Playfair Display', Georgia, serif; }
+  </style>
+</head>
+<body class="bg-[#FFFDFEE] text-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // =========================================================================
+    // 1. REEMPLAZA AQUÍ TUS CREDENCIALES DE SUPABASE (Project Settings -> API)
+    // =========================================================================
+    const SUPABASE_URL = 'TU_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'TU_SUPABASE_ANON_KEY';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const CATEGORIES = ['Todos', 'Labiales', 'Skincare', 'Blusas', 'Vestidos', 'Accesorios', 'Ofertas'];
+
+    const DELIVERY_OPTIONS = [
+      { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo', price: 0 },
+      { id: 'retiro_uleam', label: 'Retiro personal en ULEAM (Manta)', price: 0 },
+      { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto', price: 0 },
+      { id: 'domicilio_local', label: 'Domicilio Local (Manta / Portoviejo)', price: 2.50 },
+      { id: 'envio_nacional', label: 'Envío Nacional (Servientrega)', price: 5.50 }
+    ];
+
+    function App() {
+      const [products, setProducts] = useState([]);
+      const [orders, setOrders] = useState([]);
+      const [settings, setSettings] = useState({
+        whatsapp_number: '593999999999',
+        deuna_link: 'https://deuna.app/',
+        deuna_qr_url: '',
+        admin_pin: '2026'
+      });
+
+      const [category, setCategory] = useState('Todos');
+      const [cart, setCart] = useState([]);
+      const [isCartOpen, setIsCartOpen] = useState(false);
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [selectedVariants, setSelectedVariants] = useState({});
+      const [uploading, setUploading] = useState(false);
+
+      // Estado del Checkout
+      const [customer, setCustomer] = useState({
+        name: '',
+        phone: '',
+        idCard: '',
+        delivery: 'retiro_portoviejo',
+        address: '',
+        paymentMethod: 'deuna',
+        receiptUrl: ''
+      });
+
+      // Estado para nuevo producto en Admin
+      const [newProd, setNewProd] = useState({
+        name: '', category: 'Labiales', price: '', discount_price: '',
+        image: '', description: '', variant_label: 'Tono / Talla',
+        variantsText: 'Rosa Nude:5, Rojo Carmesí:3'
+      });
+
+      useEffect(() => {
+        fetchData();
+      }, []);
+
+      async function fetchData() {
+        const { data: prods } = await supabase.from('kaoj_products').select('*').order('id', { ascending: false });
+        if (prods) {
+          setProducts(prods);
+          const initVars = {};
+          prods.forEach(p => {
+            const firstAvail = (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
+            if (firstAvail) initVars[p.id] = firstAvail.name;
+          });
+          setSelectedVariants(initVars);
+        }
+
+        const { data: cfg } = await supabase.from('kaoj_settings').select('*').eq('id', 1).single();
+        if (cfg) setSettings(cfg);
+
+        const { data: ords } = await supabase.from('kaoj_orders').select('*').order('created_at', { ascending: false });
+        if (ords) setOrders(ords);
+      }
+
+      // Subir imagen a Supabase Storage (Comprobantes, Fotos de Productos o QR Deuna)
+      async function uploadFileToSupabase(file, folder = 'receipts') {
+        setUploading(true);
+        const ext = file.name.split('.').pop();
+        const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+        const { error } = await supabase.storage.from('kaoj-assets').upload(fileName, file);
+        setUploading(false);
+        if (error) {
+          alert('Error subiendo imagen: ' + error.message);
+          return null;
+        }
+        const { data } = supabase.storage.from('kaoj-assets').getPublicUrl(fileName);
+        return data.publicUrl;
+      }
+
+      function addToCart(product) {
+        const varName = selectedVariants[product.id];
+        const variantObj = (product.variants || []).find(v => v.name === varName);
+        if (!variantObj || variantObj.stock <= 0) return alert('Variante agotada');
+
+        const key = `${product.id}_${varName}`;
+        const existing = cart.find(i => i.key === key);
+        if (existing && existing.qty >= variantObj.stock) {
+          return alert(`Solo quedan ${variantObj.stock} unidades disponibles de ${varName}`);
+        }
+
+        const finalPrice = product.discount_price || product.price;
+        if (existing) {
+          setCart(cart.map(i => i.key === key ? { ...i, qty: i.qty + 1 } : i));
+        } else {
+          setCart([...cart, {
+            key, productId: product.id, name: product.name,
+            variant: varName, price: Number(finalPrice), qty: 1, image: product.image
+          }]);
+        }
+        setIsCartOpen(true);
+      }
+
+      const subtotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
+      const deliveryObj = DELIVERY_OPTIONS.find(d => d.id === customer.delivery) || DELIVERY_OPTIONS[0];
+      const total = subtotal + deliveryObj.price;
+
+      async function handleCheckoutSubmit(e) {
+        e.preventDefault();
+        if (!customer.name || !customer.phone) return alert('Completa tu nombre y teléfono');
+        if (!customer.receiptUrl) return alert('Por favor sube la captura del comprobante de pago para asegurar tus productos.');
+
+        const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
+
+        // 1. Insertar pedido en Supabase
+        const { error } = await supabase.from('kaoj_orders').insert([{
+          order_code: orderCode,
+          customer_name: customer.name,
+          customer_phone: customer.phone,
+          customer_id_card: customer.idCard,
+          delivery_method: deliveryObj.label,
+          delivery_address: customer.address,
+          shipping_cost: deliveryObj.price,
+          subtotal,
+          total,
+          payment_method: customer.paymentMethod === 'deuna' ? 'Deuna!' : 'Transferencia Bancaria',
+          receipt_url: customer.receiptUrl,
+          items: cart
+        }]);
+
+        if (error) return alert('Error guardando el pedido: ' + error.message);
+
+        // 2. Descontar stock en Supabase
+        for (const item of cart) {
+          const prod = products.find(p => p.id === item.productId);
+          if (prod) {
+            const updatedVariants = prod.variants.map(v =>
+              v.name === item.variant ? { ...v, stock: Math.max(0, v.stock - item.qty) } : v
+            );
+            await supabase.from('kaoj_products').update({ variants: updatedVariants }).eq('id', prod.id);
+          }
+        }
+
+        // 3. Redirigir a WhatsApp con el resumen y el link del comprobante alojado en Supabase
+        const itemsList = cart.map(i => `• ${i.qty}x ${i.name} (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
+        const msg = `✨ *NUEVO PEDIDO KAOJ STORE* ✨\n` +
+          `📦 *Orden:* ${orderCode}\n` +
+          `👤 *Cliente:* ${customer.name}\n` +
+          `📱 *Teléfono:* ${customer.phone}\n` +
+          `🚚 *Entrega:* ${deliveryObj.label}\n` +
+          (customer.address ? `📍 *Dirección:* ${customer.address}\n` : '') +
+          `💳 *Pago:* ${customer.paymentMethod === 'deuna' ? 'Deuna!' : 'Transferencia Bancaria'}\n\n` +
+          `🛍️ *PRODUCTOS:*\n${itemsList}\n\n` +
+          `💰 *TOTAL PAGADO:* $${total.toFixed(2)}\n` +
+          `🧾 *Comprobante:* ${customer.receiptUrl}`;
+
+        window.open(`https://wa.me/${settings.whatsapp_number}?text=${encodeURIComponent(msg)}`, '_blank');
+        setCart([]);
+        setIsCartOpen(false);
+        fetchData();
+      }
+
+      async function handleCreateProduct(e) {
+        e.preventDefault();
+        const parsedVariants = newProd.variantsText.split(',').map(pair => {
+          const [name, stock] = pair.split(':').map(s => s.trim());
+          return { name, stock: parseInt(stock || '0', 10) };
+        }).filter(v => v.name);
+
+        const { error } = await supabase.from('kaoj_products').insert([{
+          name: newProd.name,
+          category: newProd.category,
+          price: parseFloat(newProd.price),
+          discount_price: newProd.discount_price ? parseFloat(newProd.discount_price) : null,
+          image: newProd.image,
+          description: newProd.description,
+          variant_label: newProd.variant_label,
+          variants: parsedVariants
+        }]);
+
+        if (error) return alert(error.message);
+        setNewProd({ name: '', category: 'Labiales', price: '', discount_price: '', image: '', description: '', variant_label: 'Tono / Talla', variantsText: 'Único:5' });
+        fetchData();
+      }
+
+      const filteredProducts = products.filter(p =>
+        category === 'Todos' ? true : category === 'Ofertas' ? Boolean(p.discount_price) : p.category === category
+      );
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <!-- Barra superior -->
+          <div className="bg-[#FF2E93] text-white text-xs py-2 px-4 text-center font-medium tracking-wide">
+            ✨ Recuerda: No es un gasto, es una inversión en ti misma. 💅✨ | Entregas en Portoviejo, ULEAM, San Jacinto y Envíos Nacionales
+          </div>
+
+          <!-- Header con el Logo KAOJ STORE -->
+          <header className="bg-white border-b border-pink-100 sticky top-0 z-30">
+            <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+              <div onClick={() => setIsAdmin(false)} className="cursor-pointer text-center select-none">
+                <h1 className="font-serif-kaoj text-4xl md:text-5xl font-extrabold text-[#FF2E93] tracking-wider leading-none">
+                  KAOJ
+                </h1>
+                <span className="block text-[11px] tracking-[0.42em] text-gray-700 font-semibold mt-1">
+                  STORE
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    if (isAdmin) return setIsAdmin(false);
+                    const pin = prompt('Ingresa el PIN de administrador:');
+                    if (pin === settings.admin_pin) setIsAdmin(true);
+                  }}
+                  className="text-xs px-3 py-2 rounded-full border border-gray-200 hover:border-pink-300 text-gray-600"
+                >
+                  {isAdmin ? '← Volver a la Tienda' : 'Inventario / Admin'}
+                </button>
+
+                <button
+                  onClick={() => setIsCartOpen(true)}
+                  className="bg-[#FF2E93] hover:bg-[#e01f7d] text-white px-4 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 shadow-sm"
+                >
+                  <span>🛍️ Carrito ({cart.reduce((a, b) => a + b.qty, 0)})</span>
+                </button>
+              </div>
+            </div>
+
+            {!isAdmin && (
+              <div className="max-w-6xl mx-auto px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar">
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategory(cat)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${
+                      category === cat ? 'bg-[#FF2E93] text-white' : 'bg-pink-50 text-gray-700 hover:bg-pink-100'
+                    }`}
+                  >
+                    {cat === 'Ofertas' ? '🔥 Ofertas' : cat}
+                  </button>
+                ))}
+              </div>
+            )}
+          </header>
+
+          <!-- VISTA CLIENTE O ADMIN -->
+          {!isAdmin ? (
+            <main className="max-w-6xl mx-auto px-4 py-8 flex-1 w-full">
+              {filteredProducts.length === 0 ? (
+                <div className="text-center py-16 text-gray-500">
+                  No hay productos en esta categoría todavía. Entra a <b>Inventario / Admin</b> (PIN por defecto: 2026) para subirlos.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {filteredProducts.map(prod => {
+                    const currentVar = selectedVariants[prod.id];
+                    const varObj = (prod.variants || []).find(v => v.name === currentVar);
+                    const stock = varObj ? varObj.stock : 0;
+
+                    return (
+                      <div key={prod.id} className="bg-white rounded-2xl border border-pink-100 shadow-sm overflow-hidden flex flex-col">
+                        <div className="relative h-64 bg-pink-50">
+                          <img src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={prod.name} className="w-full h-full object-cover" />
+                          <span className="absolute top-3 left-3 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-xs font-semibold text-[#FF2E93]">
+                            {prod.category}
+                          </span>
+                        </div>
+                        <div className="p-4 flex-1 flex flex-col justify-between">
+                          <div>
+                            <h3 className="font-bold text-lg text-gray-900">{prod.name}</h3>
+                            <p className="text-xs text-gray-500 mt-1">{prod.description}</p>
+                            <div className="mt-3 flex items-baseline gap-2">
+                              {prod.discount_price ? (
+                                <>
+                                  <span className="text-xl font-extrabold text-[#FF2E93]">${Number(prod.discount_price).toFixed(2)}</span>
+                                  <span className="text-sm line-through text-gray-400">${Number(prod.price).toFixed(2)}</span>
+                                </>
+                              ) : (
+                                <span className="text-xl font-extrabold text-gray-900">${Number(prod.price).toFixed(2)}</span>
+                              )}
+                            </div>
+
+                            <!-- Selector de Tono / Color / Talla -->
+                            <div className="mt-4">
+                              <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                                {prod.variant_label || 'Tono / Talla'}:
+                              </label>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(prod.variants || []).map(v => (
+                                  <button
+                                    key={v.name}
+                                    disabled={v.stock <= 0}
+                                    onClick={() => setSelectedVariants({ ...selectedVariants, [prod.id]: v.name })}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                                      currentVar === v.name
+                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold'
+                                        : v.stock <= 0
+                                        ? 'border-gray-200 bg-gray-100 text-gray-400 line-through cursor-not-allowed'
+                                        : 'border-gray-200 text-gray-700 hover:border-pink-300'
+                                    }`}
+                                  >
+                                    {v.name} ({v.stock})
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            disabled={stock <= 0}
+                            onClick={() => addToCart(prod)}
+                            className={`mt-5 w-full py-2.5 rounded-xl font-semibold text-sm transition ${
+                              stock > 0
+                                ? 'bg-[#FF2E93] hover:bg-[#e01f7d] text-white'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {stock > 0 ? 'Agregar al Carrito' : 'Agotado'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </main>
+          ) : (
+            <!-- PANEL DE ADMINISTRACIÓN CONECTADO A SUPABASE -->
+            <main className="max-w-5xl mx-auto px-4 py-8 w-full space-y-8">
+              <div className="grid md:grid-cols-2 gap-6">
+                <!-- Subir Producto -->
+                <form onSubmit={handleCreateProduct} className="bg-white p-6 rounded-2xl border border-pink-100 space-y-3">
+                  <h2 className="text-lg font-bold text-[#FF2E93]">➕ Agregar Producto al Inventario</h2>
+                  <input required placeholder="Nombre (ej. Labial Matte Ink)" value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={newProd.category} onChange={e => setNewProd({...newProd, category: e.target.value})} className="border rounded-lg p-2 text-sm">
+                      {CATEGORIES.filter(c => c !== 'Todos' && c !== 'Ofertas').map(c => <option key={c}>{c}</option>)}
+                    </select>
+                    <input placeholder="Etiqueta (ej. Talla / Tono)" value={newProd.variant_label} onChange={e => setNewProd({...newProd, variant_label: e.target.value})} className="border rounded-lg p-2 text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input required type="number" step="0.01" placeholder="Precio normal ($)" value={newProd.price} onChange={e => setNewProd({...newProd, price: e.target.value})} className="border rounded-lg p-2 text-sm" />
+                    <input type="number" step="0.01" placeholder="Precio oferta (opcional)" value={newProd.discount_price} onChange={e => setNewProd({...newProd, discount_price: e.target.value})} className="border rounded-lg p-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Foto del producto (Subir archivo o pegar URL):</label>
+                    <input type="file" accept="image/*" onChange={async e => {
+                      if (e.target.files[0]) {
+                        const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                        if (url) setNewProd({ ...newProd, image: url });
+                      }
+                    }} className="text-xs mb-1" />
+                    <input placeholder="URL de imagen" value={newProd.image} onChange={e => setNewProd({...newProd, image: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  </div>
+                  <input placeholder="Variantes y stock separados por coma (ej. S - Blanco:4, M - Negro:6)" value={newProd.variantsText} onChange={e => setNewProd({...newProd, variantsText: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  <textarea placeholder="Descripción corta" value={newProd.description} onChange={e => setNewProd({...newProd, description: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] text-white py-2.5 rounded-xl font-bold text-sm">
+                    {uploading ? 'Subiendo imagen...' : 'Guardar en Supabase'}
+                  </button>
+                </form>
+
+                <!-- Configurar Deuna QR y WhatsApp -->
+                <div className="bg-white p-6 rounded-2xl border border-pink-100 space-y-3">
+                  <h2 className="text-lg font-bold text-[#FF2E93]">⚙️ Configuración Deuna! y WhatsApp</h2>
+                  <label className="block text-xs font-semibold">WhatsApp receptor (con 593):</label>
+                  <input value={settings.whatsapp_number} onChange={e => setSettings({...settings, whatsapp_number: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  <label className="block text-xs font-semibold">Link directo de cobro Deuna! (Deep Link):</label>
+                  <input value={settings.deuna_link} onChange={e => setSettings({...settings, deuna_link: e.target.value})} className="w-full border rounded-lg p-2 text-sm" />
+                  <label className="block text-xs font-semibold">Imagen de tu QR de Deuna!:</label>
+                  <input type="file" accept="image/*" onChange={async e => {
+                    if (e.target.files[0]) {
+                      const url = await uploadFileToSupabase(e.target.files[0], 'config');
+                      if (url) setSettings({ ...settings, deuna_qr_url: url });
+                    }
+                  }} className="text-xs" />
+                  {settings.deuna_qr_url && <img src={settings.deuna_qr_url} className="h-32 rounded border p-1" />}
+                  <button
+                    onClick={async () => {
+                      await supabase.from('kaoj_settings').upsert([settings]);
+                      alert('Configuración actualizada');
+                    }}
+                    className="w-full bg-gray-900 text-white py-2.5 rounded-xl font-bold text-sm"
+                  >
+                    Guardar Configuración
+                  </button>
+                </div>
+              </div>
+
+              <!-- Historial de Pedidos y Comprobantes -->
+              <div className="bg-white p-6 rounded-2xl border border-pink-100">
+                <h2 className="text-lg font-bold text-[#FF2E93] mb-4">📦 Pedidos Recibidos ({orders.length})</h2>
+                <div className="space-y-3">
+                  {orders.map(o => (
+                    <div key={o.id} className="border rounded-xl p-4 flex flex-col md:flex-row justify-between gap-4 text-sm">
+                      <div>
+                        <span className="font-bold text-[#FF2E93]">{o.order_code}</span> — <b>{o.customer_name}</b> ({o.customer_phone})
+                        <p className="text-xs text-gray-500">{o.delivery_method} | {o.payment_method} | Total: <b>${Number(o.total).toFixed(2)}</b></p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {o.receipt_url && (
+                          <a href={o.receipt_url} target="_blank" className="text-xs bg-pink-50 text-[#FF2E93] px-3 py-1.5 rounded-lg font-semibold border border-pink-200">
+                            Ver Comprobante 📸
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </main>
+          )}
+
+          <!-- DRAWER DE CARRITO Y CHECKOUT -->
+          {isCartOpen && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
+              <div className="bg-white w-full max-w-lg h-full overflow-y-auto p-6 space-y-5">
+                <div className="flex justify-between items-center border-b pb-3">
+                  <h2 className="text-xl font-bold text-[#FF2E93]">Tu Pedido en KAOJ STORE</h2>
+                  <button onClick={() => setIsCartOpen(false)} className="text-gray-400 hover:text-gray-700 text-xl font-bold">✕</button>
+                </div>
+
+                {cart.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-12 text-center">Tu carrito está vacío.</p>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      {cart.map(item => (
+                        <div key={item.key} className="flex justify-between items-center border-b pb-2 text-sm">
+                          <div>
+                            <p className="font-bold">{item.name}</p>
+                            <p className="text-xs text-gray-500">{item.variant} x {item.qty}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold">${(item.price * item.qty).toFixed(2)}</span>
+                            <button onClick={() => setCart(cart.filter(c => c.key !== item.key))} className="text-red-500 text-xs">Quitar</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <form onSubmit={handleCheckoutSubmit} className="space-y-4">
+                      <input required placeholder="Nombre y Apellido *" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} className="w-full border rounded-xl p-2.5 text-sm" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input required placeholder="Celular / WhatsApp *" value={customer.phone} onChange={e => setCustomer({...customer, phone: e.target.value})} className="border rounded-xl p-2.5 text-sm" />
+                        <input placeholder="Cédula / RUC" value={customer.idCard} onChange={e => setCustomer({...customer, idCard: e.target.value})} className="border rounded-xl p-2.5 text-sm" />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-gray-700 block mb-1">Método de Entrega:</label>
+                        <select value={customer.delivery} onChange={e => setCustomer({...customer, delivery: e.target.value})} className="w-full border rounded-xl p-2.5 text-sm">
+                          {DELIVERY_OPTIONS.map(d => (
+                            <option key={d.id} value={d.id}>{d.label} ({d.price === 0 ? 'GRATIS' : `$${d.price.toFixed(2)}`})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {(customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional') && (
+                        <input required placeholder="Ciudad, sector y dirección exacta *" value={customer.address} onChange={e => setCustomer({...customer, address: e.target.value})} className="w-full border rounded-xl p-2.5 text-sm" />
+                      )}
+
+                      <!-- Selector de Pago: Deuna! o Transferencia -->
+                      <div className="grid grid-cols-2 gap-2 pt-2">
+                        <button type="button" onClick={() => setCustomer({...customer, paymentMethod: 'deuna'})} className={`py-2.5 rounded-xl font-bold text-sm border ${customer.paymentMethod === 'deuna' ? 'bg-purple-700 text-white border-purple-700' : 'bg-gray-50 text-gray-700'}`}>
+                          💜 Pagar con Deuna!
+                        </button>
+                        <button type="button" onClick={() => setCustomer({...customer, paymentMethod: 'transferencia'})} className={`py-2.5 rounded-xl font-bold text-sm border ${customer.paymentMethod === 'transferencia' ? 'bg-[#FF2E93] text-white border-[#FF2E93]' : 'bg-gray-50 text-gray-700'}`}>
+                          🏦 Transferencia
+                        </button>
+                      </div>
+
+                      {customer.paymentMethod === 'deuna' ? (
+                        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 text-center space-y-3">
+                          <p className="text-xs font-semibold text-purple-900">Escanea el QR o toca el botón para abrir tu app Deuna! directamente:</p>
+                          {settings.deuna_qr_url && (
+                            <img src={settings.deuna_qr_url} alt="QR Deuna Kaoj Store" className="w-44 h-44 mx-auto rounded-xl border bg-white p-2 object-contain" />
+                          )}
+                          <a
+                            href={settings.deuna_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold text-sm shadow"
+                          >
+                            🚀 Abrir App Deuna! y Pagar ${total.toFixed(2)}
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-4 text-xs space-y-3">
+                          <p className="font-bold text-[#FF2E93] text-sm">🏦 DATOS DE PAGO KAOJ STORE</p>
+                          <div className="bg-white p-3 rounded-xl border">
+                            <p className="font-bold text-gray-900">🏦 Banco Guayaquil (Ahorros)</p>
+                            <p>Titular: Toledo Mendoza Alisson Kandy</p>
+                            <p>Cuenta: <b>0013899619</b> | CI: 1350290308</p>
+                            <button type="button" onClick={() => navigator.clipboard.writeText('0013899619')} className="mt-1 text-[#FF2E93] font-bold underline">Copiar # Cuenta</button>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl border">
+                            <p className="font-bold text-gray-900">🏦 Banco Pichincha (Ahorros)</p>
+                            <p>Titular: Demera García Jhojann Alberto</p>
+                            <p>Cuenta: <b>2215807440</b> | CI: 1314710946</p>
+                            <button type="button" onClick={() => navigator.clipboard.writeText('2215807440')} className="mt-1 text-[#FF2E93] font-bold underline">Copiar # Cuenta</button>
+                          </div>
+                          <p className="text-gray-700">📧 Correo: <b>kaoj.store.ecu@gmail.com</b></p>
+                        </div>
+                      )}
+
+                      <!-- Subida obligatoria de captura a Supabase Storage -->
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs space-y-2">
+                        <p className="font-semibold text-amber-900">
+                          📸 ¡Súper importante! Sube aquí la captura de tu pago o transferencia para dejar tus productos 100% asegurados:
+                        </p>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={async e => {
+                            if (e.target.files[0]) {
+                              const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
+                              if (url) setCustomer({ ...customer, receiptUrl: url });
+                            }
+                          }}
+                          className="w-full text-xs"
+                        />
+                        {uploading && <p className="text-[#FF2E93] font-bold">Subiendo comprobante a la nube...</p>}
+                        {customer.receiptUrl && <p className="text-green-700 font-bold">✅ Comprobante cargado correctamente</p>}
+                      </div>
+
+                      <div className="border-t pt-3 text-sm space-y-1">
+                        <div className="flex justify-between"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span>Entrega:</span><span>${deliveryObj.price.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-lg font-extrabold text-[#FF2E93]"><span>Total a Pagar:</span><span>${total.toFixed(2)}</span></div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={uploading}
+                        className="w-full bg-[#FF2E93] hover:bg-[#e01f7d] text-white py-3.5 rounded-xl font-bold text-sm shadow-md"
+                      >
+                        Confirmar Pedido y Enviar a WhatsApp 💅✨
+                      </button>
+                    </form>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

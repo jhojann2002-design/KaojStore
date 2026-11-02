@@ -71,6 +71,10 @@ ALTER TABLE public.kaoj_settings ADD COLUMN IF NOT EXISTS sections_config JSONB 
   "ROPA": ["Blusas", "Pantalones", "Vestidos", "Shorts", "Pijamas", "Conjuntos", "Ropa deportiva"]
 }'::jsonb;
 
+-- Asegurar columnas para Quiénes Somos y Tarifario de Envíos
+ALTER TABLE public.kaoj_settings ADD COLUMN IF NOT EXISTS about_us JSONB;
+ALTER TABLE public.kaoj_settings ADD COLUMN IF NOT EXISTS shipping_rates JSONB;
+
 INSERT INTO public.kaoj_settings (id, whatsapp_number, deuna_link, admin_pin, banner_message)
 VALUES (1, '593963073456', 'https://deuna.app/', '2026', '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador 💅✨')
 ON CONFLICT (id) DO UPDATE SET

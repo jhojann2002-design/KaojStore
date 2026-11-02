@@ -170,7 +170,7 @@
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // =========================================================================
-    // UTILIDADES: FORMATEO WHATSAPP ECUADOR (+593) Y CÓDIGO ÚNICO
+    // UTILIDADES: FORMATEO WHATSAPP ECUADOR (+593), VISUAL (09...) Y CÓDIGO ÚNICO
     // =========================================================================
     function formatWhatsAppPhone(phone) {
       if (!phone) return '593963073456';
@@ -178,6 +178,18 @@
       if (clean.startsWith('593')) return clean;
       if (clean.startsWith('0') && clean.length === 10) return '593' + clean.substring(1);
       if (clean.length === 9) return '593' + clean;
+      return clean;
+    }
+
+    // Formateo visual nacional para Ecuador sin el signo '+' (ej. 0963073456)
+    function formatDisplayPhone(phone) {
+      if (!phone) return '0963073456';
+      const clean = phone.toString().replace(/\D/g, '');
+      if (clean.startsWith('593') && clean.length === 12) {
+        return '0' + clean.substring(3);
+      }
+      if (clean.startsWith('0')) return clean;
+      if (clean.length === 9) return '0' + clean;
       return clean;
     }
 
@@ -322,13 +334,26 @@
       )
     };
 
-    const DELIVERY_OPTIONS = [
-      { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo (Gratis)', price: 0, tag: 'Portoviejo' },
-      { id: 'retiro_uleam', label: 'Retiro personal en ULEAM Manta (Gratis)', price: 0, tag: 'Manta' },
-      { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto (Gratis)', price: 0, tag: 'San Jacinto' },
-      { id: 'domicilio_local', label: 'Entrega a Domicilio Local (Manta / Portoviejo)', price: 2.50, tag: 'Local' },
-      { id: 'envio_nacional', label: 'Envío Nacional Seguro (Servientrega)', price: 5.50, tag: 'Servientrega' }
+    const DEFAULT_SHIPPING_RATES = [
+      { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo (Gratis)', price: 0, agency: 'Personal', note: 'Coordinar entrega' },
+      { id: 'retiro_uleam', label: 'Retiro personal en ULEAM Manta (Gratis)', price: 0, agency: 'Personal', note: 'Punto universitario' },
+      { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto (Gratis)', price: 0, agency: 'Personal', note: 'Coordinar con boutique' },
+      { id: 'domicilio_local', label: 'Entrega a Domicilio Local (Manta / Portoviejo)', price: 2.50, agency: 'Local', note: 'Motorizado directo' },
+      { id: 'cooperativa_manabi', label: 'Cooperativa / Encomienda - Manabí (Cantones)', price: 3.00, agency: 'Cooperativa', note: 'Reina del Camino, Coactur, Rutas Portovejenses, etc.' },
+      { id: 'cooperativa_nacional', label: 'Cooperativa / Encomienda - Todo Ecuador (Guayaquil, Quito, Sierra y Costa)', price: 3.50, agency: 'Cooperativa', note: 'Terminal Terrestre / Encomienda interprovincial' },
+      { id: 'servientrega_nacional', label: 'Servientrega Nacional Directo a Domicilio o Agencia', price: 5.50, agency: 'Servientrega', note: 'Todo el Ecuador (24 a 48h con número de guía)' }
     ];
+
+    const DEFAULT_ABOUT_US = {
+      title: 'Sobre KAOJ STORE Boutique',
+      subtitle: 'Moda Chic, Cosmética Premium & Accesorios en Tendencia',
+      story: 'Somos una boutique ecuatoriana apasionada por realzar la belleza, el glamour y el estilo de cada mujer con productos 100% auténticos de alta cosmética, tonos virales, accesorios en tendencia y moda chic. Nacimos con el sueño de acercar las mejores tendencias de belleza a cada rincón del país con confianza, transparencia y amor por cada detalle.',
+      mission: 'Brindar una experiencia de compra personalizada, confiable y VIP a nuestras clientas con atención directa, garantía de calidad y envíos inmediatos a todo el Ecuador.',
+      image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800',
+      badge: 'Boutique Ecuatoriana Oficial'
+    };
+
+    const DELIVERY_OPTIONS = DEFAULT_SHIPPING_RATES;
 
     const DEMO_REVIEWS = [
       {
@@ -382,7 +407,7 @@
       });
 
       const [settings, setSettings] = useState({
-        whatsapp_number: '593963073456',
+        whatsapp_number: '0963073456',
         deuna_link: 'https://deuna.app/',
         deuna_qr_url: '',
         payphone_link: 'https://payphone.app/',
@@ -398,7 +423,9 @@
         points_per_dollar: 1,
         points_redeem_ratio: 10, // 10 pts = $1.00 de descuento
         points_min_redeem: 50,  // Mínimo 50 pts = $5.00
-        banner_message: '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos seguros a todo el Ecuador 💅✨'
+        banner_message: '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos a todo el Ecuador por Servientrega o Cooperativa 💅✨',
+        about_us: DEFAULT_ABOUT_US,
+        shipping_rates: DEFAULT_SHIPPING_RATES
       });
 
       // Filtros de catálogo y búsqueda
@@ -728,6 +755,11 @@
               setIsTrackingOpen(true);
             } else if (hash === '#/carrito') {
               setIsCartOpen(true);
+            } else if (hash === '#/quienes-somos') {
+              setTimeout(() => {
+                const el = document.getElementById('quienes-somos');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }, 120);
             }
           }
         };
@@ -796,15 +828,45 @@
           // 2. Ajustes públicos
           const { data: cfg } = await supabase.from('kaoj_settings').select('*').eq('id', 1).single();
           if (cfg) {
+            let loadedAboutUs = cfg.about_us || cfg.sections_config?.__about_us || null;
+            if (!loadedAboutUs) {
+              try {
+                const localAbout = localStorage.getItem('kaoj_about_us');
+                if (localAbout) loadedAboutUs = JSON.parse(localAbout);
+              } catch(e) {}
+            }
+            if (!loadedAboutUs) loadedAboutUs = DEFAULT_ABOUT_US;
+
+            let loadedShipping = cfg.shipping_rates || cfg.sections_config?.__shipping_rates || null;
+            if (!loadedShipping) {
+              try {
+                const localShip = localStorage.getItem('kaoj_shipping_rates');
+                if (localShip) loadedShipping = JSON.parse(localShip);
+              } catch(e) {}
+            }
+            if (!loadedShipping) loadedShipping = DEFAULT_SHIPPING_RATES;
+
             setSettings(prev => ({
               ...prev,
               ...cfg,
-              whatsapp_number: cfg.whatsapp_number || '593963073456',
-              admin_pin: cfg.admin_pin || '2026'
+              whatsapp_number: cfg.whatsapp_number ? formatDisplayPhone(cfg.whatsapp_number) : '0963073456',
+              admin_pin: cfg.admin_pin || '2026',
+              about_us: loadedAboutUs,
+              shipping_rates: loadedShipping
             }));
-            setAdminSettingsForm({ ...cfg });
+
+            setAdminSettingsForm({
+              ...cfg,
+              whatsapp_number: cfg.whatsapp_number ? formatDisplayPhone(cfg.whatsapp_number) : '0963073456',
+              about_us: loadedAboutUs,
+              shipping_rates: loadedShipping
+            });
+
             if (cfg.sections_config && Object.keys(cfg.sections_config).length > 0) {
-              setSectionsConfig(cfg.sections_config);
+              const cleanSections = { ...cfg.sections_config };
+              delete cleanSections.__about_us;
+              delete cleanSections.__shipping_rates;
+              setSectionsConfig(cleanSections);
             }
           }
 
@@ -1082,12 +1144,21 @@
 
       // Cálculos Financieros
       const subtotal = cart.reduce((acc, i) => acc + (i.price * i.qty), 0);
-      const deliveryObj = DELIVERY_OPTIONS.find(d => d.id === customer.delivery) || DELIVERY_OPTIONS[0];
+
+      // Métodos de Entrega Activos (Personalizables en Admin: Cooperativa, Servientrega, etc.)
+      const activeDeliveryOptions = useMemo(() => {
+        if (Array.isArray(settings.shipping_rates) && settings.shipping_rates.length > 0) {
+          return settings.shipping_rates;
+        }
+        return DEFAULT_SHIPPING_RATES;
+      }, [settings.shipping_rates]);
+
+      const deliveryObj = activeDeliveryOptions.find(d => d.id === customer.delivery) || activeDeliveryOptions[0] || DEFAULT_SHIPPING_RATES[0];
 
       // Regla de Envío Gratis
       const freeShippingThreshold = Number(settings.free_shipping_threshold || 50.00);
-      const qualifiesFreeShipping = subtotal >= freeShippingThreshold && (customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional');
-      const finalShippingCost = qualifiesFreeShipping ? 0 : deliveryObj.price;
+      const qualifiesFreeShipping = subtotal >= freeShippingThreshold && (Number(deliveryObj?.price || 0) > 0);
+      const finalShippingCost = qualifiesFreeShipping ? 0 : Number(deliveryObj?.price || 0);
 
       // Regla de Puntos VIP
       const customerCurrentPoints = customerProfile?.points || 0;
@@ -1107,7 +1178,7 @@
       }
 
       const totalDiscounts = pointsDiscountAmount + couponDiscountAmount;
-      const finalShippingAfterCoupon = (qualifiesFreeShipping || appliedCoupon?.type === 'shipping') ? 0 : deliveryObj.price;
+      const finalShippingAfterCoupon = (qualifiesFreeShipping || appliedCoupon?.type === 'shipping') ? 0 : Number(deliveryObj?.price || 0);
       const total = Math.max(0, subtotal - (pointsDiscountAmount + (appliedCoupon?.type !== 'shipping' ? couponDiscountAmount : 0))) + finalShippingAfterCoupon;
       const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - totalDiscounts));
 
@@ -1373,6 +1444,108 @@
       }
 
       // =======================================================================
+      // CANCELAR O REVERTIR VENTA (Solo Administrador: Restaura existencias y ajusta saldo)
+      // =======================================================================
+      async function handleCancelOrder(order) {
+        if (!order || order.status === 'cancelado') {
+          return showToast('Esta orden ya se encuentra cancelada.', 'error');
+        }
+
+        const itemsCount = (order.items || []).reduce((acc, i) => acc + (Number(i.qty) || 0), 0);
+        const confirmMsg = `¿Deseas cancelar y revertir la venta de la orden ${order.order_code}?\n\n` +
+          `• Se devolverán ${itemsCount} producto(s) a las existencias del inventario.\n` +
+          `• El estado de la orden pasará a CANCELADO.\n` +
+          `• Si la clienta acumuló puntos por esta compra, se descontarán de su saldo.`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        setUploading(true);
+        try {
+          // 1. Obtener productos frescos de Supabase para devolver el stock
+          const prodIds = [...new Set((order.items || []).map(i => i.productId).filter(Boolean))];
+          if (prodIds.length > 0) {
+            const { data: freshProds, error: pErr } = await supabase
+              .from('kaoj_products')
+              .select('id, variants')
+              .in('id', prodIds);
+
+            if (!pErr && freshProds) {
+              for (const freshProd of freshProds) {
+                const itemsForProd = (order.items || []).filter(i => i.productId === freshProd.id);
+                if (itemsForProd.length === 0) continue;
+
+                const restoredVariants = (freshProd.variants || []).map(v => {
+                  const matched = itemsForProd.find(i => i.variant === v.name);
+                  if (matched) {
+                    return { ...v, stock: (Number(v.stock) || 0) + (Number(matched.qty) || 0) };
+                  }
+                  return v;
+                });
+
+                await supabase
+                  .from('kaoj_products')
+                  .update({ variants: restoredVariants })
+                  .eq('id', freshProd.id);
+              }
+            }
+          }
+
+          // 2. Revertir puntos si la clienta acumuló o canjeó puntos
+          if (order.customer_code) {
+            const { data: customerData } = await supabase
+              .from('kaoj_customers')
+              .select('*')
+              .eq('customer_code', order.customer_code)
+              .maybeSingle();
+
+            if (customerData) {
+              const currentPts = Number(customerData.points || 0);
+              const earnedPts = Number(order.points_earned || 0);
+              const redeemedPts = Number(order.points_redeemed || 0);
+              const adjustedPoints = Math.max(0, currentPts - earnedPts + redeemedPts);
+              const adjustedSpent = Math.max(0, Number(customerData.total_spent || 0) - Number(order.total || 0));
+              const adjustedOrders = Math.max(0, Number(customerData.orders_count || 1) - 1);
+
+              await supabase
+                .from('kaoj_customers')
+                .update({
+                  points: adjustedPoints,
+                  total_spent: Number(adjustedSpent.toFixed(2)),
+                  orders_count: adjustedOrders
+                })
+                .eq('customer_code', order.customer_code);
+            }
+          }
+
+          // 3. Actualizar estado de la orden a 'cancelado'
+          const cancelNote = `[VENTA REVERTIDA / CANCELADA] Stock restaurado (${new Date().toLocaleDateString('es-EC')}).`;
+          const updatedNotes = order.admin_notes ? `${order.admin_notes} | ${cancelNote}` : cancelNote;
+
+          const { error: ordErr } = await supabase
+            .from('kaoj_orders')
+            .update({
+              status: 'cancelado',
+              admin_notes: updatedNotes
+            })
+            .eq('id', order.id);
+
+          if (ordErr) throw ordErr;
+
+          // 4. Actualizar estado local
+          setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'cancelado', admin_notes: updatedNotes } : o));
+          setUploading(false);
+          showToast(`¡Venta revertida! Se devolvieron ${itemsCount} producto(s) al inventario.`);
+
+          // 5. Refrescar inventario en pantalla
+          fetchInitialData();
+        } catch (err) {
+          setUploading(false);
+          console.error('Error al revertir orden:', err);
+          showToast('Error al revertir la venta: ' + err.message, 'error');
+        }
+      }
+
+      // =======================================================================
       // 6. SUBIDA DE ARCHIVOS A SUPABASE STORAGE
       // =======================================================================
       async function uploadFileToSupabase(file, folder = 'products') {
@@ -1403,14 +1576,15 @@
       // 7. ADMINISTRADOR: AJUSTES, PRODUCTOS, SECCIONES Y PEDIDOS
       // =======================================================================
       async function handleSaveSettings(e) {
-        e.preventDefault();
+        if (e) e.preventDefault();
         if (!adminSettingsForm) return;
 
         setUploading(true);
         try {
-          const { error } = await supabase.from('kaoj_settings').upsert({
+          const cleanPhone = formatWhatsAppPhone(adminSettingsForm.whatsapp_number);
+          const payload = {
             id: 1,
-            whatsapp_number: adminSettingsForm.whatsapp_number,
+            whatsapp_number: cleanPhone,
             deuna_link: adminSettingsForm.deuna_link,
             deuna_qr_url: adminSettingsForm.deuna_qr_url,
             payphone_link: adminSettingsForm.payphone_link,
@@ -1423,13 +1597,36 @@
             bank_pichincha_name: adminSettingsForm.bank_pichincha_name,
             bank_pichincha_id: adminSettingsForm.bank_pichincha_id,
             free_shipping_threshold: parseFloat(adminSettingsForm.free_shipping_threshold || 50),
-            banner_message: adminSettingsForm.banner_message
-          });
+            banner_message: adminSettingsForm.banner_message,
+            about_us: adminSettingsForm.about_us,
+            shipping_rates: adminSettingsForm.shipping_rates,
+            sections_config: {
+              ...sectionsConfig,
+              __about_us: adminSettingsForm.about_us,
+              __shipping_rates: adminSettingsForm.shipping_rates
+            }
+          };
 
-          if (error) throw error;
-          setSettings({ ...settings, ...adminSettingsForm });
+          // Intentar guardar con columnas dedicadas
+          let saveRes = await supabase.from('kaoj_settings').upsert(payload);
+          if (saveRes.error) {
+            console.warn('Upsert con nuevas columnas dio error, guardando en sections_config...', saveRes.error);
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.about_us;
+            delete fallbackPayload.shipping_rates;
+            saveRes = await supabase.from('kaoj_settings').upsert(fallbackPayload);
+            if (saveRes.error) throw saveRes.error;
+          }
+
+          // Respaldo en localStorage
+          try {
+            localStorage.setItem('kaoj_about_us', JSON.stringify(adminSettingsForm.about_us));
+            localStorage.setItem('kaoj_shipping_rates', JSON.stringify(adminSettingsForm.shipping_rates));
+          } catch(e) {}
+
+          setSettings({ ...settings, ...adminSettingsForm, whatsapp_number: formatDisplayPhone(cleanPhone) });
           setUploading(false);
-          showToast('Ajustes de la tienda guardados correctamente en Supabase');
+          showToast('Ajustes, Tarifas de Envío y Quiénes Somos guardados con éxito');
         } catch (err) {
           setUploading(false);
           showToast('Error al guardar ajustes: ' + err.message, 'error');
@@ -1678,6 +1875,20 @@
                   >
                     <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
                     <span className="hidden sm:inline">Mis Pedidos</span>
+                  </button>
+                )}
+
+                {/* BOTÓN QUIÉNES SOMOS */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => {
+                      window.location.hash = '#/quienes-somos';
+                      document.getElementById('quienes-somos')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="text-xs p-2 sm:px-3 sm:py-2 rounded-full border border-zinc-200 hover:border-[#FF2E93] hover:bg-pink-50/50 text-zinc-700 font-medium transition hidden md:inline"
+                    title="Conoce nuestra boutique"
+                  >
+                    Quiénes Somos
                   </button>
                 )}
 
@@ -1985,7 +2196,7 @@
                       </div>
                       <div>
                         <p className="font-bold text-zinc-900 leading-tight text-xs">Envíos a Todo Ecuador</p>
-                        <p className="text-[10px] text-zinc-500">Servientrega 24/48h</p>
+                        <p className="text-[10px] text-zinc-500">Cooperativa & Servientrega</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2.5">
@@ -2232,6 +2443,90 @@
                 </div>
               )}
 
+              {/* SECCIÓN EDITABLE: QUIÉNES SOMOS (BOUTIQUE KAOJ) */}
+              <section id="quienes-somos" className="bg-gradient-to-br from-pink-50/70 via-white to-purple-50/50 rounded-3xl border border-pink-100 p-6 sm:p-10 shadow-xs space-y-8 scroll-mt-20">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                  {/* COLUMNA 1: HISTORIA, MISIÓN Y VALORES */}
+                  <div className="space-y-4">
+                    <div className="inline-flex items-center gap-2 bg-pink-100/90 text-[#FF2E93] px-3.5 py-1 rounded-full text-xs font-bold tracking-wide">
+                      <span>✨</span>
+                      <span>{settings.about_us?.badge || 'Boutique Ecuatoriana Oficial'}</span>
+                    </div>
+
+                    <h3 className="font-serif-kaoj text-2xl sm:text-4xl font-black text-zinc-900 leading-tight">
+                      {settings.about_us?.title || 'Sobre KAOJ STORE Boutique'}
+                    </h3>
+
+                    <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed">
+                      {settings.about_us?.story || 'Somos una boutique ecuatoriana apasionada por realzar la belleza, el glamour y el estilo de cada mujer con productos 100% auténticos de alta cosmética, tonos virales, accesorios en tendencia y moda chic.'}
+                    </p>
+
+                    {settings.about_us?.mission && (
+                      <div className="border-l-3 border-[#FF2E93] pl-4 py-1.5 italic text-zinc-700 text-xs sm:text-sm bg-white/70 rounded-r-xl border border-pink-100 shadow-2xs">
+                        "{settings.about_us.mission}"
+                      </div>
+                    )}
+
+                    {/* VALORES DE LA TIENDA */}
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div className="bg-white/80 border border-pink-100/80 rounded-2xl p-3 space-y-1 shadow-2xs">
+                        <p className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                          <span className="text-[#FF2E93]">💖</span> 100% Auténtico
+                        </p>
+                        <p className="text-[11px] text-zinc-500">Garantía de calidad en cosmética y accesorios.</p>
+                      </div>
+                      <div className="bg-white/80 border border-pink-100/80 rounded-2xl p-3 space-y-1 shadow-2xs">
+                        <p className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                          <span className="text-[#FF2E93]">🚚</span> Todo el Ecuador
+                        </p>
+                        <p className="text-[11px] text-zinc-500">Por Cooperativa o Servientrega seguro.</p>
+                      </div>
+                      <div className="bg-white/80 border border-pink-100/80 rounded-2xl p-3 space-y-1 shadow-2xs">
+                        <p className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                          <span className="text-[#FF2E93]">💬</span> Atención VIP
+                        </p>
+                        <p className="text-[11px] text-zinc-500">Asesoría directa y personal por WhatsApp.</p>
+                      </div>
+                      <div className="bg-white/80 border border-pink-100/80 rounded-2xl p-3 space-y-1 shadow-2xs">
+                        <p className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                          <span className="text-[#FF2E93]">💎</span> Puntos & Premios
+                        </p>
+                        <p className="text-[11px] text-zinc-500">Acumula puntos y canjea $5 en compras.</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center gap-3">
+                      <a
+                        href={`https://wa.me/${formatWhatsAppPhone(settings.whatsapp_number)}?text=${encodeURIComponent('Hola Kaoj Store, leí su sección Quiénes Somos y quisiera consultarles sobre su boutique!')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 bg-[#FF2E93] hover:bg-[#e0157a] text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md transition active:scale-95"
+                      >
+                        <Icon.WhatsApp className="w-4 h-4 text-white" />
+                        <span>Conversar por WhatsApp ({formatDisplayPhone(settings.whatsapp_number)})</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* COLUMNA 2: FOTO DE LA BOUTIQUE */}
+                  <div className="relative">
+                    <div className="relative rounded-3xl overflow-hidden shadow-xl border-4 border-white aspect-4/3 sm:aspect-16/10">
+                      <img
+                        src={settings.about_us?.image || 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800'}
+                        alt="Boutique Kaoj Store"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-4 sm:p-6">
+                        <div className="text-white">
+                          <p className="font-serif-kaoj text-lg sm:text-xl font-bold">KAOJ STORE BOUTIQUE</p>
+                          <p className="text-[11px] text-pink-200">Manabí • Envíos a todo el Ecuador</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               {/* SECCIÓN: MURO DE RESEÑAS Y SOCIAL PROOF */}
               <section className="bg-white rounded-3xl border border-zinc-200/90 p-6 sm:p-8 shadow-xs space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-100 pb-4">
@@ -2300,9 +2595,9 @@
             /* =========================================================================
                 VISTA 2: PANEL DE ADMINISTRADOR PRO (Métricas, Inventario, Secciones, Pedidos, Reseñas, Clientes y Ajustes)
                 ========================================================================= */
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
+            <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 flex-1 w-full max-w-full overflow-hidden space-y-6">
               {/* HEADER ADMIN */}
-              <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="bg-zinc-900 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full tracking-wider uppercase">Panel Administrativo</span>
@@ -2313,7 +2608,7 @@
                   <p className="text-xs text-zinc-500 mt-1">Control integral de inventario, analítica, despacho de órdenes y configuración global.</p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 shrink-0">
                   <button onClick={() => { setAdminTab('metrics'); window.location.hash = '#/admin/metrics'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'metrics' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.TrendingUp className="w-4 h-4" /> Métricas
                   </button>
@@ -2702,44 +2997,98 @@
                           return true;
                         })
                         .map(prod => (
-                          <div key={prod.id} className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between gap-4">
-                            <div className="flex gap-3">
-                              <img src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={prod.name} className="w-16 h-16 rounded-xl object-cover border" />
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <h4 className="font-bold text-zinc-900 text-sm">{prod.name}</h4>
-                                  <span className="text-[10px] bg-pink-50 text-[#FF2E93] font-bold px-2 py-0.5 rounded-full">
-                                    {prod.section}
-                                  </span>
-                                  <span className="text-[10px] bg-zinc-100 text-zinc-700 font-semibold px-2 py-0.5 rounded-full">
-                                    {prod.category}
-                                  </span>
+                          <div key={prod.id} className="bg-white p-3.5 sm:p-5 rounded-2xl border border-zinc-200/90 shadow-xs space-y-3 w-full min-w-0 max-w-full overflow-hidden">
+                            {/* FILA SUPERIOR: FOTO, TÍTULO, PRECIO, CATEGORÍAS Y ACCIONES */}
+                            <div className="flex items-start justify-between gap-2.5 min-w-0 w-full">
+                              <div className="flex items-start gap-2.5 sm:gap-3.5 min-w-0 flex-1">
+                                <img
+                                  src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                                  alt={prod.name}
+                                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-zinc-200 shrink-0"
+                                />
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h4 className="font-bold text-zinc-900 text-xs sm:text-sm break-words line-clamp-2">{prod.name}</h4>
+                                    <span className="text-[10px] bg-pink-50 text-[#FF2E93] font-bold px-2 py-0.5 rounded-full shrink-0">
+                                      {prod.section}
+                                    </span>
+                                    <span className="text-[10px] bg-zinc-100 text-zinc-700 font-semibold px-2 py-0.5 rounded-full shrink-0">
+                                      {prod.category}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-[#FF2E93] text-sm">${Number(prod.discount_price || prod.price).toFixed(2)}</span>
+                                    {prod.discount_price && <span className="line-through text-zinc-400 text-[10px]">${Number(prod.price).toFixed(2)}</span>}
+                                    <span className="text-[11px] text-zinc-500 font-medium">
+                                      • Stock: <b className="text-zinc-800">{(prod.variants || []).reduce((a, b) => a + Number(b.stock || 0), 0)} unids</b>
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="text-xs flex items-center gap-2">
-                                  <span className="font-extrabold text-[#FF2E93]">${Number(prod.discount_price || prod.price).toFixed(2)}</span>
-                                  {prod.discount_price && <span className="line-through text-zinc-400 text-[10px]">${Number(prod.price).toFixed(2)}</span>}
-                                </div>
+                              </div>
 
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                  {(prod.variants || []).map(v => (
-                                    <div
-                                      key={v.name}
-                                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs ${
-                                        v.stock <= 0
-                                          ? 'bg-red-50 border-red-200 text-red-900'
-                                          : v.stock <= 2
-                                          ? 'bg-amber-50 border-amber-200 text-amber-900'
-                                          : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                                      }`}
-                                    >
-                                      {v.image && <img src={v.image} className="w-4 h-4 rounded-full object-cover border" />}
-                                      <span className="font-semibold">{v.name}:</span>
-                                      <div className="flex items-center gap-0.5 bg-white border border-zinc-300 rounded-lg p-0.5 shadow-xs">
+                              {/* BOTONES ACCIÓN (EDITAR / BORRAR) */}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => setEditingProduct(JSON.parse(JSON.stringify(prod)))}
+                                  className="px-2.5 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-xl font-bold border border-pink-200 text-xs flex items-center gap-1 shadow-2xs transition"
+                                  title="Editar producto"
+                                >
+                                  <Icon.Edit className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Editar</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteProduct(prod.id)}
+                                  className="p-1.5 sm:px-2.5 sm:py-1.5 bg-zinc-50 hover:bg-red-50 text-zinc-600 hover:text-red-600 rounded-xl font-semibold border border-zinc-200 text-xs flex items-center gap-1 transition"
+                                  title="Eliminar producto"
+                                >
+                                  <Icon.Trash className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Borrar</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* SUB-GRID DE VARIANTES Y STOCK RÁPIDO (100% RESPONSIVE EN MÓVIL) */}
+                            <div className="pt-2 border-t border-zinc-100 w-full min-w-0">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[10px] uppercase font-bold text-zinc-400">Variantes y Stock en Vivo:</span>
+                                <span className="text-[10px] text-zinc-500 font-semibold">{(prod.variants || []).length} variante(s)</span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full min-w-0">
+                                {(prod.variants || []).map(v => (
+                                  <div
+                                    key={v.name}
+                                    className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs min-w-0 ${
+                                      v.stock <= 0
+                                        ? 'bg-red-50/70 border-red-200 text-red-900'
+                                        : v.stock <= 2
+                                        ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                                        : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      {v.image ? (
+                                        <img src={v.image} className="w-6 h-6 rounded-lg object-cover border border-zinc-200 shrink-0" alt="" />
+                                      ) : (
+                                        <div className="w-6 h-6 rounded-lg bg-zinc-200 text-zinc-400 flex items-center justify-center shrink-0 text-[10px]">🎨</div>
+                                      )}
+                                      <span className="font-bold truncate text-[11px]" title={v.name}>{v.name}</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {v.stock <= 0 ? (
+                                        <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md">Agotado</span>
+                                      ) : v.stock <= 2 ? (
+                                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md">Poco</span>
+                                      ) : null}
+
+                                      {/* STEPPER DE STOCK */}
+                                      <div className="flex items-center bg-white border border-zinc-300 rounded-lg shadow-2xs">
                                         <button
                                           type="button"
                                           onClick={() => handleQuickStockChange(prod.id, v.name, -1)}
                                           disabled={v.stock <= 0}
-                                          className="w-5 h-5 rounded hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 disabled:opacity-20"
+                                          className="w-6 h-6 rounded-l hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 disabled:opacity-30 active:scale-95"
                                           title="Restar 1"
                                         >
                                           -
@@ -2752,40 +3101,22 @@
                                             const val = parseInt(e.target.value || '0', 10);
                                             handleDirectStockChange(prod.id, v.name, val);
                                           }}
-                                          className="w-10 text-center font-black text-xs outline-none bg-transparent"
-                                          title="Escribe la cantidad exacta de stock"
+                                          className="w-8 sm:w-10 text-center font-black text-xs outline-none bg-transparent"
+                                          title="Escribe la cantidad exacta"
                                         />
                                         <button
                                           type="button"
                                           onClick={() => handleQuickStockChange(prod.id, v.name, 1)}
-                                          className="w-5 h-5 rounded hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600"
+                                          className="w-6 h-6 rounded-r hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 active:scale-95"
                                           title="Sumar 1"
                                         >
                                           +
                                         </button>
                                       </div>
-                                      {v.stock <= 0 && <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.2 rounded-md">Agotado</span>}
-                                      {v.stock > 0 && v.stock <= 2 && <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1 rounded-md">¡Poco!</span>}
                                     </div>
-                                  ))}
-                                </div>
+                                  </div>
+                                ))}
                               </div>
-                            </div>
-
-                            {/* BOTONES ACCIÓN */}
-                            <div className="flex md:flex-col justify-end items-end gap-2 text-xs">
-                              <button
-                                onClick={() => setEditingProduct(JSON.parse(JSON.stringify(prod)))}
-                                className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-lg font-bold border border-pink-200 flex items-center gap-1"
-                              >
-                                <Icon.Edit className="w-3.5 h-3.5" /> Editar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteProduct(prod.id)}
-                                className="px-3 py-1.5 bg-zinc-50 hover:bg-red-50 text-zinc-600 hover:text-red-600 rounded-lg font-semibold border flex items-center gap-1"
-                              >
-                                <Icon.Trash className="w-3.5 h-3.5" /> Borrar
-                              </button>
                             </div>
                           </div>
                         ))}
@@ -2899,10 +3230,18 @@
               {adminTab === 'orders' && (
                 <div className="space-y-4">
                   <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-                      {['todos', 'pendiente', 'verificado', 'en_camino', 'entregado'].map(st => (
-                        <button key={st} onClick={() => setAdminFilterStatus(st)} className={`px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-[10px] ${adminFilterStatus === st ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-600'}`}>
-                          {st}
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar w-full pb-1">
+                      {['todos', 'pendiente', 'verificado', 'en_camino', 'entregado', 'cancelado'].map(st => (
+                        <button
+                          key={st}
+                          onClick={() => setAdminFilterStatus(st)}
+                          className={`px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-[10px] whitespace-nowrap transition ${
+                            adminFilterStatus === st
+                              ? (st === 'cancelado' ? 'bg-red-600 text-white' : 'bg-[#FF2E93] text-white')
+                              : (st === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-zinc-100 text-zinc-600')
+                          }`}
+                        >
+                          {st} ({st === 'todos' ? orders.length : orders.filter(o => o.status === st).length})
                         </button>
                       ))}
                     </div>
@@ -2912,14 +3251,19 @@
                     {orders
                       .filter(o => adminFilterStatus === 'todos' || o.status === adminFilterStatus)
                       .map(order => (
-                        <div key={order.id || order.order_code} className="bg-white rounded-2xl border border-zinc-200 shadow-xs p-5 space-y-4">
+                        <div key={order.id || order.order_code} className={`bg-white rounded-2xl border shadow-xs p-5 space-y-4 ${order.status === 'cancelado' ? 'border-red-200 bg-red-50/20' : 'border-zinc-200'}`}>
                           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-3">
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-[#FF2E93] text-base">{order.order_code}</span>
+                                <span className={`font-extrabold text-base ${order.status === 'cancelado' ? 'text-red-600 line-through' : 'text-[#FF2E93]'}`}>{order.order_code}</span>
                                 <span className="bg-pink-50 text-[#FF2E93] px-2.5 py-0.5 rounded-full text-xs font-black">
                                   VIP: {order.customer_code}
                                 </span>
+                                {order.status === 'cancelado' && (
+                                  <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">
+                                    Cancelado
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs text-zinc-700">
                                 <b>{order.customer_name}</b> ({order.customer_phone}) {order.customer_id_card && `• Cédula: ${order.customer_id_card}`}
@@ -2930,23 +3274,48 @@
                             </div>
 
                             <div className="flex items-center gap-3">
-                              <span className="text-xl font-black text-zinc-900">${Number(order.total).toFixed(2)}</span>
-                              <select
-                                value={order.status || 'pendiente'}
-                                onChange={async e => {
-                                  const n = e.target.value;
-                                  await supabase.from('kaoj_orders').update({ status: n }).eq('id', order.id);
-                                  setOrders(orders.map(o => o.id === order.id ? { ...o, status: n } : o));
-                                }}
-                                className="text-xs font-bold px-3 py-2 rounded-xl border bg-pink-50 text-[#FF2E93]"
-                              >
-                                <option value="pendiente">Pendiente</option>
-                                <option value="verificado">Verificado</option>
-                                <option value="en_camino">En Camino</option>
-                                <option value="entregado">Entregado</option>
-                              </select>
+                              <span className={`text-xl font-black ${order.status === 'cancelado' ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>${Number(order.total).toFixed(2)}</span>
+                              {order.status !== 'cancelado' ? (
+                                <select
+                                  value={order.status || 'pendiente'}
+                                  onChange={async e => {
+                                    const n = e.target.value;
+                                    await supabase.from('kaoj_orders').update({ status: n }).eq('id', order.id);
+                                    setOrders(orders.map(o => o.id === order.id ? { ...o, status: n } : o));
+                                  }}
+                                  className="text-xs font-bold px-3 py-2 rounded-xl border bg-pink-50 text-[#FF2E93]"
+                                >
+                                  <option value="pendiente">Pendiente</option>
+                                  <option value="verificado">Verificado</option>
+                                  <option value="en_camino">En Camino</option>
+                                  <option value="entregado">Entregado</option>
+                                </select>
+                              ) : (
+                                <span className="text-xs font-black px-3 py-1.5 rounded-xl bg-red-100 text-red-800">
+                                  Venta Cancelada
+                                </span>
+                              )}
                             </div>
                           </div>
+
+                          {/* LISTA DE PRODUCTOS DE LA ORDEN */}
+                          <div className="bg-zinc-50/80 rounded-xl p-3 text-xs space-y-1.5">
+                            <p className="font-bold text-zinc-700 text-[11px] uppercase tracking-wider">Detalle de productos comprados:</p>
+                            <div className="space-y-1 divide-y divide-zinc-200/50">
+                              {(order.items || []).map((it, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-zinc-700 pt-1">
+                                  <span>• {it.qty}x <b>{it.name}</b> ({it.variant})</span>
+                                  <span className="font-bold">${((it.price || 0) * (it.qty || 1)).toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {order.status === 'cancelado' && (
+                            <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-2.5 text-xs font-bold flex items-center justify-between gap-2">
+                              <span>⚠️ VENTA CANCELADA: El stock de los productos fue devuelto automáticamente al inventario.</span>
+                            </div>
+                          )}
 
                           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                             <span className="text-xs text-zinc-500">
@@ -2957,12 +3326,22 @@
                             </span>
 
                             <div className="flex items-center gap-2">
+                              {order.status !== 'cancelado' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelOrder(order)}
+                                  className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-3 py-1.5 rounded-xl border border-red-200 shadow-2xs flex items-center gap-1.5 transition"
+                                  title="Devolver existencias al inventario y cancelar venta"
+                                >
+                                  <Icon.Close className="w-3.5 h-3.5 text-red-600" /> Cancelar / Revertir Venta
+                                </button>
+                              )}
                               <button onClick={() => setServientregaOrder(order)} className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
                                 <Icon.Box className="w-3.5 h-3.5" /> Guía Servientrega
                               </button>
                               <button onClick={() => {
                                 const cleanWhatsAppNumber = formatWhatsAppPhone(order.customer_phone);
-                                window.open(`https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Te saludamos de Kaoj Store 💅. Tu pedido ${order.order_code} ha cambiado de estado a: ${order.status.toUpperCase()}.`)}`, '_blank');
+                                window.open(`https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Te saludamos de Kaoj Store 💅. Tu pedido ${order.order_code} se encuentra en estado: ${order.status.toUpperCase()}.`)}`, '_blank');
                               }} className="text-xs bg-zinc-900 hover:bg-black text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
                                 <Icon.WhatsApp className="w-3.5 h-3.5 text-emerald-400" /> Notificar WhatsApp
                               </button>
@@ -3192,6 +3571,209 @@
                             <span className="text-[10px] text-zinc-400 mt-2 block">Mínimo: ${c.minSpend}.00</span>
                           </div>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* TARIFARIO DE ENVÍOS (COOPERATIVAS & SERVIENTREGA) */}
+                    <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b pb-3">
+                        <div>
+                          <h4 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
+                            <Icon.Truck className="w-4 h-4 text-[#FF2E93]" /> Tarifario de Envíos (Cooperativas & Servientrega)
+                          </h4>
+                          <p className="text-zinc-500 text-[11px]">Define los costos de envío que verán tus clientas al pagar. El envío se coordina luego por WhatsApp.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rates = adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES;
+                            setAdminSettingsForm({
+                              ...adminSettingsForm,
+                              shipping_rates: [
+                                ...rates,
+                                { id: 'envio_' + Date.now(), label: 'Nueva Ruta / Cooperativa', price: 3.50, agency: 'Cooperativa', note: 'Coordinar con vendedor' }
+                              ]
+                            });
+                          }}
+                          className="bg-zinc-900 hover:bg-black text-white px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 shadow-2xs"
+                        >
+                          + Añadir Ruta
+                        </button>
+                      </div>
+
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-start gap-1.5">
+                        <span>💡</span>
+                        <span><b>Nota automática para clientas:</b> "Los envíos se realizan por Cooperativa o Servientrega. La cooperativa o agencia específica de retiro se coordina directamente por WhatsApp con el vendedor tras confirmar el pedido."</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {(adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES).map((rate, rIdx) => (
+                          <div key={rate.id || rIdx} className="bg-white border border-zinc-200 rounded-xl p-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex-1 space-y-1 w-full min-w-0">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  value={rate.label || ''}
+                                  onChange={e => {
+                                    const updated = [...(adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES)];
+                                    updated[rIdx].label = e.target.value;
+                                    setAdminSettingsForm({ ...adminSettingsForm, shipping_rates: updated });
+                                  }}
+                                  placeholder="Nombre de la opción de envío"
+                                  className="font-bold text-xs border rounded-lg p-1.5 flex-1 min-w-0 outline-none"
+                                />
+                                <select
+                                  value={rate.agency || 'Cooperativa'}
+                                  onChange={e => {
+                                    const updated = [...(adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES)];
+                                    updated[rIdx].agency = e.target.value;
+                                    setAdminSettingsForm({ ...adminSettingsForm, shipping_rates: updated });
+                                  }}
+                                  className="text-xs border rounded-lg p-1.5 bg-zinc-50 font-bold shrink-0"
+                                >
+                                  <option value="Cooperativa">Cooperativa</option>
+                                  <option value="Servientrega">Servientrega</option>
+                                  <option value="Local">Entrega Local</option>
+                                  <option value="Personal">Retiro Personal</option>
+                                </select>
+                              </div>
+                              <input
+                                value={rate.note || ''}
+                                onChange={e => {
+                                  const updated = [...(adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES)];
+                                  updated[rIdx].note = e.target.value;
+                                  setAdminSettingsForm({ ...adminSettingsForm, shipping_rates: updated });
+                                }}
+                                placeholder="Nota (ej. Reina del Camino, Terminal, 24-48h...)"
+                                className="text-[11px] text-zinc-500 border rounded-lg p-1 w-full outline-none"
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                              <div className="flex items-center gap-1">
+                                <span className="text-zinc-500 font-bold">$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={rate.price}
+                                  onChange={e => {
+                                    const updated = [...(adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES)];
+                                    updated[rIdx].price = parseFloat(e.target.value || '0');
+                                    setAdminSettingsForm({ ...adminSettingsForm, shipping_rates: updated });
+                                  }}
+                                  className="w-16 border rounded-lg p-1.5 text-right font-black text-xs outline-none"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (adminSettingsForm.shipping_rates || DEFAULT_SHIPPING_RATES).filter((_, i) => i !== rIdx);
+                                  setAdminSettingsForm({ ...adminSettingsForm, shipping_rates: updated });
+                                }}
+                                className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded"
+                                title="Eliminar ruta"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* GESTIÓN DE QUIÉNES SOMOS */}
+                    <div className="border border-pink-200 rounded-2xl p-4 bg-pink-50/40 space-y-4">
+                      <div className="border-b border-pink-200/80 pb-2">
+                        <h4 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
+                          <span className="text-[#FF2E93]">✨</span> Sección Quiénes Somos (Historia & Boutique)
+                        </h4>
+                        <p className="text-zinc-500 text-[11px]">Personaliza el texto, la misión y la imagen que ven tus clientas en la página principal.</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="grid md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-semibold block mb-1">Título de la Sección</label>
+                            <input
+                              value={adminSettingsForm.about_us?.title || ''}
+                              onChange={e => setAdminSettingsForm({ ...adminSettingsForm, about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), title: e.target.value } })}
+                              placeholder="Sobre KAOJ STORE Boutique"
+                              className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold block mb-1">Distintivo / Badge</label>
+                            <input
+                              value={adminSettingsForm.about_us?.badge || ''}
+                              onChange={e => setAdminSettingsForm({ ...adminSettingsForm, about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), badge: e.target.value } })}
+                              placeholder="Boutique Ecuatoriana Oficial"
+                              className="w-full border rounded-xl p-2.5 bg-white outline-none text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-semibold block mb-1">Historia / Descripción</label>
+                          <textarea
+                            rows="3"
+                            value={adminSettingsForm.about_us?.story || ''}
+                            onChange={e => setAdminSettingsForm({ ...adminSettingsForm, about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), story: e.target.value } })}
+                            placeholder="Cuenta la historia de tu tienda, tu pasión por la belleza y de dónde son..."
+                            className="w-full border rounded-xl p-2.5 bg-white outline-none text-xs leading-relaxed"
+                          ></textarea>
+                        </div>
+
+                        <div>
+                          <label className="font-semibold block mb-1">Misión / Frase Destacada</label>
+                          <input
+                            value={adminSettingsForm.about_us?.mission || ''}
+                            onChange={e => setAdminSettingsForm({ ...adminSettingsForm, about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), mission: e.target.value } })}
+                            placeholder="Frase de compromiso o atención a tus clientas..."
+                            className="w-full border rounded-xl p-2.5 bg-white outline-none text-xs"
+                          />
+                        </div>
+
+                        {/* FOTO DE LA BOUTIQUE DESDE DISPOSITIVO */}
+                        <div>
+                          <label className="font-semibold block mb-1">Foto de la Boutique o Portada</label>
+                          <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-zinc-200">
+                            {adminSettingsForm.about_us?.image ? (
+                              <img src={adminSettingsForm.about_us.image} alt="Preview" className="w-16 h-16 rounded-xl object-cover border border-zinc-200 shrink-0" />
+                            ) : (
+                              <div className="w-16 h-16 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-400 border border-dashed border-zinc-300 shrink-0 text-xl">
+                                📷
+                              </div>
+                            )}
+                            <div className="flex-1 space-y-1 min-w-0">
+                              <label className="cursor-pointer bg-[#FF2E93] hover:bg-[#e0157a] text-white px-3.5 py-1.5 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 transition">
+                                <Icon.Photo className="w-3.5 h-3.5" />
+                                <span>Subir foto desde dispositivo</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={async e => {
+                                    if (e.target.files[0]) {
+                                      const url = await uploadFileToSupabase(e.target.files[0], 'branding');
+                                      if (url) {
+                                        setAdminSettingsForm({
+                                          ...adminSettingsForm,
+                                          about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), image: url }
+                                        });
+                                      }
+                                    }
+                                  }}
+                                />
+                              </label>
+                              <p className="text-[10px] text-zinc-400 truncate">O pega un enlace de foto:</p>
+                              <input
+                                value={adminSettingsForm.about_us?.image || ''}
+                                onChange={e => setAdminSettingsForm({ ...adminSettingsForm, about_us: { ...(adminSettingsForm.about_us || DEFAULT_ABOUT_US), image: e.target.value } })}
+                                placeholder="https://..."
+                                className="w-full border rounded-lg p-1.5 text-xs outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -3753,26 +4335,54 @@
                       </div>
 
                       {/* MÉTODO DE ENTREGA */}
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
                           <label className="font-bold text-zinc-700">Método de Entrega:</label>
                           {qualifiesFreeShipping && (
                             <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                              🎉 Envío Gratis aplicado (+${freeShippingThreshold})
+                              🎉 Envío Gratis (+${freeShippingThreshold.toFixed(2)})
                             </span>
                           )}
                         </div>
-                        <select value={customer.delivery} onChange={e => setCustomer({ ...customer, delivery: e.target.value })} className="w-full border rounded-xl p-2.5 bg-white outline-none">
-                          {DELIVERY_OPTIONS.map(d => (
+
+                        <select
+                          value={customer.delivery}
+                          onChange={e => setCustomer({ ...customer, delivery: e.target.value })}
+                          className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold text-xs"
+                        >
+                          {activeDeliveryOptions.map(d => (
                             <option key={d.id} value={d.id}>
-                              {d.label} {qualifiesFreeShipping && (d.id === 'domicilio_local' || d.id === 'envio_nacional') ? '(GRATIS)' : d.price === 0 ? '(GRATIS)' : `(+$${d.price.toFixed(2)})`}
+                              {d.label} {qualifiesFreeShipping && Number(d.price) > 0 ? '(GRATIS)' : Number(d.price) === 0 ? '(GRATIS)' : `(+$${Number(d.price).toFixed(2)})`}
                             </option>
                           ))}
                         </select>
+
+                        {/* AVISO IMPORTANTE DE ENVÍOS COOPERATIVA / SERVIENTREGA */}
+                        <div className="bg-pink-50/70 border border-pink-200/90 rounded-2xl p-3 space-y-1 text-xs">
+                          <div className="flex items-center gap-1.5 font-bold text-zinc-900">
+                            <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
+                            <span>Envíos a todo el Ecuador:</span>
+                          </div>
+                          <p className="text-zinc-600 leading-relaxed text-[11px]">
+                            Despachamos de forma segura por <b>Cooperativa de transporte (encomienda)</b> o por <b>Servientrega</b> a domicilio o agencia.
+                          </p>
+                          <p className="text-[10px] text-[#FF2E93] font-bold">
+                            💡 La cooperativa o agencia específica de retiro se coordina directamente por WhatsApp con el vendedor tras confirmar el pedido.
+                          </p>
+                        </div>
                       </div>
 
-                      {(customer.delivery === 'domicilio_local' || customer.delivery === 'envio_nacional') && (
-                        <input required placeholder="Ciudad, sector y dirección exacta de entrega *" value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
+                      {Number(deliveryObj?.price || 0) > 0 && (
+                        <div>
+                          <label className="font-bold text-zinc-700 block mb-1">Dirección o Cooperativa / Agencia de retiro *:</label>
+                          <input
+                            required
+                            placeholder="Ej. Guayaquil, Terminal Terrestre - Cooperativa Reina del Camino / Servientrega..."
+                            value={customer.address}
+                            onChange={e => setCustomer({ ...customer, address: e.target.value })}
+                            className="w-full border rounded-xl p-2.5 outline-none text-xs"
+                          />
+                        </div>
                       )}
 
                       {/* FORMA DE PAGO */}
@@ -4417,7 +5027,7 @@
                       <p className="font-bold text-emerald-800 text-[11px] uppercase border-b pb-1">REMITENTE:</p>
                       <p className="font-bold">KAOJ STORE BOUTIQUE</p>
                       <p className="text-zinc-600">Portoviejo / Manta - Manabí</p>
-                      <p className="text-zinc-600">Tel: +593 96 307 3456</p>
+                      <p className="text-zinc-600">Tel: {formatDisplayPhone(settings.whatsapp_number)}</p>
                     </div>
 
                     <div className="border-2 border-emerald-700 rounded-xl p-3 bg-emerald-50/30 space-y-1">
@@ -4589,22 +5199,34 @@
             <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-2">
                 <h4 className="font-serif-kaoj text-2xl font-black text-[#FF2E93]">KAOJ STORE</h4>
-                <p>Maquillaje de alta gama, accesorios chic y moda boutique. Entregas en Portoviejo, ULEAM Manta, San Jacinto y envíos Servientrega a todo el Ecuador.</p>
+                <p>Maquillaje de alta gama, accesorios chic y moda boutique. Entregas en Portoviejo, ULEAM Manta, San Jacinto y envíos por Cooperativa o Servientrega a todo el Ecuador.</p>
               </div>
 
               <div>
-                <h5 className="font-bold text-zinc-900 mb-2">Departamentos</h5>
+                <h5 className="font-bold text-zinc-900 mb-2">Boutique & Departamentos</h5>
                 <ul className="space-y-1">
                   <li>Maquillajes (Labiales, Gloss, Rubores, Delineadores...)</li>
                   <li>Accesorios (Vinchas, Cintillos acolchados)</li>
                   <li>Ropa Chic (Blusas satinadas, Vestidos, Conjuntos)</li>
+                  <li className="pt-1.5">
+                    <button
+                      onClick={() => {
+                        window.location.hash = '#/quienes-somos';
+                        document.getElementById('quienes-somos')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="text-[#FF2E93] hover:underline font-bold text-xs flex items-center gap-1"
+                    >
+                      ✨ Conoce Quiénes Somos
+                    </button>
+                  </li>
                 </ul>
               </div>
 
               <div className="space-y-1">
                 <h5 className="font-bold text-zinc-900 mb-2">Contacto Oficial</h5>
-                <p>WhatsApp: <b>+{formatWhatsAppPhone(settings.whatsapp_number)}</b></p>
+                <p>WhatsApp: <b>{formatDisplayPhone(settings.whatsapp_number)}</b></p>
                 <p>Email: <b>{settings.email_contact || 'kaoj.store.ecu@gmail.com'}</b></p>
+                <p className="text-[11px] text-zinc-400">Atención personalizada y asesoría de compra</p>
               </div>
             </div>
 

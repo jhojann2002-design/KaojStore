@@ -1,19 +1,70 @@
 
-    const { useState, useEffect, useMemo, useRef } = React;
+    const { useState, useEffect, useMemo, useRef } = window.React;
 
     // Registro PWA silencioso
     if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(() => {});
+        navigator.serviceWorker.register('./sw.js').then(reg => {
+          reg.update().catch(() => {});
+        }).catch(() => {});
       });
     }
 
     // =========================================================================
-    // CONEXIÓN DIRECTA A SUPABASE
+    // CONEXIÓN DIRECTA A SUPABASE (Resiliente con Inicialización Segura y Proxy)
     // =========================================================================
     const SUPABASE_URL = 'https://uxptcckcwcyaivurhxzh.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4cHRjY2tjd2N5YWl2dXJoeHpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NjY1NDgsImV4cCI6MjEwOTE0MjU0OH0.8Br_I5FuqHBdNM5GzlITJ-d8AS_6kbvuruMqYjLMo4A';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let _realSupabase = null;
+    function getSupabaseInstance() {
+      if (!_realSupabase && typeof window !== 'undefined' && window.supabase && typeof window.supabase.createClient === 'function') {
+        try {
+          _realSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } catch (e) {
+          console.warn('Supabase diferido:', e);
+        }
+      }
+      return _realSupabase;
+    }
+    getSupabaseInstance();
+
+    // Proxy inmune a fallos: garantiza que la boutique pinte instantáneamente aun offline o con red 4G inestable
+    const supabase = new Proxy({}, {
+      get(target, prop) {
+        const client = getSupabaseInstance();
+        if (client && prop in client) {
+          const val = client[prop];
+          return typeof val === 'function' ? val.bind(client) : val;
+        }
+        return (...args) => ({
+          select: () => ({
+            eq: () => ({
+              single: () => Promise.resolve({ data: null, error: null }),
+              order: () => Promise.resolve({ data: [], error: null })
+            }),
+            order: () => Promise.resolve({ data: [], error: null }),
+            single: () => Promise.resolve({ data: null, error: null })
+          }),
+          eq: () => ({
+            single: () => Promise.resolve({ data: null, error: null }),
+            order: () => Promise.resolve({ data: [], error: null })
+          }),
+          order: () => Promise.resolve({ data: [], error: null }),
+          single: () => Promise.resolve({ data: null, error: null }),
+          insert: () => Promise.resolve({ data: null, error: null }),
+          update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+          delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+          upload: () => Promise.resolve({ data: null, error: new Error('Supabase no listo') }),
+          getPublicUrl: () => ({ data: { publicUrl: '' } }),
+          getSession: () => Promise.resolve({ data: { session: null } }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+          signInWithOAuth: () => Promise.resolve({ error: null }),
+          signOut: () => Promise.resolve({ error: null }),
+          rpc: () => Promise.resolve({ data: null, error: null })
+        });
+      }
+    });
 
     // =========================================================================
     // UTILIDADES: FORMATEO WHATSAPP ECUADOR (+593), VISUAL (09...) Y CÓDIGO ÚNICO
@@ -203,14 +254,123 @@
     };
 
     const DEFAULT_SHIPPING_RATES = [
-      { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo (Gratis)', price: 0, agency: 'Personal', note: 'Coordinar entrega' },
-      { id: 'retiro_uleam', label: 'Retiro personal en ULEAM Manta (Gratis)', price: 0, agency: 'Personal', note: 'Punto universitario' },
-      { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto (Gratis)', price: 0, agency: 'Personal', note: 'Coordinar con boutique' },
-      { id: 'domicilio_local', label: 'Entrega a Domicilio Local (Manta / Portoviejo)', price: 2.50, agency: 'Local', note: 'Motorizado directo' },
-      { id: 'cooperativa_manabi', label: 'Cooperativa / Encomienda - Manabí (Cantones)', price: 3.00, agency: 'Cooperativa', note: 'Reina del Camino, Coactur, Rutas Portovejenses, etc.' },
-      { id: 'cooperativa_nacional', label: 'Cooperativa / Encomienda - Todo Ecuador (Guayaquil, Quito, Sierra y Costa)', price: 3.50, agency: 'Cooperativa', note: 'Terminal Terrestre / Encomienda interprovincial' },
-      { id: 'servientrega_nacional', label: 'Servientrega Nacional Directo a Domicilio o Agencia', price: 5.50, agency: 'Servientrega', note: 'Todo el Ecuador (24 a 48h con número de guía)' }
+      { id: 'retiro_portoviejo', label: 'Retiro personal en Portoviejo', price: 0, agency: 'Personal', category: 'retiro', note: 'Coordinar punto y horario de entrega por WhatsApp' },
+      { id: 'retiro_uleam', label: 'Retiro personal en ULEAM Manta', price: 0, agency: 'Personal', category: 'retiro', note: 'Entrega en punto universitario acordado' },
+      { id: 'retiro_san_jacinto', label: 'Retiro personal en San Jacinto', price: 0, agency: 'Personal', category: 'retiro', note: 'Coordinar retiro directo con la boutique' },
+      { id: 'domicilio_portoviejo', label: 'Entrega a Domicilio en Portoviejo', price: 2.50, agency: 'Local', category: 'domicilio', city: 'Portoviejo', note: 'Motorizado directo a tu casa, barrio o trabajo en Portoviejo' },
+      { id: 'domicilio_manta', label: 'Entrega a Domicilio en Manta', price: 2.50, agency: 'Local', category: 'domicilio', city: 'Manta', note: 'Motorizado directo a tu casa, barrio o trabajo en Manta' },
+      { id: 'cooperativa_manabi', label: 'Cooperativa - Cantones de Manabí', price: 3.00, agency: 'Cooperativa', category: 'cooperativa', note: 'Chone, Bahía, Jipijapa, El Carmen, Calceta (Reina del Camino, Coactur, etc.)' },
+      { id: 'cooperativa_nacional', label: 'Cooperativa - Interprovincial (Todo el Ecuador)', price: 3.50, agency: 'Cooperativa', category: 'cooperativa', note: 'Guayaquil, Quito, Cuenca, Santo Domingo, Sierra y Costa (Terminal Terrestre)' },
+      { id: 'servientrega_domicilio', label: 'Servientrega a Domicilio (Todo el Ecuador)', price: 5.50, agency: 'Servientrega', category: 'servientrega', note: 'Entrega directa en tu casa u oficina (24 a 48h con número de guía)' },
+      { id: 'servientrega_agencia', label: 'Servientrega Retiro en Agencia Oficial', price: 5.50, agency: 'Servientrega', category: 'servientrega', note: 'Retira en la oficina de Servientrega más cercana de tu ciudad (24 a 48h)' }
     ];
+
+    const SHIPPING_CATEGORIES = [
+      {
+        id: 'retiro',
+        title: 'Retiro Personal',
+        subtitle: 'Portoviejo, ULEAM Manta o San Jacinto',
+        badge: 'GRATIS',
+        icon: '🛍️',
+        description: 'Retira tu pedido personalmente sin costo de envío coordinando por WhatsApp.'
+      },
+      {
+        id: 'domicilio',
+        title: 'Domicilio (Manta o Portoviejo)',
+        subtitle: 'Entrega local con motorizado',
+        badge: 'Desde $2.50',
+        icon: '🛵',
+        description: 'Recibe tu pedido directamente en tu domicilio o lugar de trabajo en Manta o Portoviejo.'
+      },
+      {
+        id: 'cooperativa',
+        title: 'Cooperativa',
+        subtitle: 'Encomienda Manabí y Nacional',
+        badge: 'Desde $3.00',
+        icon: '🚌',
+        description: 'Despacho rápido por cooperativa de transporte hacia cantones de Manabí y provincias del país.'
+      },
+      {
+        id: 'servientrega',
+        title: 'Servientrega',
+        subtitle: 'Domicilio o Agencia a nivel nacional',
+        badge: '$5.50',
+        icon: '📦',
+        description: 'Envío certificado con código de guía rastreable (24 a 48 horas) a cualquier ciudad del Ecuador.'
+      }
+    ];
+
+    function getShippingCategory(rate) {
+      if (!rate) return 'retiro';
+      if (rate.category) return rate.category;
+      const ag = (rate.agency || '').toLowerCase();
+      const id = (rate.id || '').toLowerCase();
+      const lbl = (rate.label || '').toLowerCase();
+      if (ag === 'personal' || id.includes('retiro') || lbl.includes('retiro personal')) return 'retiro';
+      if (ag === 'local' || id.includes('domicilio') || lbl.includes('domicilio local') || lbl.includes('manta') || lbl.includes('portoviejo')) return 'domicilio';
+      if (ag === 'cooperativa' || id.includes('cooperativa') || lbl.includes('cooperativa')) return 'cooperativa';
+      if (ag === 'servientrega' || id.includes('servientrega') || lbl.includes('servientrega')) return 'servientrega';
+      return 'cooperativa';
+    }
+
+    function normalizeShippingRates(rawRates) {
+      if (!Array.isArray(rawRates) || rawRates.length === 0) return DEFAULT_SHIPPING_RATES;
+      const expanded = [];
+      const hasDomPortoviejo = rawRates.some(r => r.id === 'domicilio_portoviejo');
+      const hasDomManta = rawRates.some(r => r.id === 'domicilio_manta');
+      const hasServDom = rawRates.some(r => r.id === 'servientrega_domicilio');
+      const hasServAg = rawRates.some(r => r.id === 'servientrega_agencia');
+
+      rawRates.forEach(r => {
+        if (r.id === 'domicilio_local' && !hasDomPortoviejo && !hasDomManta) {
+          const p = Number(r.price ?? 2.50);
+          expanded.push({
+            id: 'domicilio_portoviejo',
+            label: 'Entrega a Domicilio en Portoviejo',
+            price: p,
+            agency: 'Local',
+            category: 'domicilio',
+            city: 'Portoviejo',
+            note: 'Motorizado directo a tu casa, barrio o trabajo en Portoviejo'
+          });
+          expanded.push({
+            id: 'domicilio_manta',
+            label: 'Entrega a Domicilio en Manta',
+            price: p,
+            agency: 'Local',
+            category: 'domicilio',
+            city: 'Manta',
+            note: 'Motorizado directo a tu casa, barrio o trabajo en Manta'
+          });
+        } else if (r.id === 'servientrega_nacional' && !hasServDom && !hasServAg) {
+          const p = Number(r.price ?? 5.50);
+          expanded.push({
+            id: 'servientrega_domicilio',
+            label: 'Servientrega a Domicilio (Todo el Ecuador)',
+            price: p,
+            agency: 'Servientrega',
+            category: 'servientrega',
+            note: 'Entrega directa en tu casa u oficina (24 a 48h con número de guía)'
+          });
+          expanded.push({
+            id: 'servientrega_agencia',
+            label: 'Servientrega Retiro en Agencia Oficial',
+            price: p,
+            agency: 'Servientrega',
+            category: 'servientrega',
+            note: 'Retira en la oficina de Servientrega más cercana de tu ciudad (24 a 48h)'
+          });
+        } else {
+          expanded.push({
+            ...r,
+            label: r.label ? r.label.replace(/\s*\(Gratis\)/i, '') : r.label,
+            category: getShippingCategory(r)
+          });
+        }
+      });
+
+      return expanded.length > 0 ? expanded : DEFAULT_SHIPPING_RATES;
+    }
 
     const DEFAULT_ABOUT_US = {
       title: 'Sobre KAOJ STORE Boutique',
@@ -574,6 +734,7 @@
         deuna_qr_url: '',
         payphone_link: 'https://payphone.app/',
         payphone_token: '',
+        payphone_surcharge_percent: 6.0,
         admin_pin: '2026',
         bank_guayaquil_acc: '0013899619',
         bank_guayaquil_name: 'Toledo Mendoza Alisson Kandy',
@@ -583,7 +744,7 @@
         bank_pichincha_id: '1314710946',
         free_shipping_threshold: 50.00,
         points_per_dollar: 1,
-        points_redeem_ratio: 10, // 10 pts = $1.00 de descuento
+        points_redeem_ratio: 10, // 10 pts = $1.00 de descuento (50 pts = $5.00)
         points_min_redeem: 50,  // Mínimo 50 pts = $5.00
         banner_message: '✨ Alta Cosmética, Accesorios & Moda Chic | Envíos a todo el Ecuador por Servientrega o Cooperativa 💅✨',
         about_us: DEFAULT_ABOUT_US,
@@ -610,6 +771,12 @@
       const [trackedOrders, setTrackedOrders] = useState(null);
       const [trackingLoading, setTrackingLoading] = useState(false);
       const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+      const [isPointsModalOpen, setIsPointsModalOpen] = useState(false);
+
+      // Paso activo en el Checkout (1: Datos, 2: Envío, 3: Pago)
+      const [checkoutStep, setCheckoutStep] = useState(1);
+      const [showCartItemsInStep, setShowCartItemsInStep] = useState(true);
+      const [showCouponInputBox, setShowCouponInputBox] = useState(false);
 
       // Nueva reseña en modal vinculada a pedido verificado
       const [newReview, setNewReview] = useState({
@@ -643,21 +810,43 @@
         }
       });
 
-      // Canje de puntos en Checkout
+      // Canje de puntos en Checkout (50 puntos = $5.00 de descuento)
       const [applyPointsDiscount, setApplyPointsDiscount] = useState(false);
+      const [redeemBlocksCount, setRedeemBlocksCount] = useState(1);
 
-      // Datos del Checkout
-      const [customer, setCustomer] = useState({
-        name: '',
-        phone: '',
-        idCard: '',
-        email: '',
-        delivery: 'retiro_portoviejo',
-        address: '',
-        paymentMethod: 'deuna',
-        receiptUrl: '',
-        payphoneRef: ''
+      // Datos del Checkout (con persistencia inteligente en localStorage para no perder datos al seguir comprando)
+      const [customer, setCustomer] = useState(() => {
+        const defaults = {
+          name: '',
+          phone: '',
+          idCard: '',
+          email: '',
+          shippingCategory: 'retiro',
+          delivery: 'retiro_portoviejo',
+          address: '',
+          city: '',
+          cooperativaName: '',
+          deliveryNotes: '',
+          paymentMethod: 'deuna',
+          receiptUrl: '',
+          payphoneRef: ''
+        };
+        try {
+          const savedDraft = localStorage.getItem('kaoj_customer_draft');
+          if (savedDraft) {
+            const parsed = JSON.parse(savedDraft);
+            return { ...defaults, ...parsed, receiptUrl: '', payphoneRef: '' };
+          }
+        } catch (e) {}
+        return defaults;
       });
+
+      useEffect(() => {
+        try {
+          const { receiptUrl, payphoneRef, ...draftToSave } = customer;
+          localStorage.setItem('kaoj_customer_draft', JSON.stringify(draftToSave));
+        } catch (e) {}
+      }, [customer]);
 
       // PWA: Detección y Banner de Instalación en 1 Clic (Android e iOS)
       const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -823,25 +1012,44 @@
         return list.length > 0 ? list : [product.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
       }
 
-      // Auto-detección de cliente VIP al escribir celular en el checkout (Protegido contra cosecha de datos)
+      // Auto-detección de cliente VIP y saldo de puntos al escribir celular en el checkout
       async function handlePhoneLookup(phoneVal) {
-        const clean = phoneVal.replace(/\D/g, '');
+        const clean = (phoneVal || '').replace(/\D/g, '');
         if (clean.length < 9) return;
-        if (customerProfile && customerProfile.phone === clean) return;
-        if (user) return; // Si ya inició sesión con Google, no requiere consulta externa
+        if (customerProfile && customerProfile.phone === clean && customerProfile.points !== undefined) return;
+        if (user && customerProfile) return; // Si ya inició sesión con Google y tiene perfil cargado
 
         try {
-          // Consulta protegida: solo saluda y activa puntos VIP sin exponer dirección ni cédula a desconocidos
           const { data: ordersData } = await supabase.rpc('kaoj_track_orders', {
             lookup_query: clean
           });
 
           if (ordersData && ordersData.length > 0) {
             const lastOrder = ordersData[0];
+            const validOrders = ordersData.filter(o => o.status !== 'cancelado');
+            const netPoints = Math.max(0, validOrders.reduce((acc, o) => acc + Number(o.points_earned || 0) - Number(o.points_redeemed || 0), 0));
             const firstName = lastOrder.customer_name ? lastOrder.customer_name.split(' ')[0] : 'Clienta';
-            showToast(`¡Bienvenida de nuevo, ${firstName}! Tus compras anteriores están registradas con tu código VIP.`);
-            if (!customer.name.trim() && lastOrder.customer_name) {
-              setCustomer(prev => ({ ...prev, name: lastOrder.customer_name }));
+            const vipCode = lastOrder.customer_code || generateCustomerCode(lastOrder.customer_name || customer.name, clean);
+
+            setCustomerProfile(prev => ({
+              ...(prev || {}),
+              customer_code: vipCode,
+              name: lastOrder.customer_name || prev?.name || customer.name,
+              phone: clean,
+              points: netPoints
+            }));
+
+            setCustomer(prev => ({
+              ...prev,
+              name: prev.name.trim() ? prev.name : (lastOrder.customer_name || ''),
+              idCard: prev.idCard.trim() ? prev.idCard : (lastOrder.customer_id_card || ''),
+              address: prev.address.trim() ? prev.address : (lastOrder.delivery_address || '')
+            }));
+
+            if (netPoints >= 50) {
+              showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj disponibles ($${(Math.floor(netPoints / 50) * 5).toFixed(2)} de descuento). 💎`);
+            } else {
+              showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj acumulados con tu código ${vipCode}. ✨`);
             }
           }
         } catch (err) {}
@@ -962,6 +1170,12 @@
         });
       }, [orders, adminFilterStatus, adminOrderSearch]);
       const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
+      const [adminInventorySection, setAdminInventorySection] = useState('TODOS');
+      const [adminInventoryCategory, setAdminInventoryCategory] = useState('TODOS');
+      const [adminInventorySort, setAdminInventorySort] = useState('recientes'); // 'recientes', 'nombre_asc', 'stock_asc', 'stock_desc', 'precio_asc', 'precio_desc'
+      const [showNewProductPanel, setShowNewProductPanel] = useState(false);
+      const [expandedInventoryIds, setExpandedInventoryIds] = useState({});
+      const [selectedTransferBank, setSelectedTransferBank] = useState('guayaquil'); // 'guayaquil' | 'pichincha'
       const [editingProduct, setEditingProduct] = useState(null);
       const [servientregaOrder, setServientregaOrder] = useState(null);
       const [uploading, setUploading] = useState(false);
@@ -1000,6 +1214,19 @@
       const [newProdMatrixStock, setNewProdMatrixStock] = useState({});
       const [newProdCustomSize, setNewProdCustomSize] = useState('');
       const [newProdBulkStock, setNewProdBulkStock] = useState('5');
+
+      // Función auxiliar para cambiar la sección del nuevo producto y seleccionar automáticamente Tallas y Colores si es ROPA
+      function handleNewProductSectionChange(nextSection) {
+        const defaultCategory = (sectionsConfig[nextSection] || [])[0] || '';
+        const isClothing = (nextSection || '').toUpperCase() === 'ROPA';
+        setNewProd(prev => ({
+          ...prev,
+          section: nextSection,
+          category: defaultCategory,
+          variant_label: isClothing ? 'Color y Talla' : 'Tono / Talla'
+        }));
+        setNewProdVariantMode(isClothing ? 'color_size' : 'simple');
+      }
 
       // Estados para Tallas y Colores Separados en Edición de Producto
       const [editVariantMode, setEditVariantMode] = useState('simple'); // 'simple' o 'color_size'
@@ -1164,12 +1391,22 @@
             }
             if (!loadedShipping) loadedShipping = DEFAULT_SHIPPING_RATES;
 
+            let loadedSurcharge = cfg.payphone_surcharge_percent ?? cfg.sections_config?.__payphone_surcharge_percent ?? null;
+            if (loadedSurcharge === null || loadedSurcharge === undefined) {
+              try {
+                const localSur = localStorage.getItem('kaoj_payphone_surcharge');
+                if (localSur !== null) loadedSurcharge = parseFloat(localSur);
+              } catch(e) {}
+            }
+            if (loadedSurcharge === null || loadedSurcharge === undefined || isNaN(loadedSurcharge)) loadedSurcharge = 6.0;
+
             setSettings(prev => ({
               ...prev,
               ...cfg,
               whatsapp_number: cfg.whatsapp_number ? formatDisplayPhone(cfg.whatsapp_number) : '0963073456',
               about_us: loadedAboutUs,
-              shipping_rates: loadedShipping
+              shipping_rates: loadedShipping,
+              payphone_surcharge_percent: loadedSurcharge
             }));
 
             setAdminSettingsForm({
@@ -1177,13 +1414,15 @@
               whatsapp_number: cfg.whatsapp_number ? formatDisplayPhone(cfg.whatsapp_number) : '0963073456',
               admin_pin: '',
               about_us: loadedAboutUs,
-              shipping_rates: loadedShipping
+              shipping_rates: loadedShipping,
+              payphone_surcharge_percent: loadedSurcharge
             });
 
             if (cfg.sections_config && Object.keys(cfg.sections_config).length > 0) {
               const cleanSections = { ...cfg.sections_config };
               delete cleanSections.__about_us;
               delete cleanSections.__shipping_rates;
+              delete cleanSections.__payphone_surcharge_percent;
               setSectionsConfig(cleanSections);
             }
           }
@@ -1486,25 +1725,56 @@
       // Cálculos Financieros
       const subtotal = cart.reduce((acc, i) => acc + (i.price * i.qty), 0);
 
-      // Métodos de Entrega Activos (Personalizables en Admin: Cooperativa, Servientrega, etc.)
+      // Métodos de Entrega Activos Normalizados en 4 Categorías (Retiro, Domicilio Manta/Portoviejo, Cooperativa, Servientrega)
       const activeDeliveryOptions = useMemo(() => {
-        if (Array.isArray(settings.shipping_rates) && settings.shipping_rates.length > 0) {
-          return settings.shipping_rates;
-        }
-        return DEFAULT_SHIPPING_RATES;
+        return normalizeShippingRates(settings.shipping_rates);
       }, [settings.shipping_rates]);
 
-      const deliveryObj = activeDeliveryOptions.find(d => d.id === customer.delivery) || activeDeliveryOptions[0] || DEFAULT_SHIPPING_RATES[0];
+      const deliveryObj = useMemo(() => {
+        const found = activeDeliveryOptions.find(d => d.id === customer.delivery);
+        if (found) return found;
+        const firstInCat = activeDeliveryOptions.find(d => getShippingCategory(d) === (customer.shippingCategory || 'retiro'));
+        return firstInCat || activeDeliveryOptions[0] || DEFAULT_SHIPPING_RATES[0];
+      }, [activeDeliveryOptions, customer.delivery, customer.shippingCategory]);
+
+      const activeShippingCategory = getShippingCategory(deliveryObj);
+
+      const categorySubMethods = useMemo(() => {
+        return activeDeliveryOptions.filter(d => getShippingCategory(d) === activeShippingCategory);
+      }, [activeDeliveryOptions, activeShippingCategory]);
+
+      function handleSelectShippingCategory(catId) {
+        const subOptions = activeDeliveryOptions.filter(d => getShippingCategory(d) === catId);
+        const firstMethod = subOptions[0] || activeDeliveryOptions[0];
+        setCustomer(prev => ({
+          ...prev,
+          shippingCategory: catId,
+          delivery: firstMethod ? firstMethod.id : prev.delivery,
+          city: catId === 'domicilio' ? (firstMethod?.city || (firstMethod?.id?.includes('manta') ? 'Manta' : 'Portoviejo')) : prev.city
+        }));
+      }
 
       // Regla de Envío Gratis
       const freeShippingThreshold = Number(settings.free_shipping_threshold || 50.00);
       const qualifiesFreeShipping = subtotal >= freeShippingThreshold && (Number(deliveryObj?.price || 0) > 0);
       const finalShippingCost = qualifiesFreeShipping ? 0 : Number(deliveryObj?.price || 0);
 
-      // Regla de Puntos VIP
-      const customerCurrentPoints = customerProfile?.points || 0;
-      const canRedeemPoints = customerCurrentPoints >= (settings.points_min_redeem || 50);
-      const pointsDiscountAmount = (applyPointsDiscount && canRedeemPoints) ? 5.00 : 0.00;
+      // Regla de Puntos VIP: Cada 50 puntos = $5.00 de descuento directo
+      const customerCurrentPoints = Number(customerProfile?.points || 0);
+      const pointsPerBlock = Number(settings.points_min_redeem || 50);
+      const discountPerBlock = 5.00;
+      const maxAvailablePointBlocks = Math.floor(customerCurrentPoints / pointsPerBlock);
+      const maxSubtotalBlocks = Math.max(1, Math.floor(subtotal / discountPerBlock));
+      const maxRedeemableBlocks = Math.min(maxAvailablePointBlocks, maxSubtotalBlocks);
+      const canRedeemPoints = maxAvailablePointBlocks >= 1 && subtotal >= discountPerBlock;
+      const activeRedeemBlocks = (applyPointsDiscount && canRedeemPoints) ? Math.min(Math.max(1, redeemBlocksCount), maxRedeemableBlocks) : 0;
+      const pointsToRedeemNow = activeRedeemBlocks * pointsPerBlock;
+      const pointsDiscountAmount = activeRedeemBlocks * discountPerBlock;
+
+      // Progreso hacia el siguiente canje de 50 puntos ($5.00 OFF)
+      const pointsTowardsNextBlock = customerCurrentPoints % pointsPerBlock;
+      const pointsNeededForNextDiscount = pointsPerBlock - pointsTowardsNextBlock;
+      const pointsProgressPercent = canRedeemPoints ? 100 : Math.min(100, Math.round((pointsTowardsNextBlock / pointsPerBlock) * 100));
 
       // Descuento por Cupón Promocional
       let couponDiscountAmount = 0;
@@ -1521,10 +1791,18 @@
       }
 
       // Descuentos aplicables al producto (no envío)
-      const productDiscounts = pointsDiscountAmount + (appliedCoupon?.type !== 'shipping' ? couponDiscountAmount : 0);
+      const productDiscounts = Math.min(subtotal, pointsDiscountAmount + (appliedCoupon?.type !== 'shipping' ? couponDiscountAmount : 0));
       const totalDiscounts = pointsDiscountAmount + couponDiscountAmount;
       const finalShippingAfterCoupon = (qualifiesFreeShipping || appliedCoupon?.type === 'shipping') ? 0 : Number(deliveryObj?.price || 0);
-      const total = Math.max(0, subtotal - productDiscounts) + finalShippingAfterCoupon;
+      const baseTotalBeforeCardFee = Math.max(0, subtotal - productDiscounts) + finalShippingAfterCoupon;
+
+      // Recargo por pago con Tarjeta en Payphone (Comisión de pasarela con tarjeta)
+      const payphoneSurchargePercent = Number(settings.payphone_surcharge_percent ?? 6.0);
+      const payphoneSurchargeAmount = customer.paymentMethod === 'payphone'
+        ? Number(((baseTotalBeforeCardFee * payphoneSurchargePercent) / 100).toFixed(2))
+        : 0;
+
+      const total = Number((baseTotalBeforeCardFee + payphoneSurchargeAmount).toFixed(2));
       const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - productDiscounts));
 
       // Métricas de Envío Gratis
@@ -1534,23 +1812,104 @@
       // Código de cliente activo
       const activeCustomerCode = customerProfile?.customer_code || generateCustomerCode(customer.name, customer.phone);
 
+      // Validación de navegación por pasos en el Checkout (1: Datos, 2: Envío, 3: Pago)
+      function validateCheckoutStep1() {
+        if (!customer.name || !customer.name.trim()) {
+          showToast('Por favor ingresa tu nombre y apellido para continuar.', 'error');
+          return false;
+        }
+        const cleanDigits = (customer.phone || '').replace(/\D/g, '');
+        if (cleanDigits.length < 9) {
+          showToast('Ingresa tu número de celular de WhatsApp (10 dígitos).', 'error');
+          return false;
+        }
+        return true;
+      }
+
+      function validateCheckoutStep2() {
+        if (!deliveryObj) {
+          showToast('Selecciona un método de envío para continuar.', 'error');
+          return false;
+        }
+        if (activeShippingCategory === 'domicilio') {
+          if (!customer.address || !customer.address.trim()) {
+            showToast('Ingresa tu dirección exacta y referencia en Manta o Portoviejo.', 'error');
+            return false;
+          }
+        } else if (activeShippingCategory === 'cooperativa') {
+          if (!customer.city || !customer.city.trim()) {
+            showToast('Indica la ciudad de destino para tu envío por Cooperativa.', 'error');
+            return false;
+          }
+          if (!customer.address || !customer.address.trim()) {
+            showToast('Indica la cooperativa preferida o terminal de retiro.', 'error');
+            return false;
+          }
+        } else if (activeShippingCategory === 'servientrega') {
+          if (!customer.city || !customer.city.trim()) {
+            showToast('Indica la ciudad y provincia de destino para Servientrega.', 'error');
+            return false;
+          }
+          if (!customer.address || !customer.address.trim()) {
+            showToast('Ingresa la dirección exacta o la agencia oficial de Servientrega.', 'error');
+            return false;
+          }
+          if (!customer.idCard || customer.idCard.replace(/\D/g, '').length < 8) {
+            showToast('Ingresa tu número de Cédula o RUC para generar tu guía oficial de Servientrega.', 'error');
+            return false;
+          }
+        }
+        return true;
+      }
+
+      function handleGoToStep(targetStep) {
+        if (targetStep === 1) {
+          setCheckoutStep(1);
+          return;
+        }
+        if (targetStep === 2) {
+          if (!validateCheckoutStep1()) return;
+          handlePhoneLookup(customer.phone);
+          setShowCartItemsInStep(false);
+          setCheckoutStep(2);
+          return;
+        }
+        if (targetStep === 3) {
+          if (!validateCheckoutStep1()) {
+            setCheckoutStep(1);
+            return;
+          }
+          if (!validateCheckoutStep2()) {
+            setCheckoutStep(2);
+            return;
+          }
+          setShowCartItemsInStep(false);
+          setCheckoutStep(3);
+        }
+      }
+
       // =======================================================================
       // 4. CHECKOUT SEGURO & DESCUENTO ATÓMICO DE STOCK (FASE 1)
       // =======================================================================
       async function handleCheckoutSubmit(e) {
         e.preventDefault();
         if (cart.length === 0) return showToast('El carrito está vacío', 'error');
-        if (!customer.name.trim() || !customer.phone.trim()) {
-          return showToast('Ingresa tu nombre y celular para generar tu código.', 'error');
+        if (!validateCheckoutStep1()) {
+          setCheckoutStep(1);
+          return;
+        }
+        if (!validateCheckoutStep2()) {
+          setCheckoutStep(2);
+          return;
         }
 
-        // Validación de pago
+        // Validación de pago en Paso 3
         if (customer.paymentMethod === 'payphone') {
-          if (!customer.payphoneRef.trim()) {
-            return showToast('Ingresa el número de referencia / teléfono de tu pago en Payphone.', 'error');
+          if (!customer.payphoneRef.trim() && !customer.receiptUrl) {
+            return showToast('Ingresa el número de referencia/autorización o sube la captura de tu pago en Payphone.', 'error');
           }
         } else if (!customer.receiptUrl) {
-          return showToast('Sube el comprobante de transferencia o pago para validar tu pedido.', 'error');
+          return showToast('Sube la captura del comprobante de transferencia o Deuna para validar tu pedido.', 'error');
         }
 
         setIsSubmittingOrder(true);
@@ -1589,6 +1948,17 @@
 
         const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
 
+        const formattedFullAddress = [
+          customer.city ? `Ciudad: ${customer.city.trim()}` : '',
+          customer.address ? customer.address.trim() : '',
+          customer.deliveryNotes ? `Nota: ${customer.deliveryNotes.trim()}` : ''
+        ].filter(Boolean).join(' | ');
+
+        const adminNotesParts = [];
+        if (appliedCoupon) adminNotesParts.push(`Cupón: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})`);
+        if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
+        if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
+
         const orderData = {
           order_code: orderCode,
           customer_code: activeCustomerCode,
@@ -1598,20 +1968,21 @@
           customer_email: customer.email || user?.email || '',
           user_id: user?.id || null,
           delivery_method: deliveryObj.label + (qualifiesFreeShipping ? ' (Envío Gratis)' : ''),
-          delivery_address: customer.address.trim(),
+          delivery_address: formattedFullAddress || 'Retiro Personal',
           shipping_cost: finalShippingAfterCoupon,
           subtotal: subtotal,
           discount_amount: productDiscounts,
           total: total,
           points_earned: pointsEarnedWithOrder,
-          points_redeemed: applyPointsDiscount ? (settings.points_min_redeem || 50) : 0,
+          points_redeemed: pointsToRedeemNow,
           payment_method:
             customer.paymentMethod === 'deuna' ? 'Deuna!' :
-            customer.paymentMethod === 'payphone' ? `Payphone (Ref: ${customer.payphoneRef})` : 'Transferencia Bancaria',
+            customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` :
+            `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`,
           receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
           items: cart,
           status: 'pendiente',
-          admin_notes: appliedCoupon ? `Cupón aplicado: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})` : ''
+          admin_notes: adminNotesParts.join(' • ')
         };
 
         try {
@@ -1638,15 +2009,24 @@
             cust_phone: customer.phone.trim(),
             cust_email: customer.email || user?.email || '',
             cust_id_card: customer.idCard.trim(),
-            cust_address: customer.address.trim(),
+            cust_address: formattedFullAddress,
             cust_user_id: user?.id || null,
             points_to_add: pointsEarnedWithOrder,
-            points_to_deduct: applyPointsDiscount ? (settings.points_min_redeem || 50) : 0,
+            points_to_deduct: pointsToRedeemNow,
             order_total: total
           });
 
           if (customerProfile && custRes?.points !== undefined) {
             setCustomerProfile(prev => ({ ...prev, points: custRes.points }));
+          } else {
+            const updatedPts = Math.max(0, customerCurrentPoints - pointsToRedeemNow) + pointsEarnedWithOrder;
+            setCustomerProfile(prev => ({
+              ...(prev || {}),
+              customer_code: activeCustomerCode,
+              name: customer.name.trim(),
+              phone: customer.phone.trim(),
+              points: updatedPts
+            }));
           }
 
           if (user) {
@@ -1662,8 +2042,9 @@
         const officialWhatsApp = formatWhatsAppPhone(settings.whatsapp_number);
         const itemsListText = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
         const paymentLabel =
-          customer.paymentMethod === 'deuna' ? 'Deuna!' :
-          customer.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${customer.payphoneRef})` : 'Transferencia Bancaria';
+          customer.paymentMethod === 'deuna' ? 'Deuna! (Sin recargo)' :
+          customer.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${customer.payphoneRef || 'Adjunto'})` :
+          `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`;
 
         const whatsappMsg =
           `*NUEVO PEDIDO KAOJ STORE*\n\n` +
@@ -1672,16 +2053,17 @@
           `*Cliente:* ${customer.name}\n` +
           `*Celular:* ${customer.phone}\n` +
           (customer.idCard ? `*Cédula/RUC:* ${customer.idCard}\n` : '') +
-          `*Entrega:* ${deliveryObj.label}\n` +
-          (customer.address ? `*Dirección:* ${customer.address}\n` : '') +
+          `*Modalidad de Envío:* ${deliveryObj.label}\n` +
+          (formattedFullAddress ? `*Destino / Dirección:* ${formattedFullAddress}\n` : '') +
           `*Forma de Pago:* ${paymentLabel}\n\n` +
           `*PRODUCTOS COMPRADOS:*\n${itemsListText}\n\n` +
           `*Subtotal:* $${subtotal.toFixed(2)}\n` +
-          (pointsDiscountAmount > 0 ? `*Descuento VIP (50 Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') +
+          (pointsDiscountAmount > 0 ? `*Descuento Puntos VIP (${pointsToRedeemNow} Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') +
           (couponDiscountAmount > 0 ? `*Cupón (${appliedCoupon.code}):* -$${couponDiscountAmount.toFixed(2)}\n` : '') +
-          `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` +
+          `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` +
+          (payphoneSurchargeAmount > 0 ? `*Recargo Tarjeta Payphone (${payphoneSurchargePercent}%):* +$${payphoneSurchargeAmount.toFixed(2)}\n` : '') +
           `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` +
-          `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts\n\n` +
+          `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts (Cada 50 pts = $5.00 OFF)\n\n` +
           (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') +
           `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
 
@@ -1696,7 +2078,9 @@
           total: total.toFixed(2),
           subtotal: subtotal.toFixed(2),
           shippingCost: finalShippingAfterCoupon,
+          payphoneSurcharge: payphoneSurchargeAmount,
           pointsEarned: pointsEarnedWithOrder,
+          pointsRedeemed: pointsToRedeemNow,
           deliveryMethod: deliveryObj.label,
           whatsappUrl,
           items: [...cart]
@@ -1713,16 +2097,20 @@
           if (customer.phone) localStorage.setItem('kaoj_last_customer_phone', customer.phone);
         } catch (e) {}
 
-        // Limpiar carrito y formulario de checkout
+        // Limpiar carrito y reiniciar al Paso 1
         setCart([]);
         localStorage.removeItem('kaoj_cart');
         setIsCartOpen(false);
+        setCheckoutStep(1);
+        setShowCartItemsInStep(true);
         setApplyPointsDiscount(false);
+        setRedeemBlocksCount(1);
         setAppliedCoupon(null);
         setCouponCodeInput('');
+        setShowCouponInputBox(false);
         setCustomer(prev => ({ ...prev, receiptUrl: '', payphoneRef: '' }));
         setIsSubmittingOrder(false);
-        showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste ${pointsEarnedWithOrder} puntos.`);
+        showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste +${pointsEarnedWithOrder} Puntos Kaoj VIP.`);
         fetchInitialData();
       }
 
@@ -1873,6 +2261,7 @@
           }
 
           const cleanPhone = formatWhatsAppPhone(adminSettingsForm.whatsapp_number);
+          const surchargeVal = parseFloat(adminSettingsForm.payphone_surcharge_percent ?? 6.0);
           const payload = {
             whatsapp_number: cleanPhone,
             deuna_link: adminSettingsForm.deuna_link,
@@ -1889,7 +2278,10 @@
             banner_message: adminSettingsForm.banner_message,
             about_us: adminSettingsForm.about_us,
             shipping_rates: adminSettingsForm.shipping_rates,
-            sections_config: sectionsConfig
+            sections_config: {
+              ...sectionsConfig,
+              __payphone_surcharge_percent: isNaN(surchargeVal) ? 6.0 : surchargeVal
+            }
           };
 
           const { error: saveErr } = await supabase.rpc('kaoj_admin_save_settings', {
@@ -1923,6 +2315,7 @@
           try {
             localStorage.setItem('kaoj_about_us', JSON.stringify(adminSettingsForm.about_us));
             localStorage.setItem('kaoj_shipping_rates', JSON.stringify(adminSettingsForm.shipping_rates));
+            localStorage.setItem('kaoj_payphone_surcharge', String(isNaN(surchargeVal) ? 6.0 : surchargeVal));
           } catch(e) {}
 
           setSettings({ ...settings, ...adminSettingsForm, whatsapp_number: formatDisplayPhone(cleanPhone) });
@@ -2133,10 +2526,18 @@
         const createdProd = { ...prodPayload, id: newId, is_active: true };
         setProducts([createdProd, ...products]);
         showToast('Producto agregado al catálogo con sus fotos ✨');
+        const keepSec = newProd.section || 'MAQUILLAJES';
+        const isClothing = keepSec.toUpperCase() === 'ROPA';
         setNewProd({
-          name: '', section: 'MAQUILLAJES', category: 'Labiales',
-          price: '', discount_price: '', image: '', images: [], description: '',
-          variant_label: 'Tono / Talla',
+          name: '',
+          section: keepSec,
+          category: (sectionsConfig[keepSec] || [])[0] || '',
+          price: '',
+          discount_price: '',
+          image: '',
+          images: [],
+          description: '',
+          variant_label: isClothing ? 'Color y Talla' : 'Tono / Talla',
           variants: [{ name: '01 Rosa', stock: 5, image: '' }]
         });
         setNewProdColors([
@@ -2146,7 +2547,8 @@
         setNewProdSizes(['S', 'M', 'L']);
         setNewProdMatrixStock({});
         setNewProdCustomSize('');
-        setNewProdVariantMode('simple');
+        setNewProdVariantMode(isClothing ? 'color_size' : 'simple');
+        setShowNewProductPanel(false);
       }
 
       async function handleDeleteProduct(productId) {
@@ -2281,13 +2683,25 @@
             </div>
             <div className="flex items-center gap-2 shrink-0 z-10 bg-zinc-900 pl-2">
               {customerProfile ? (
-                <span className="bg-zinc-800 text-[#FF2E93] text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1 shrink-0">
-                  <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPointsModalOpen(true)}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-[#FF2E93] text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1 shrink-0 transition"
+                  title="Ver cómo canjear mis Puntos Kaoj ($5 OFF cada 50 pts)"
+                >
+                  <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" />
+                  <span>VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts ($5 OFF c/50 pts)</span>
+                </button>
               ) : (
-                <span className="hidden md:inline text-[11px] text-zinc-400">
-                  Gana 1 punto por cada $1 ✨
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPointsModalOpen(true)}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1 shrink-0 transition"
+                  title="Conoce el programa de Puntos Kaoj VIP"
+                >
+                  <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" />
+                  <span>💎 50 Puntos = $5.00 de Descuento</span>
+                </button>
               )}
             </div>
           </div>
@@ -2501,20 +2915,20 @@
               </div>
             )}
 
-            {/* SECCIONES GRANDES (MAQUILLAJES | ACCESORIOS | ROPA) */}
+            {/* SECCIONES GRANDES ESTILO LIVELARQ (PILLS MINIMALISTAS) */}
             {!isAdmin && (
-              <div className="border-t border-zinc-100 bg-[#FCFBFD] w-full max-w-full overflow-hidden">
-                <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar scroll-smooth">
-                  <div className="flex gap-2 shrink-0">
+              <div className="border-t border-zinc-100 bg-white w-full max-w-full overflow-hidden">
+                <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar scroll-smooth">
+                  <div className="flex gap-1.5 sm:gap-2 shrink-0">
                     <button
                       onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); window.location.hash = '#/'; }}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition-all ${
                         selectedSection === 'TODOS'
-                          ? 'bg-[#FF007F] text-white shadow-sm font-bold'
-                          : 'bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-950'
+                          ? 'bg-[#151E28] text-white shadow-2xs'
+                          : 'bg-[#F5F6F8] text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
                       }`}
                     >
-                      TODO EL CATÁLOGO
+                      Todo
                     </button>
 
                     {Object.keys(sectionsConfig).map(sectionKey => {
@@ -2527,41 +2941,41 @@
                             setSelectedSubcategory('TODOS');
                             window.location.hash = `#/seccion/${encodeURIComponent(sectionKey)}`;
                           }}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                          className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition-all ${
                             isSelected
-                              ? 'bg-[#FF007F] text-white shadow-sm font-bold'
-                              : 'bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-950'
+                              ? 'bg-[#151E28] text-white shadow-2xs'
+                              : 'bg-[#F5F6F8] text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
                           }`}
                         >
-                          {sectionKey}
+                          {sectionKey.charAt(0) + sectionKey.slice(1).toLowerCase()}
                         </button>
                       );
                     })}
 
                     <button
                       onClick={() => { setSelectedSection('OFERTAS'); setSelectedSubcategory('TODOS'); window.location.hash = '#/seccion/OFERTAS'; }}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition ${
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition-all ${
                         selectedSection === 'OFERTAS'
-                          ? 'bg-zinc-900 text-white shadow-sm'
-                          : 'bg-pink-50 border border-pink-200 text-[#FF2E93] hover:bg-pink-100'
+                          ? 'bg-[#FF2E93] text-white shadow-2xs'
+                          : 'bg-[#F5F6F8] text-[#FF2E93] hover:bg-pink-50'
                       }`}
                     >
-                      OFERTAS
+                      Ofertas
                     </button>
 
                     <button
                       onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); window.location.hash = '#/favoritos'; }}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition flex items-center gap-1.5 ${
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide whitespace-nowrap transition-all flex items-center gap-1.5 ${
                         selectedSection === 'FAVORITOS'
-                          ? 'bg-[#FF2E93] text-white shadow-sm'
-                          : 'bg-white border border-pink-200 text-[#FF2E93] hover:bg-pink-50'
+                          ? 'bg-[#151E28] text-white shadow-2xs'
+                          : 'bg-[#F5F6F8] text-zinc-700 hover:bg-zinc-200/70'
                       }`}
                     >
                       <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={selectedSection === 'FAVORITOS' || favorites.length > 0} />
-                      <span>FAVORITOS</span>
+                      <span>Favoritos</span>
                       {favorites.length > 0 && (
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                          selectedSection === 'FAVORITOS' ? 'bg-white text-[#FF2E93]' : 'bg-pink-100 text-[#FF2E93]'
+                          selectedSection === 'FAVORITOS' ? 'bg-white text-[#151E28]' : 'bg-white text-[#FF2E93]'
                         }`}>
                           {favorites.length}
                         </span>
@@ -2569,51 +2983,51 @@
                     </button>
                   </div>
 
-                  {/* SELECTOR DE ORDENACIÓN (Visible en móvil y desktop) */}
+                  {/* SELECTOR DE ORDENACIÓN MINIMALISTA */}
                   <div className="flex items-center gap-1.5 text-xs text-zinc-500 whitespace-nowrap shrink-0">
-                    <span className="hidden sm:inline">Ordenar:</span>
+                    <span className="hidden sm:inline font-medium">Ordenar:</span>
                     <select
                       value={sortBy}
                       onChange={e => setSortBy(e.target.value)}
-                      className="bg-white border border-zinc-200 rounded-lg py-1 px-2 text-xs text-zinc-700 outline-none"
+                      className="bg-[#F5F6F8] border-0 rounded-full py-1.5 px-3 text-xs font-semibold text-zinc-800 outline-none cursor-pointer hover:bg-zinc-200/60 transition"
                     >
                       <option value="destacados">Destacados</option>
-                      <option value="precio_menor">Precio: Menor a Mayor</option>
-                      <option value="precio_mayor">Precio: Mayor a Menor</option>
-                      <option value="ofertas">Solo Ofertas</option>
+                      <option value="precio_menor">Menor precio</option>
+                      <option value="precio_mayor">Mayor precio</option>
+                      <option value="ofertas">En oferta</option>
                     </select>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* SUBCATEGORÍAS DINÁMICAS */}
-            {!isAdmin && selectedSection !== 'TODOS' && selectedSection !== 'OFERTAS' && (
-              <div className="border-t border-zinc-100 bg-zinc-50/70 py-2 w-full max-w-full overflow-hidden">
-                <div className="max-w-7xl mx-auto px-3 sm:px-4 flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
-                  <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mr-1">
+            {/* SUBCATEGORÍAS DINÁMICAS LIMPIAS */}
+            {!isAdmin && selectedSection !== 'TODOS' && selectedSection !== 'OFERTAS' && selectedSection !== 'FAVORITOS' && (
+              <div className="border-t border-zinc-100 bg-[#FAFAFC] py-2 w-full max-w-full overflow-hidden">
+                <div className="max-w-7xl mx-auto px-3 sm:px-6 flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mr-1">
                     {selectedSection}:
                   </span>
 
                   <button
                     onClick={() => setSelectedSubcategory('TODOS')}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                    className={`px-3.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition ${
                       selectedSubcategory === 'TODOS'
-                        ? 'bg-zinc-900 text-white'
-                        : 'bg-white text-zinc-700 border border-zinc-200 hover:border-zinc-300'
+                        ? 'bg-[#151E28] text-white'
+                        : 'bg-white text-zinc-600 border border-zinc-200/80 hover:border-zinc-400'
                     }`}
                   >
-                    Ver Todo
+                    Todos
                   </button>
 
                   {(sectionsConfig[selectedSection] || []).map(subcat => (
                     <button
                       key={subcat}
                       onClick={() => setSelectedSubcategory(subcat)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition ${
+                      className={`px-3.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition ${
                         selectedSubcategory === subcat
-                          ? 'bg-[#FF2E93] text-white font-bold'
-                          : 'bg-white text-zinc-700 border border-zinc-200 hover:border-[#FF2E93]'
+                          ? 'bg-[#151E28] text-white font-bold'
+                          : 'bg-white text-zinc-600 border border-zinc-200/80 hover:border-zinc-900'
                       }`}
                     >
                       {subcat}
@@ -2624,134 +3038,184 @@
             )}
           </header>
 
-          {/* VISTA 1: TIENDA PÚBLICA */}
+          {/* VISTA 1: TIENDA PÚBLICA (ESTÉTICA EDITORIAL INSPIRADA EN LIVELARQ) */}
           {!isAdmin ? (
-            <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 flex-1 w-full space-y-8 sm:space-y-12">
+            <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-10 flex-1 w-full space-y-10 sm:space-y-14">
 
-              {/* BOUTIQUE HERO BANNER */}
+              {/* HERO EDITORIAL INSPIRADO EN LIVELARQ */}
               {selectedSection === 'TODOS' && !searchQuery && (
-                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-pink-50/90 via-rose-50/40 to-white border border-pink-100/90 shadow-xs p-6 sm:p-10">
-                  <div className="max-w-2xl space-y-4 relative z-10">
-                    <div className="inline-flex items-center gap-2 bg-white/95 backdrop-blur-xs border border-pink-200 px-3 py-1 rounded-full text-xs font-bold text-[#FF2E93] shadow-2xs">
-                      <Icon.Sparkles className="w-3.5 h-3.5" />
-                      <span>Colección Exclusiva & Tendencias 2026</span>
+                <div className="relative overflow-hidden rounded-[28px] bg-[#F5F6F8] border border-zinc-200/60 p-6 sm:p-12 lg:p-14">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+                    <div className="lg:col-span-7 space-y-5">
+                      <div className="inline-flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-full text-[11px] font-bold text-[#151E28] tracking-wide shadow-2xs">
+                        <span className="w-2 h-2 rounded-full bg-[#FF2E93]"></span>
+                        <span>EDICIÓN BOUTIQUE • ALTA COSMÉTICA & MODA</span>
+                      </div>
+
+                      <h2 className="font-serif-kaoj text-3xl sm:text-5xl lg:text-[54px] font-bold text-[#151E28] tracking-tight leading-[1.08]">
+                        Esenciales de belleza y estilo para tu ritual diario.
+                      </h2>
+
+                      <p className="text-zinc-600 text-xs sm:text-base leading-relaxed max-w-xl font-normal">
+                        Fórmulas auténticas, tonos en tendencia y prendas versátiles seleccionadas con cuidado. Recibe en Manta, Portoviejo o en cualquier ciudad del Ecuador.
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <button
+                          onClick={() => { setSelectedSection('ROPA'); setSelectedSubcategory('TODOS'); window.location.hash = '#/seccion/ROPA'; }}
+                          className="bg-[#151E28] hover:bg-black text-white px-6 py-3 rounded-full text-xs sm:text-sm font-bold transition flex items-center gap-2 active:scale-95"
+                        >
+                          <span>Explorar Ropa</span>
+                          <Icon.ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { setSelectedSection('MAQUILLAJES'); setSelectedSubcategory('TODOS'); window.location.hash = '#/seccion/MAQUILLAJES'; }}
+                          className="bg-white hover:bg-zinc-100 text-[#151E28] border border-zinc-300/80 px-6 py-3 rounded-full text-xs sm:text-sm font-bold transition active:scale-95"
+                        >
+                          Ver Maquillaje
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsPointsModalOpen(true)}
+                          className="text-xs font-bold text-zinc-600 hover:text-[#FF2E93] px-3 py-2 flex items-center gap-1.5 transition"
+                        >
+                          <Icon.Diamond className="w-4 h-4 text-[#FF2E93]" />
+                          <span>50 Puntos = $5.00 OFF</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <h2 className="font-serif-kaoj text-2xl sm:text-4xl lg:text-5xl font-black text-zinc-900 tracking-tight leading-[1.15]">
-                      Realza tu belleza con <span className="text-[#FF2E93]">estilo chic</span> y elegancia
-                    </h2>
+                    {/* TARJETA VISUAL EDITORIAL DERECHA */}
+                    <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+                      <div
+                        onClick={() => { setSelectedSection('ROPA'); setSelectedSubcategory('TODOS'); window.location.hash = '#/seccion/ROPA'; }}
+                        className="group cursor-pointer bg-white rounded-3xl p-4 border border-zinc-200/60 flex flex-col justify-between aspect-[4/5] overflow-hidden relative shadow-2xs hover:shadow-md transition"
+                      >
+                        <div className="z-10">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 block">Colección</span>
+                          <p className="font-serif-kaoj text-lg font-bold text-[#151E28]">Moda Chic</p>
+                        </div>
+                        <img
+                          src={products.find(p => p.section === 'ROPA')?.image || 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=500&auto=format&fit=crop&q=80'}
+                          alt="Moda"
+                          className="w-full h-36 sm:h-44 object-contain my-auto group-hover:scale-105 transition duration-500"
+                        />
+                        <span className="text-[11px] font-bold text-[#151E28] group-hover:text-[#FF2E93] flex items-center gap-1">
+                          <span>Ver prendas</span>
+                          <Icon.ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
 
-                    <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed max-w-xl">
-                      Descubre nuestra curaduría de cosmética premium, tonos virales, accesorios en tendencia y moda boutique con entregas rápidas y envíos asegurados a todo el Ecuador.
-                    </p>
-
-                    <div className="flex flex-wrap gap-2.5 pt-2">
-                      <button
+                      <div
                         onClick={() => { setSelectedSection('MAQUILLAJES'); setSelectedSubcategory('TODOS'); window.location.hash = '#/seccion/MAQUILLAJES'; }}
-                        className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-md transition flex items-center gap-2 active:scale-95"
+                        className="group cursor-pointer bg-white rounded-3xl p-4 border border-zinc-200/60 flex flex-col justify-between aspect-[4/5] overflow-hidden relative shadow-2xs hover:shadow-md transition"
                       >
-                        <Icon.Bag className="w-3.5 h-3.5" />
-                        <span>Ver Maquillaje</span>
-                      </button>
-                      <button
-                        onClick={() => { setSelectedSection('FAVORITOS'); setSelectedSubcategory('TODOS'); window.location.hash = '#/favoritos'; }}
-                        className="bg-white hover:bg-pink-50 border border-pink-200 text-zinc-800 px-4 py-2.5 rounded-full text-xs font-bold transition flex items-center gap-1.5"
-                      >
-                        <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.length > 0} />
-                        <span>Mis Favoritos ({favorites.length})</span>
-                      </button>
-                      <button
-                        onClick={() => { setIsTrackingOpen(true); window.location.hash = '#/pedidos'; }}
-                        className="bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 px-4 py-2.5 rounded-full text-xs font-medium transition flex items-center gap-1.5"
-                      >
-                        <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
-                        <span>Mis Pedidos & Rastreos</span>
-                      </button>
+                        <div className="z-10">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 block">Tendencia</span>
+                          <p className="font-serif-kaoj text-lg font-bold text-[#151E28]">Cosmética</p>
+                        </div>
+                        <img
+                          src={products.find(p => p.section === 'MAQUILLAJES')?.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                          alt="Cosmética"
+                          className="w-full h-36 sm:h-44 object-contain my-auto group-hover:scale-105 transition duration-500"
+                        />
+                        <span className="text-[11px] font-bold text-[#151E28] group-hover:text-[#FF2E93] flex items-center gap-1">
+                          <span>Ver tonos</span>
+                          <Icon.ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* VALUE PROPS STRIP */}
-                  <div className="mt-8 pt-6 border-t border-pink-100/80 grid grid-cols-2 md:grid-cols-4 gap-3.5 text-xs relative z-10">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-pink-100 text-[#FF2E93] flex items-center justify-center shrink-0">
+                  {/* VALUE PROPS MINIMALISTAS ESTILO LIVELARQ */}
+                  <div className="mt-8 pt-6 border-t border-zinc-200/80 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-white text-[#151E28] border border-zinc-200/80 flex items-center justify-center shrink-0">
                         <Icon.Truck className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="font-bold text-zinc-900 leading-tight text-xs">Envíos a Todo Ecuador</p>
-                        <p className="text-[10px] text-zinc-500">Cooperativa & Servientrega</p>
+                        <p className="font-bold text-[#151E28] leading-tight text-xs">Envíos a Todo Ecuador</p>
+                        <p className="text-[11px] text-zinc-500">Retiro, Domicilio, Coop. y Servientrega</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsPointsModalOpen(true)}
+                      className="flex items-center gap-3 text-left hover:opacity-80 transition"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-white text-[#FF2E93] border border-zinc-200/80 flex items-center justify-center shrink-0">
                         <Icon.Diamond className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="font-bold text-zinc-900 leading-tight text-xs">Puntos Kaoj VIP</p>
-                        <p className="text-[10px] text-zinc-500">Canjea $5 de descuento</p>
+                        <p className="font-bold text-[#151E28] leading-tight text-xs">Kaoj Points VIP</p>
+                        <p className="text-[11px] text-[#FF2E93] font-semibold">Cada 50 pts = $5.00 OFF</p>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-white text-[#151E28] border border-zinc-200/80 flex items-center justify-center shrink-0">
                         <Icon.Lock className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="font-bold text-zinc-900 leading-tight text-xs">Pagos Flexibles</p>
-                        <p className="text-[10px] text-zinc-500">Deuna, Bancos, Tarjeta</p>
+                        <p className="font-bold text-[#151E28] leading-tight text-xs">Pago Seguro Sin Ruido</p>
+                        <p className="text-[11px] text-zinc-500">Deuna, Bancos y Payphone</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-white text-emerald-700 border border-zinc-200/80 flex items-center justify-center shrink-0">
                         <Icon.WhatsApp className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="font-bold text-zinc-900 leading-tight text-xs">Asesoría Directa</p>
-                        <p className="text-[10px] text-zinc-500">Atención WhatsApp</p>
+                        <p className="font-bold text-[#151E28] leading-tight text-xs">Atención Personal</p>
+                        <p className="text-[11px] text-zinc-500">Asesoría directa en línea</p>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ENCABEZADO DE CATÁLOGO */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-zinc-200/60 pb-3">
+              {/* ENCABEZADO DE CATÁLOGO ESTILO LIVELARQ */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2">
                 <div>
-                  <h2 className="font-serif-kaoj text-2xl sm:text-3xl font-extrabold text-zinc-900 flex items-center gap-2">
-                    <span>{selectedSection === 'TODOS' ? 'Catálogo General' : selectedSection}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400 block">
+                    KAOJ PRODUCTS
+                  </span>
+                  <h2 className="font-serif-kaoj text-2xl sm:text-4xl font-bold text-[#151E28] flex items-center gap-2 mt-0.5">
+                    <span>{selectedSection === 'TODOS' ? 'Catálogo Completo' : selectedSection}</span>
                     {selectedSubcategory !== 'TODOS' && (
                       <span className="text-zinc-400 font-normal text-xl sm:text-2xl">
-                        / <span className="text-[#FF2E93] font-bold">{selectedSubcategory}</span>
+                        / <span className="text-[#151E28] font-semibold">{selectedSubcategory}</span>
                       </span>
                     )}
                   </h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    {filteredProducts.length} {filteredProducts.length === 1 ? 'producto disponible' : 'productos disponibles'}
-                  </p>
                 </div>
+                <p className="text-xs text-zinc-500 font-medium">
+                  {filteredProducts.length} {filteredProducts.length === 1 ? 'producto disponible' : 'productos disponibles'}
+                </p>
               </div>
 
-              {/* GRID DE PRODUCTOS (2 Columnas en móvil para agilidad boutique) */}
+              {/* GRID DE PRODUCTOS INSPIRADO EN LIVELARQ (Pedestal gris estudio #F5F6F8 + Tipografía limpia) */}
               {filteredProducts.length === 0 ? (
-                <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center space-y-3">
+                <div className="bg-[#F5F6F8] rounded-[28px] p-12 text-center space-y-3">
                   {selectedSection === 'FAVORITOS' ? (
                     <>
-                      <div className="w-14 h-14 rounded-full bg-pink-50 text-[#FF2E93] flex items-center justify-center mx-auto">
+                      <div className="w-14 h-14 rounded-full bg-white text-[#FF2E93] flex items-center justify-center mx-auto shadow-2xs">
                         <Icon.Heart className="w-7 h-7" filled={true} />
                       </div>
-                      <p className="font-bold text-zinc-900 text-sm">Aún no tienes productos guardados en Favoritos.</p>
-                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">Toca el corazón ❤️ en las fotos de los labiales, blusas o accesorios que más te gusten para guardarlos aquí.</p>
+                      <p className="font-bold text-[#151E28] text-sm">Aún no tienes productos guardados en Favoritos.</p>
+                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">Toca el corazón en los productos que más te gusten para guardarlos aquí.</p>
                       <button
                         onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); window.location.hash = '#/'; }}
-                        className="text-xs bg-[#FF2E93] text-white font-bold px-5 py-2.5 rounded-full shadow-xs transition"
+                        className="text-xs bg-[#151E28] text-white font-bold px-6 py-2.5 rounded-full transition"
                       >
-                        Explorar Todo el Catálogo
+                        Explorar Catálogo
                       </button>
                     </>
                   ) : (
                     <>
-                      <p className="font-bold text-zinc-700 text-sm">No encontramos productos en esta sección o búsqueda.</p>
+                      <p className="font-bold text-[#151E28] text-sm">No encontramos productos en esta sección o búsqueda.</p>
                       <button
                         onClick={() => { setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); window.location.hash = '#/'; }}
-                        className="text-xs bg-[#FF2E93] text-white font-bold px-4 py-2 rounded-full"
+                        className="text-xs bg-[#151E28] text-white font-bold px-5 py-2.5 rounded-full"
                       >
                         Ver Todo el Catálogo
                       </button>
@@ -2759,7 +3223,7 @@
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-7">
                   {filteredProducts.map(prod => {
                     const activeVar = activeVariants[prod.id] || {};
                     const hasColorAndSize = (prod.variants || []).some(v => v.color && v.size);
@@ -2790,10 +3254,10 @@
                     const cardImages = getProductImages(prod);
 
                     return (
-                      <div key={prod.id} className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group">
-                        {/* FOTO COMPLETA SIN CORTES (OPTIMIZADA PARA MÓVIL Y MODA) */}
+                      <div key={prod.id} className="flex flex-col group">
+                        {/* PEDESTAL DE PRODUCTO ESTILO LIVELARQ (#F5F6F8) */}
                         <div
-                          className="relative aspect-[3/4] sm:aspect-[4/5] bg-gradient-to-b from-zinc-50 to-pink-50/20 overflow-hidden cursor-pointer flex items-center justify-center p-1.5 sm:p-2.5"
+                          className="relative aspect-[4/5] bg-[#F5F6F8] rounded-[24px] overflow-hidden cursor-pointer flex items-center justify-center p-3 sm:p-5 transition-all duration-300 group-hover:bg-[#ECEEF2]"
                           onClick={() => {
                             setQuickViewProduct(prod);
                             setQuickViewSelectedVar(currentVarName);
@@ -2804,169 +3268,126 @@
                           <img
                             src={displayImage || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
                             alt={prod.name}
-                            className={`w-full h-full object-contain group-hover:scale-105 transition duration-300 drop-shadow-xs ${isAllOutOfStock ? 'grayscale opacity-75' : ''}`}
+                            className={`w-full h-full object-contain group-hover:scale-105 transition duration-500 ease-out ${isAllOutOfStock ? 'grayscale opacity-70' : ''}`}
                             loading="lazy"
                           />
 
-                          {/* BADGE DE MÚLTIPLES FOTOS SI HAY MÁS DE 1 */}
-                          {cardImages.length > 1 && (
-                            <span className="absolute bottom-2.5 right-2.5 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md z-10 flex items-center gap-1 shadow-xs">
-                              📷 {cardImages.length}
-                            </span>
-                          )}
+                          {/* BADGES MINIMALISTAS SUPERIORES IZQUIERDOS */}
+                          <div className="absolute top-3 left-3 flex flex-col gap-1 z-10">
+                            {hasDiscount ? (
+                              <span className="bg-[#FF2E93] text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide">
+                                -{discountPercent}%
+                              </span>
+                            ) : (
+                              <span className="bg-white/95 text-[#151E28] px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase shadow-2xs">
+                                {prod.category || prod.section}
+                              </span>
+                            )}
+                          </div>
 
-                          {/* BOTONES FLOTANTES: FAVORITO Y COMPARTIR */}
-                          <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                handleShareProduct(prod);
-                              }}
-                              className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100 text-zinc-600 hover:text-[#FF2E93]"
-                              title="Compartir producto"
-                            >
-                              <Icon.Share className="w-3.5 h-3.5" />
-                            </button>
+                          {/* BOTONES FLOTANTES SUTILES: FAVORITO Y COMPARTIR */}
+                          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={e => {
                                 e.stopPropagation();
                                 toggleFavorite(prod.id, prod.name);
                               }}
-                              className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100"
+                              className="w-8 h-8 rounded-full bg-white/90 hover:bg-white flex items-center justify-center shadow-2xs transition active:scale-90"
                               title={favorites.includes(prod.id) ? "Quitar de favoritos" : "Guardar en favoritos"}
                             >
-                              <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.includes(prod.id)} />
+                              <Icon.Heart className="w-3.5 h-3.5 text-[#151E28]" filled={favorites.includes(prod.id)} />
                             </button>
                           </div>
 
-                          {/* OVERLAY DE AGOTADO O ALERTA DE POCAS UNIDADES */}
+                          {/* INDICADOR DE MÚLTIPLES FOTOS */}
+                          {cardImages.length > 1 && (
+                            <span className="absolute bottom-3 right-3 bg-white/90 text-[#151E28] text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-2xs">
+                              {cardImages.length} fotos
+                            </span>
+                          )}
+
+                          {/* OVERLAY DE AGOTADO O POCAS UNIDADES */}
                           {isAllOutOfStock ? (
-                            <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center z-10">
-                              <span className="bg-zinc-900/95 text-white border border-white/20 px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-black tracking-widest uppercase shadow-xl">
+                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-10">
+                              <span className="bg-[#151E28] text-white px-4 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase">
                                 Agotado
                               </span>
                             </div>
                           ) : hasLowStockVariant ? (
-                            <span className="absolute bottom-2.5 left-2.5 bg-amber-500/95 text-zinc-950 font-extrabold text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full shadow-md z-10 flex items-center gap-1">
-                              🔥 Pocas unidades
+                            <span className="absolute bottom-3 left-3 bg-white/95 text-amber-800 font-bold text-[10px] px-2.5 py-0.5 rounded-full shadow-2xs z-10">
+                              Últimas unidades
                             </span>
                           ) : null}
-
-                          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 z-10">
-                            <span className="bg-[#FF2E93] text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs">
-                              {prod.section || 'KAOJ'}
-                            </span>
-                            <span className="bg-white/90 backdrop-blur-xs text-zinc-800 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-xs">
-                              {prod.category}
-                            </span>
-                          </div>
-
-                          {hasDiscount && (
-                            <span className="absolute top-11 right-2.5 bg-zinc-900 text-white px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold shadow-xs z-10">
-                              -{discountPercent}%
-                            </span>
-                          )}
                         </div>
 
-                        {/* DETALLE Y SELECTOR DE TONOS/TALLAS */}
-                        <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-3">
-                          <div>
-                            <h4
-                              onClick={() => {
-                                setQuickViewProduct(prod);
-                                setQuickViewSelectedVar(currentVarName);
-                                setQuickViewActiveImageIndex(0);
-                                window.location.hash = `#/producto/${prod.id}`;
-                              }}
-                              className="font-bold text-zinc-900 hover:text-[#FF2E93] transition line-clamp-2 text-xs sm:text-sm cursor-pointer"
-                            >
-                              {prod.name}
-                            </h4>
-
-                            <div className="mt-2 flex items-baseline gap-1.5">
-                              {hasDiscount ? (
-                                <>
-                                  <span className="text-base sm:text-xl font-extrabold text-[#FF2E93]">${Number(prod.discount_price).toFixed(2)}</span>
-                                  <span className="text-[10px] sm:text-xs line-through text-zinc-400">${Number(prod.price).toFixed(2)}</span>
-                                </>
-                              ) : (
-                                <span className="text-base sm:text-xl font-extrabold text-zinc-900">${Number(prod.price).toFixed(2)}</span>
-                              )}
+                        {/* INFORMACIÓN EDITORIAL DEBAJO DEL PEDESTAL (ESTILO LIVELARQ) */}
+                        <div className="pt-3.5 px-1 flex-1 flex flex-col justify-between space-y-2.5">
+                          <div className="space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4
+                                onClick={() => {
+                                  setQuickViewProduct(prod);
+                                  setQuickViewSelectedVar(currentVarName);
+                                  setQuickViewActiveImageIndex(0);
+                                  window.location.hash = `#/producto/${prod.id}`;
+                                }}
+                                className="font-bold text-[#151E28] hover:text-[#FF2E93] transition line-clamp-1 text-xs sm:text-sm cursor-pointer"
+                              >
+                                {prod.name}
+                              </h4>
                             </div>
 
-                            {/* SELECTOR DE VARIANTES: 2 PASOS (COLOR Y TALLA) O SIMPLE */}
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              {prod.section} • {prod.category}
+                            </p>
+
+                            {/* SELECTOR DE VARIANTES MINIMALISTA */}
                             {hasColorAndSize ? (
-                              <div className="mt-2.5 space-y-2">
-                                {/* FILA DE COLORES */}
-                                <div>
-                                  <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
-                                    <span className="font-semibold text-zinc-500">Color:</span>
-                                    <span className="font-bold text-zinc-800 truncate">{currentColor}</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto no-scrollbar p-1">
-                                    {distinctColors.map(c => {
-                                      const colorVar = (prod.variants || []).find(v => v.color === c);
-                                      const isColActive = currentColor === c;
-                                      const colorStock = (prod.variants || []).filter(v => v.color === c).reduce((sum, v) => sum + (v.stock || 0), 0);
-                                      return (
-                                        <button
-                                          key={c}
-                                          type="button"
-                                          disabled={colorStock <= 0}
-                                          onClick={() => {
-                                            const matchedVar = (prod.variants || []).find(v => v.color === c && v.size === currentSize && v.stock > 0) ||
-                                                              (prod.variants || []).find(v => v.color === c && v.stock > 0) ||
-                                                              (prod.variants || []).find(v => v.color === c);
-                                            const nextSize = matchedVar ? matchedVar.size : currentSize;
-                                            const nextName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
-                                            setActiveVariants({
-                                              ...activeVariants,
-                                              [prod.id]: {
-                                                color: c,
-                                                size: nextSize,
-                                                variantName: nextName,
-                                                image: matchedVar?.image || colorVar?.image || prod.image
-                                              }
-                                            });
-                                          }}
-                                          className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-semibold transition flex items-center gap-1 border-2 ${
-                                            isColActive
-                                              ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
-                                              : colorStock <= 0
-                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60'
-                                              : 'border-zinc-200 bg-white text-zinc-700 hover:border-pink-300'
-                                          }`}
-                                        >
-                                          {colorVar?.image && (
-                                            <img src={colorVar.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />
-                                          )}
-                                          <span>{c}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
+                              <div className="pt-1 space-y-1.5">
+                                {/* Colores */}
+                                <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto no-scrollbar">
+                                  {distinctColors.map(c => {
+                                    const colorVar = (prod.variants || []).find(v => v.color === c);
+                                    const isColActive = currentColor === c;
+                                    const colorStock = (prod.variants || []).filter(v => v.color === c).reduce((sum, v) => sum + (v.stock || 0), 0);
+                                    return (
+                                      <button
+                                        key={c}
+                                        type="button"
+                                        disabled={colorStock <= 0}
+                                        onClick={() => {
+                                          const matchedVar = (prod.variants || []).find(v => v.color === c && v.size === currentSize && v.stock > 0) ||
+                                                            (prod.variants || []).find(v => v.color === c && v.stock > 0) ||
+                                                            (prod.variants || []).find(v => v.color === c);
+                                          const nextSize = matchedVar ? matchedVar.size : currentSize;
+                                          const nextName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
+                                          setActiveVariants({
+                                            ...activeVariants,
+                                            [prod.id]: {
+                                              color: c,
+                                              size: nextSize,
+                                              variantName: nextName,
+                                              image: matchedVar?.image || colorVar?.image || prod.image
+                                            }
+                                          });
+                                        }}
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
+                                          isColActive
+                                            ? 'border-[#151E28] bg-[#151E28] text-white'
+                                            : colorStock <= 0
+                                            ? 'border-zinc-200 bg-zinc-50 text-zinc-300 line-through cursor-not-allowed'
+                                            : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400'
+                                        }`}
+                                      >
+                                        {c}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
 
-                                {/* FILA DE TALLAS */}
-                                <div>
-                                  <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
-                                    <span className="font-semibold text-zinc-500">Talla:</span>
-                                    {varObj && (
-                                      varObj.stock <= 0 ? (
-                                        <span className="font-bold text-red-500 text-[10px]">Agotada</span>
-                                      ) : varObj.stock <= 2 ? (
-                                        <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded text-[9px] animate-pulse">
-                                          🔥 Solo {varObj.stock}
-                                        </span>
-                                      ) : (
-                                        <span className="font-bold text-emerald-700 text-[10px]">
-                                          {varObj.stock} disp.
-                                        </span>
-                                      )
-                                    )}
-                                  </div>
+                                {/* Tallas si hay más de 1 o diferente de Única */}
+                                {(distinctSizes.length > 1 || (distinctSizes[0] && distinctSizes[0] !== 'Única')) && (
                                   <div className="flex flex-wrap gap-1">
                                     {distinctSizes.map(s => {
                                       const combVar = (prod.variants || []).find(v => v.color === currentColor && v.size === s);
@@ -2989,12 +3410,12 @@
                                               }
                                             });
                                           }}
-                                          className={`px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold border transition ${
+                                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition ${
                                             isSizeActive
-                                              ? 'border-[#FF2E93] bg-[#FF2E93] text-white shadow-2xs'
+                                              ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93]'
                                               : combStock <= 0
-                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-300 line-through cursor-not-allowed'
-                                              : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                              ? 'border-zinc-100 text-zinc-300 line-through cursor-not-allowed'
+                                              : 'border-zinc-200 text-zinc-600 hover:border-zinc-400'
                                           }`}
                                         >
                                           {s}
@@ -3002,70 +3423,61 @@
                                       );
                                     })}
                                   </div>
-                                </div>
+                                )}
                               </div>
                             ) : (
-                              /* SELECTOR SIMPLE DE TONOS/VARIANTES */
-                              <div className="mt-2.5">
-                                <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
-                                  <span className="font-semibold text-zinc-600 truncate">{prod.variant_label || 'Tono / Talla'}:</span>
-                                  {varObj && (
-                                    varObj.stock <= 0 ? (
-                                      <span className="font-bold text-red-500 text-[10px] sm:text-xs">Agotado</span>
-                                    ) : varObj.stock <= 2 ? (
-                                      <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] animate-pulse">
-                                        🔥 ¡Solo {varObj.stock} disp!
-                                      </span>
-                                    ) : (
-                                      <span className="font-bold text-emerald-700 text-[10px] sm:text-xs">
-                                        {varObj.stock} disp.
-                                      </span>
-                                    )
-                                  )}
-                                </div>
-
-                                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto no-scrollbar p-1">
-                                  {(prod.variants || []).map(v => (
-                                    <button
-                                      key={v.name}
-                                      disabled={v.stock <= 0}
-                                      onClick={() => {
-                                        setActiveVariants({
-                                          ...activeVariants,
-                                          [prod.id]: { variantName: v.name, image: v.image || prod.image }
-                                        });
-                                      }}
-                                      className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-semibold transition flex items-center gap-1 border-2 ${
-                                        currentVarName === v.name
-                                          ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
-                                          : v.stock <= 0
-                                          ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60'
-                                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-pink-300'
-                                      }`}
-                                    >
-                                      {v.image && (
-                                        <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />
-                                      )}
-                                      <span>{v.name}</span>
-                                    </button>
-                                  ))}
-                                </div>
+                              <div className="pt-1 flex flex-wrap gap-1 max-h-14 overflow-y-auto no-scrollbar">
+                                {(prod.variants || []).map(v => (
+                                  <button
+                                    key={v.name}
+                                    disabled={v.stock <= 0}
+                                    onClick={() => {
+                                      setActiveVariants({
+                                        ...activeVariants,
+                                        [prod.id]: { variantName: v.name, image: v.image || prod.image }
+                                      });
+                                    }}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
+                                      currentVarName === v.name
+                                        ? 'border-[#151E28] bg-[#151E28] text-white'
+                                        : v.stock <= 0
+                                        ? 'border-zinc-200 bg-zinc-50 text-zinc-300 line-through cursor-not-allowed'
+                                        : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400'
+                                    }`}
+                                  >
+                                    {v.name}
+                                  </button>
+                                ))}
                               </div>
                             )}
                           </div>
 
-                          <button
-                            disabled={stock <= 0}
-                            onClick={() => addToCart(prod, currentVarName, false)}
-                            className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
-                              stock <= 0
-                                ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-                                : 'bg-[#FF007F] hover:bg-[#E0006E] text-white active:scale-95 font-bold shadow-xs'
-                            }`}
-                          >
-                            <Icon.Bag className="w-3.5 h-3.5" />
-                            <span>{stock <= 0 ? 'Agotado' : 'Agregar al Carrito'}</span>
-                          </button>
+                          {/* PRECIO Y BOTÓN ESTILO LIVELARQ */}
+                          <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100">
+                            <div className="flex items-baseline gap-1.5">
+                              {hasDiscount ? (
+                                <>
+                                  <span className="text-sm sm:text-base font-extrabold text-[#151E28]">${Number(prod.discount_price).toFixed(2)}</span>
+                                  <span className="text-[11px] line-through text-zinc-400">${Number(prod.price).toFixed(2)}</span>
+                                </>
+                              ) : (
+                                <span className="text-sm sm:text-base font-extrabold text-[#151E28]">${Number(prod.price).toFixed(2)}</span>
+                              )}
+                            </div>
+
+                            <button
+                              disabled={stock <= 0}
+                              onClick={() => addToCart(prod, currentVarName, false)}
+                              className={`px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center gap-1.5 ${
+                                stock <= 0
+                                  ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+                                  : 'bg-[#151E28] hover:bg-[#FF2E93] text-white active:scale-95'
+                              }`}
+                            >
+                              <Icon.Plus className="w-3 h-3" />
+                              <span>{stock <= 0 ? 'Agotado' : 'Añadir'}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -3349,160 +3761,419 @@
                 </div>
               )}
 
-              {/* ADMIN TAB 2: INVENTARIO */}
-              {adminTab === 'inventory' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 w-full max-w-full min-w-0">
-                  {/* FORMULARIO AGREGAR PRODUCTO */}
-                  <div className="bg-white p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs h-fit space-y-4 w-full max-w-full min-w-0">
-                    <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
-                      <Icon.Plus className="w-4 h-4 text-[#FF2E93]" /> Agregar Nuevo Producto
-                    </h3>
+              {/* ADMIN TAB 2: INVENTARIO ORGANIZADO Y ESCALABLE */}
+              {adminTab === 'inventory' && (() => {
+                const inventoryFiltered = products
+                  .filter(p => {
+                    if (adminInventorySection !== 'TODOS' && (p.section || '').toUpperCase() !== adminInventorySection) {
+                      return false;
+                    }
+                    if (adminInventoryCategory !== 'TODOS' && (p.category || '').toLowerCase() !== adminInventoryCategory.toLowerCase()) {
+                      return false;
+                    }
+                    const matchesSearch = !adminSearch ||
+                      p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
+                      (p.section || '').toLowerCase().includes(adminSearch.toLowerCase()) ||
+                      (p.category || '').toLowerCase().includes(adminSearch.toLowerCase());
+                    if (!matchesSearch) return false;
 
-                    <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
-                      <div>
-                        <label className="font-semibold text-zinc-700 block mb-1">Nombre *</label>
-                        <input required value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Ej. Lip Gloss Plumper" className="w-full border rounded-xl p-2.5 outline-none" />
-                      </div>
+                    if (adminStockFilter === 'critico') {
+                      return (p.variants || []).some(v => v.stock > 0 && v.stock <= 2);
+                    }
+                    if (adminStockFilter === 'agotados') {
+                      return (p.variants || []).some(v => (v.stock || 0) <= 0);
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    const stockA = (a.variants || []).reduce((acc, v) => acc + Number(v.stock || 0), 0);
+                    const stockB = (b.variants || []).reduce((acc, v) => acc + Number(v.stock || 0), 0);
+                    const priceA = Number(a.discount_price || a.price || 0);
+                    const priceB = Number(b.discount_price || b.price || 0);
 
-                      <div className="grid grid-cols-2 gap-2">
+                    if (adminInventorySort === 'nombre_asc') return (a.name || '').localeCompare(b.name || '');
+                    if (adminInventorySort === 'stock_asc') return stockA - stockB;
+                    if (adminInventorySort === 'stock_desc') return stockB - stockA;
+                    if (adminInventorySort === 'precio_asc') return priceA - priceB;
+                    if (adminInventorySort === 'precio_desc') return priceB - priceA;
+                    return Number(b.id || 0) - Number(a.id || 0);
+                  });
+
+                const allExpanded = inventoryFiltered.length > 0 && inventoryFiltered.every(p => expandedInventoryIds[p.id]);
+
+                return (
+                  <div className="space-y-5 w-full max-w-full min-w-0">
+
+                    {/* BARRA SUPERIOR DE CONTROL DE INVENTARIO */}
+                    <div className="bg-white p-4 sm:p-5 rounded-3xl border border-zinc-200 shadow-2xs space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
                         <div>
-                          <label className="font-semibold text-zinc-700 block mb-1">Sección</label>
-                          <select
-                            value={newProd.section}
-                            onChange={e => setNewProd({ ...newProd, section: e.target.value, category: (sectionsConfig[e.target.value] || [])[0] || '' })}
-                            className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold"
-                          >
-                            {Object.keys(sectionsConfig).map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="font-semibold text-zinc-700 block mb-1">Subcategoría</label>
-                          <select
-                            value={newProd.category}
-                            onChange={e => setNewProd({ ...newProd, category: e.target.value })}
-                            className="w-full border rounded-xl p-2.5 bg-white outline-none"
-                          >
-                            {(sectionsConfig[newProd.section] || []).map(sc => <option key={sc} value={sc}>{sc}</option>)}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="font-semibold text-zinc-700 block mb-1">Precio Normal ($) *</label>
-                          <input required type="number" step="0.01" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="0.00" className="w-full border rounded-xl p-2.5 outline-none" />
-                        </div>
-                        <div>
-                          <label className="font-semibold text-zinc-700 block mb-1">Precio Oferta ($)</label>
-                          <input type="number" step="0.01" value={newProd.discount_price} onChange={e => setNewProd({ ...newProd, discount_price: e.target.value })} placeholder="Opcional" className="w-full border rounded-xl p-2.5 outline-none" />
-                        </div>
-                      </div>
-
-                      {/* GESTOR DE FOTOS MÚLTIPLES DEL PRODUCTO */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="font-semibold text-zinc-700 block text-xs">
-                            Fotos del Producto ({(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).length})
-                          </label>
-                          <span className="text-[10px] text-zinc-400">Puedes seleccionar varias fotos</span>
+                          <h3 className="font-bold text-[#151E28] text-base sm:text-lg flex items-center gap-2">
+                            <Icon.Box className="w-5 h-5 text-[#FF2E93]" />
+                            <span>Centro de Control de Inventario</span>
+                            <span className="text-xs bg-[#F5F6F8] text-zinc-700 px-2.5 py-0.5 rounded-full font-extrabold">
+                              {inventoryFiltered.length} de {products.length} productos
+                            </span>
+                          </h3>
+                          <p className="text-xs text-zinc-500 mt-0.5">
+                            Filtra por sección, subcategoría o nivel de stock. Despliega solo el producto que necesites ajustar.
+                          </p>
                         </div>
 
-                        <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
-                          <div className="flex flex-wrap items-center gap-2.5">
-                            {(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).map((imgUrl, imgIdx) => (
-                              <div
-                                key={imgIdx}
-                                className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 bg-white flex items-center justify-center shadow-xs group transition ${
-                                  imgIdx === 0 ? 'border-[#FF2E93] ring-2 ring-pink-100' : 'border-zinc-200 hover:border-zinc-300'
-                                }`}
-                              >
-                                <img src={imgUrl} alt={`Foto ${imgIdx + 1}`} className="w-full h-full object-contain p-0.5" />
-
-                                {imgIdx === 0 ? (
-                                  <span className="absolute bottom-0 inset-x-0 bg-[#FF2E93] text-white text-[8px] font-black text-center py-0.5 tracking-wider uppercase">
-                                    Principal
-                                  </span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentImages = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
-                                      const selected = currentImages.splice(imgIdx, 1)[0];
-                                      const reordered = [selected, ...currentImages];
-                                      setNewProd({ ...newProd, image: reordered[0], images: reordered });
-                                      showToast('Foto establecida como Principal ✨');
-                                    }}
-                                    className="absolute bottom-0 inset-x-0 bg-black/60 hover:bg-[#FF2E93] text-white text-[8px] font-bold text-center py-0.5 opacity-0 group-hover:opacity-100 transition"
-                                  >
-                                    Hacer Principal
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const currentImages = (newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).filter((_, i) => i !== imgIdx);
-                                    setNewProd({
-                                      ...newProd,
-                                      image: currentImages[0] || '',
-                                      images: currentImages
-                                    });
-                                  }}
-                                  className="absolute top-1 right-1 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold shadow-xs transition"
-                                  title="Eliminar foto"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
-
-                            {/* Botón para Añadir Fotos */}
-                            <label className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-50 flex flex-col items-center justify-center cursor-pointer text-[#FF2E93] transition group shrink-0">
-                              <Icon.Plus className="w-5 h-5 group-hover:scale-110 transition" />
-                              <span className="text-[9px] font-bold mt-1">+ Fotos</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept="image/*"
-                                className="hidden"
-                                onChange={async e => {
-                                  if (e.target.files && e.target.files.length > 0) {
-                                    const files = Array.from(e.target.files);
-                                    const current = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
-                                    for (let f of files) {
-                                      const url = await uploadFileToSupabase(f, 'products');
-                                      if (url && !current.includes(url)) current.push(url);
-                                    }
-                                    setNewProd({
-                                      ...newProd,
-                                      image: current[0] || '',
-                                      images: current
-                                    });
-                                  }
-                                }}
-                              />
-                            </label>
-                          </div>
-
-                          <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-200/60">
-                            <span>Puedes subir varias fotos (frente, detalle, modelo).</span>
-                            <span>JPG, PNG, WEBP</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="font-semibold text-zinc-700 block mb-1">Descripción</label>
-                        <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Detalles del producto..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
-                      </div>
-
-                      {/* SELECTOR DE MODALIDAD: TONOS SIMPLES vs TALLAS Y COLORES SEPARADOS */}
-                      <div className="space-y-2">
-                        <label className="font-semibold text-zinc-700 block">Tipo de Variantes</label>
-                        <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
-                            onClick={() => setNewProdVariantMode('simple')}
+                            onClick={() => {
+                              if (allExpanded) {
+                                setExpandedInventoryIds({});
+                              } else {
+                                const nextMap = {};
+                                inventoryFiltered.forEach(p => { nextMap[p.id] = true; });
+                                setExpandedInventoryIds(nextMap);
+                              }
+                            }}
+                            className="px-3.5 py-2.5 rounded-full bg-[#F5F6F8] hover:bg-zinc-200/70 text-zinc-700 font-bold text-xs transition"
+                          >
+                            {allExpanded ? 'Contraer Variantes ▲' : 'Expandir Todos ▼'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextState = !showNewProductPanel;
+                              if (nextState && adminInventorySection !== 'TODOS') {
+                                handleNewProductSectionChange(adminInventorySection);
+                              }
+                              setShowNewProductPanel(nextState);
+                            }}
+                            className={`px-4 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-xs transition ${
+                              showNewProductPanel
+                                ? 'bg-zinc-900 text-white'
+                                : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white'
+                            }`}
+                          >
+                            {showNewProductPanel ? (
+                              <>
+                                <Icon.Close className="w-3.5 h-3.5" />
+                                <span>Cerrar Formulario</span>
+                              </>
+                            ) : (
+                              <>
+                                <Icon.Plus className="w-4 h-4" />
+                                <span>Nuevo Producto</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* FILA 1: PESTAÑAS DE SECCIÓN (DEPARTAMENTOS) CON CONTADORES */}
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => { setAdminInventorySection('TODOS'); setAdminInventoryCategory('TODOS'); }}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
+                            adminInventorySection === 'TODOS'
+                              ? 'bg-[#151E28] text-white'
+                              : 'bg-[#F5F6F8] text-zinc-600 hover:bg-zinc-200/70'
+                          }`}
+                        >
+                          <span>Todas las Secciones</span>
+                          <span className={`text-[10px] px-1.5 rounded-full font-black ${
+                            adminInventorySection === 'TODOS' ? 'bg-white/20 text-white' : 'bg-white text-zinc-700'
+                          }`}>
+                            {products.length}
+                          </span>
+                        </button>
+
+                        {Object.keys(sectionsConfig).map(sec => {
+                          const count = products.filter(p => (p.section || '').toUpperCase() === sec).length;
+                          const isSelected = adminInventorySection === sec;
+                          return (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => { setAdminInventorySection(sec); setAdminInventoryCategory('TODOS'); }}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
+                                isSelected
+                                  ? 'bg-[#151E28] text-white'
+                                  : 'bg-[#F5F6F8] text-zinc-600 hover:bg-zinc-200/70'
+                              }`}
+                            >
+                              <span>{sec}</span>
+                              <span className={`text-[10px] px-1.5 rounded-full font-black ${
+                                isSelected ? 'bg-white/20 text-white' : 'bg-white text-zinc-700'
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* FILA 2: BUSCADOR + SUBCATEGORÍA + ORDENAMIENTO */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 pt-1">
+                        <div className="md:col-span-5 relative">
+                          <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-400">
+                            <Icon.Search className="w-4 h-4" />
+                          </span>
+                          <input
+                            type="text"
+                            value={adminSearch}
+                            onChange={e => setAdminSearch(e.target.value)}
+                            placeholder="Buscar producto por nombre o categoría..."
+                            className="w-full pl-9 pr-8 py-2 bg-[#F5F6F8] focus:bg-white border border-transparent focus:border-zinc-300 rounded-xl text-xs outline-none transition"
+                          />
+                          {adminSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAdminSearch('')}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-700"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="md:col-span-3">
+                          <select
+                            value={adminInventoryCategory}
+                            onChange={e => setAdminInventoryCategory(e.target.value)}
+                            className="w-full bg-[#F5F6F8] border border-transparent focus:border-zinc-300 rounded-xl py-2 px-3 text-xs font-semibold text-zinc-700 outline-none"
+                          >
+                            <option value="TODOS">Todas las subcategorías</option>
+                            {(adminInventorySection === 'TODOS'
+                              ? Array.from(new Set(Object.values(sectionsConfig).flat()))
+                              : (sectionsConfig[adminInventorySection] || [])
+                            ).map(sub => (
+                              <option key={sub} value={sub}>{sub}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-4">
+                          <select
+                            value={adminInventorySort}
+                            onChange={e => setAdminInventorySort(e.target.value)}
+                            className="w-full bg-[#F5F6F8] border border-transparent focus:border-zinc-300 rounded-xl py-2 px-3 text-xs font-semibold text-zinc-700 outline-none"
+                          >
+                            <option value="recientes">Ordenar: Más recientes primero</option>
+                            <option value="nombre_asc">Ordenar: Nombre (A - Z)</option>
+                            <option value="stock_asc">Ordenar: Menor Stock primero</option>
+                            <option value="stock_desc">Ordenar: Mayor Stock primero</option>
+                            <option value="precio_asc">Ordenar: Precio (Menor a Mayor)</option>
+                            <option value="precio_desc">Ordenar: Precio (Mayor a Menor)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* FILTROS RÁPIDOS DE SALUD DE STOCK */}
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2 border-t border-zinc-100">
+                        <span className="text-[10px] uppercase font-bold text-zinc-400 mr-1 shrink-0">Estado de Stock:</span>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('todos')}
+                          className={`px-3 py-1 rounded-full font-bold text-xs whitespace-nowrap transition ${
+                            adminStockFilter === 'todos' ? 'bg-[#151E28] text-white' : 'bg-[#F5F6F8] text-zinc-600 hover:bg-zinc-200'
+                          }`}
+                        >
+                          Todos ({products.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('critico')}
+                          className={`px-3 py-1 rounded-full font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                            adminStockFilter === 'critico' ? 'bg-amber-500 text-zinc-950 font-black' : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
+                          }`}
+                        >
+                          <span>🔥 Stock Crítico (≤ 2)</span>
+                          <span className="bg-amber-200 text-amber-900 px-1.5 rounded-full text-[10px] font-black">
+                            {products.filter(p => (p.variants || []).some(v => v.stock > 0 && v.stock <= 2)).length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdminStockFilter('agotados')}
+                          className={`px-3 py-1 rounded-full font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                            adminStockFilter === 'agotados' ? 'bg-red-600 text-white font-black' : 'bg-red-50 text-red-800 border border-red-200 hover:bg-red-100'
+                          }`}
+                        >
+                          <span>⚠️ Con Variantes Agotadas</span>
+                          <span className="bg-red-200 text-red-900 px-1.5 rounded-full text-[10px] font-black">
+                            {products.filter(p => (p.variants || []).some(v => (v.stock || 0) <= 0)).length}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* FORMULARIO AGREGAR PRODUCTO (DESPLEGABLE BAJO DEMANDA) */}
+                    {showNewProductPanel && (
+                      <div className="bg-white p-4 sm:p-6 rounded-3xl border-2 border-[#151E28] shadow-md space-y-4 w-full max-w-3xl mx-auto animate-in fade-in">
+                        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                          <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
+                            <Icon.Plus className="w-4 h-4 text-[#FF2E93]" /> Agregar Nuevo Producto
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setShowNewProductPanel(false)}
+                            className="text-xs text-zinc-400 hover:text-zinc-700 font-bold"
+                          >
+                            ✕ Cerrar
+                          </button>
+                        </div>
+
+                        <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
+                          <div>
+                            <label className="font-semibold text-zinc-700 block mb-1">Nombre *</label>
+                            <input required value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Ej. Blusa Satinada / Lip Gloss Plumper" className="w-full border rounded-xl p-2.5 outline-none" />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="font-semibold text-zinc-700 block mb-1">Sección</label>
+                              <select
+                                value={newProd.section}
+                                onChange={e => handleNewProductSectionChange(e.target.value)}
+                                className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold"
+                              >
+                                {Object.keys(sectionsConfig).map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="font-semibold text-zinc-700 block mb-1">Subcategoría</label>
+                              <select
+                                value={newProd.category}
+                                onChange={e => setNewProd({ ...newProd, category: e.target.value })}
+                                className="w-full border rounded-xl p-2.5 bg-white outline-none"
+                              >
+                                {(sectionsConfig[newProd.section] || []).map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="font-semibold text-zinc-700 block mb-1">Precio Normal ($) *</label>
+                              <input required type="number" step="0.01" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="0.00" className="w-full border rounded-xl p-2.5 outline-none" />
+                            </div>
+                            <div>
+                              <label className="font-semibold text-zinc-700 block mb-1">Precio Oferta ($)</label>
+                              <input type="number" step="0.01" value={newProd.discount_price} onChange={e => setNewProd({ ...newProd, discount_price: e.target.value })} placeholder="Opcional" className="w-full border rounded-xl p-2.5 outline-none" />
+                            </div>
+                          </div>
+
+                          {/* GESTOR DE FOTOS MÚLTIPLES DEL PRODUCTO */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <label className="font-semibold text-zinc-700 block text-xs">
+                                Fotos del Producto ({(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).length})
+                              </label>
+                              <span className="text-[10px] text-zinc-400">Puedes seleccionar varias fotos</span>
+                            </div>
+
+                            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                {(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).map((imgUrl, imgIdx) => (
+                                  <div
+                                    key={imgIdx}
+                                    className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 bg-white flex items-center justify-center shadow-xs group transition ${
+                                      imgIdx === 0 ? 'border-[#FF2E93] ring-2 ring-pink-100' : 'border-zinc-200 hover:border-zinc-300'
+                                    }`}
+                                  >
+                                    <img src={imgUrl} alt={`Foto ${imgIdx + 1}`} className="w-full h-full object-contain p-0.5" />
+
+                                    {imgIdx === 0 ? (
+                                      <span className="absolute bottom-0 inset-x-0 bg-[#FF2E93] text-white text-[8px] font-black text-center py-0.5 tracking-wider uppercase">
+                                        Principal
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const currentImages = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
+                                          const selected = currentImages.splice(imgIdx, 1)[0];
+                                          const reordered = [selected, ...currentImages];
+                                          setNewProd({ ...newProd, image: reordered[0], images: reordered });
+                                          showToast('Foto establecida como Principal ✨');
+                                        }}
+                                        className="absolute bottom-0 inset-x-0 bg-black/60 hover:bg-[#FF2E93] text-white text-[8px] font-bold text-center py-0.5 opacity-0 group-hover:opacity-100 transition"
+                                      >
+                                        Hacer Principal
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const currentImages = (newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).filter((_, i) => i !== imgIdx);
+                                        setNewProd({
+                                          ...newProd,
+                                          image: currentImages[0] || '',
+                                          images: currentImages
+                                        });
+                                      }}
+                                      className="absolute top-1 right-1 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold shadow-xs transition"
+                                      title="Eliminar foto"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+
+                                {/* Botón para Añadir Fotos */}
+                                <label className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-50 flex flex-col items-center justify-center cursor-pointer text-[#FF2E93] transition group shrink-0">
+                                  <Icon.Plus className="w-5 h-5 group-hover:scale-110 transition" />
+                                  <span className="text-[9px] font-bold mt-1">+ Fotos</span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async e => {
+                                      if (e.target.files && e.target.files.length > 0) {
+                                        const files = Array.from(e.target.files);
+                                        const current = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
+                                        for (let f of files) {
+                                          const url = await uploadFileToSupabase(f, 'products');
+                                          if (url && !current.includes(url)) current.push(url);
+                                        }
+                                        setNewProd({
+                                          ...newProd,
+                                          image: current[0] || '',
+                                          images: current
+                                        });
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-200/60">
+                                <span>Puedes subir varias fotos (frente, detalle, modelo).</span>
+                                <span>JPG, PNG, WEBP</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="font-semibold text-zinc-700 block mb-1">Descripción</label>
+                            <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Detalles del producto..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
+                          </div>
+
+                          {/* SELECTOR DE MODALIDAD: TONOS SIMPLES vs TALLAS Y COLORES SEPARADOS */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="font-semibold text-zinc-700 block">Tipo de Variantes</label>
+                              {(newProd.section || '').toUpperCase() === 'ROPA' && newProdVariantMode === 'color_size' && (
+                                <span className="text-[10px] font-bold text-[#FF2E93] bg-pink-50 px-2 py-0.5 rounded-full">
+                                  ✓ Tallas y Colores seleccionado automáticamente para Ropa
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200">
+                              <button
+                                type="button"
+                                onClick={() => setNewProdVariantMode('simple')}
                             className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
                               newProdVariantMode === 'simple'
                                 ? 'bg-white text-zinc-900 shadow-2xs'
@@ -3919,222 +4590,216 @@
                         </div>
                       )}
 
-                      <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-xs transition">
-                        {uploading ? 'Guardando...' : 'Crear Producto en Supabase'}
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* LISTA DE PRODUCTOS */}
-                  <div className="lg:col-span-2 space-y-4 w-full max-w-full min-w-0">
-                    <div className="bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs space-y-3 w-full max-w-full min-w-0">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="relative flex-1">
-                          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
-                            <Icon.Search className="w-4 h-4" />
-                          </span>
-                          <input
-                            type="text"
-                            value={adminSearch}
-                            onChange={e => setAdminSearch(e.target.value)}
-                            placeholder="Buscar por nombre, sección o categoría..."
-                            className="w-full pl-9 pr-4 py-2 border rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#FF2E93]"
-                          />
-                        </div>
-                        <span className="text-xs font-bold text-zinc-600 shrink-0">{products.length} productos</span>
+                          <button type="submit" disabled={uploading} className="w-full bg-[#151E28] hover:bg-black text-white py-3.5 rounded-full font-bold text-xs shadow-sm transition">
+                            {uploading ? 'Guardando...' : 'Guardar Producto en Catálogo'}
+                          </button>
+                        </form>
                       </div>
+                    )}
 
-                      {/* FILTROS RÁPIDOS DE STOCK */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2 border-t border-zinc-100">
-                        <span className="text-[10px] uppercase font-bold text-zinc-400 mr-1 shrink-0">Filtro Stock:</span>
+                    {/* LISTA DE PRODUCTOS COMPACTA Y ORDENADA CON DESPLIEGUE DE VARIANTES BAJO DEMANDA */}
+                    {inventoryFiltered.length === 0 ? (
+                      <div className="bg-white rounded-3xl border border-zinc-200 p-10 text-center space-y-2">
+                        <p className="font-bold text-zinc-800 text-sm">No se encontraron productos con estos filtros.</p>
                         <button
                           type="button"
-                          onClick={() => setAdminStockFilter('todos')}
-                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition ${
-                            adminStockFilter === 'todos' ? 'bg-zinc-900 text-white shadow-xs' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                          }`}
+                          onClick={() => {
+                            setAdminInventorySection('TODOS');
+                            setAdminInventoryCategory('TODOS');
+                            setAdminStockFilter('todos');
+                            setAdminSearch('');
+                          }}
+                          className="text-xs bg-[#151E28] text-white px-4 py-2 rounded-full font-bold"
                         >
-                          Todos ({products.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdminStockFilter('critico')}
-                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
-                            adminStockFilter === 'critico' ? 'bg-amber-500 text-zinc-950 font-black shadow-xs' : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'
-                          }`}
-                        >
-                          <span>🔥 Stock Crítico (≤ 2)</span>
-                          <span className="bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full text-[10px] font-black">
-                            {products.filter(p => (p.variants || []).some(v => v.stock > 0 && v.stock <= 2)).length}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAdminStockFilter('agotados')}
-                          className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
-                            adminStockFilter === 'agotados' ? 'bg-red-600 text-white font-black shadow-xs' : 'bg-red-50 text-red-800 border border-red-200 hover:bg-red-100'
-                          }`}
-                        >
-                          <span>⚠️ Variantes Agotadas</span>
-                          <span className="bg-red-200 text-red-900 px-1.5 py-0.2 rounded-full text-[10px] font-black">
-                            {products.filter(p => (p.variants || []).some(v => (v.stock || 0) <= 0)).length}
-                          </span>
+                          Limpiar filtros de inventario
                         </button>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {inventoryFiltered.map(prod => {
+                          const totalStock = (prod.variants || []).reduce((a, b) => a + Number(b.stock || 0), 0);
+                          const outOfStockCount = (prod.variants || []).filter(v => Number(v.stock || 0) <= 0).length;
+                          const criticalCount = (prod.variants || []).filter(v => Number(v.stock || 0) > 0 && Number(v.stock || 0) <= 2).length;
+                          const isExpanded = Boolean(expandedInventoryIds[prod.id]);
 
-                    <div className="space-y-3">
-                      {products
-                        .filter(p => {
-                          const matchesSearch = !adminSearch ||
-                            p.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
-                            (p.section || '').toLowerCase().includes(adminSearch.toLowerCase()) ||
-                            (p.category || '').toLowerCase().includes(adminSearch.toLowerCase());
-                          if (!matchesSearch) return false;
-
-                          if (adminStockFilter === 'critico') {
-                            return (p.variants || []).some(v => v.stock > 0 && v.stock <= 2);
-                          }
-                          if (adminStockFilter === 'agotados') {
-                            return (p.variants || []).some(v => (v.stock || 0) <= 0);
-                          }
-                          return true;
-                        })
-                        .map(prod => (
-                          <div key={prod.id} className="bg-white p-3.5 sm:p-5 rounded-2xl border border-zinc-200/90 shadow-xs space-y-3 w-full min-w-0 max-w-full overflow-hidden">
-                            {/* FILA SUPERIOR: FOTO, TÍTULO, PRECIO, CATEGORÍAS Y ACCIONES */}
-                            <div className="flex items-start justify-between gap-2.5 min-w-0 w-full">
-                              <div className="flex items-start gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-                                <div className="relative shrink-0">
-                                  <img
-                                    src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
-                                    alt={prod.name}
-                                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-zinc-200"
-                                  />
-                                  {getProductImages(prod).length > 1 && (
-                                    <span className="absolute bottom-0 right-0 bg-black/70 text-white text-[9px] font-bold px-1 rounded-tl-md rounded-br-xl">
-                                      +{getProductImages(prod).length}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="space-y-1 min-w-0 flex-1">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <h4 className="font-bold text-zinc-900 text-xs sm:text-sm break-words line-clamp-2">{prod.name}</h4>
-                                    <span className="text-[10px] bg-pink-50 text-[#FF2E93] font-bold px-2 py-0.5 rounded-full shrink-0">
-                                      {prod.section}
-                                    </span>
-                                    <span className="text-[10px] bg-zinc-100 text-zinc-700 font-semibold px-2 py-0.5 rounded-full shrink-0">
-                                      {prod.category}
-                                    </span>
-                                  </div>
-                                  <div className="text-xs flex items-center gap-2 flex-wrap">
-                                    <span className="font-extrabold text-[#FF2E93] text-sm">${Number(prod.discount_price || prod.price).toFixed(2)}</span>
-                                    {prod.discount_price && <span className="line-through text-zinc-400 text-[10px]">${Number(prod.price).toFixed(2)}</span>}
-                                    <span className="text-[11px] text-zinc-500 font-medium">
-                                      • Stock: <b className="text-zinc-800">{(prod.variants || []).reduce((a, b) => a + Number(b.stock || 0), 0)} unids</b>
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* BOTONES ACCIÓN (EDITAR / BORRAR) */}
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  onClick={() => openEditProductModal(prod)}
-                                  className="px-2.5 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-xl font-bold border border-pink-200 text-xs flex items-center gap-1 shadow-2xs transition"
-                                  title="Editar producto"
-                                >
-                                  <Icon.Edit className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Editar</span>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteProduct(prod.id)}
-                                  className="p-1.5 sm:px-2.5 sm:py-1.5 bg-zinc-50 hover:bg-red-50 text-zinc-600 hover:text-red-600 rounded-xl font-semibold border border-zinc-200 text-xs flex items-center gap-1 transition"
-                                  title="Eliminar producto"
-                                >
-                                  <Icon.Trash className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Borrar</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* SUB-GRID DE VARIANTES Y STOCK RÁPIDO (100% RESPONSIVE EN MÓVIL) */}
-                            <div className="pt-2 border-t border-zinc-100 w-full min-w-0">
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[10px] uppercase font-bold text-zinc-400">Variantes y Stock en Vivo:</span>
-                                <span className="text-[10px] text-zinc-500 font-semibold">{(prod.variants || []).length} variante(s)</span>
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full min-w-0">
-                                {(prod.variants || []).map(v => (
+                          return (
+                            <div
+                              key={prod.id}
+                              className={`bg-white rounded-2xl border transition-all overflow-hidden ${
+                                isExpanded ? 'border-[#151E28] shadow-sm' : 'border-zinc-200/90 hover:border-zinc-300'
+                              }`}
+                            >
+                              {/* FILA COMPACTA DEL PRODUCTO */}
+                              <div className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
                                   <div
-                                    key={v.name}
-                                    className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs min-w-0 ${
-                                      v.stock <= 0
-                                        ? 'bg-red-50/70 border-red-200 text-red-900'
-                                        : v.stock <= 2
-                                        ? 'bg-amber-50/70 border-amber-200 text-amber-900'
-                                        : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                                    onClick={() => setExpandedInventoryIds(prev => ({ ...prev, [prod.id]: !prev[prod.id] }))}
+                                    className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-[#F5F6F8] border border-zinc-200/80 shrink-0 cursor-pointer flex items-center justify-center p-1"
+                                  >
+                                    <img
+                                      src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                                      alt={prod.name}
+                                      className="w-full h-full object-contain"
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0 flex-1 space-y-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <h4
+                                        onClick={() => setExpandedInventoryIds(prev => ({ ...prev, [prod.id]: !prev[prod.id] }))}
+                                        className="font-bold text-[#151E28] text-xs sm:text-sm truncate cursor-pointer hover:text-[#FF2E93]"
+                                      >
+                                        {prod.name}
+                                      </h4>
+                                      <span className="text-[10px] bg-[#F5F6F8] text-zinc-700 font-bold px-2 py-0.5 rounded-full">
+                                        {prod.section}
+                                      </span>
+                                      <span className="text-[10px] bg-zinc-100 text-zinc-500 font-medium px-2 py-0.5 rounded-full">
+                                        {prod.category}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-xs flex-wrap">
+                                      <span className="font-extrabold text-[#151E28]">
+                                        ${Number(prod.discount_price || prod.price).toFixed(2)}
+                                        {prod.discount_price && (
+                                          <span className="line-through text-zinc-400 text-[10px] font-normal ml-1">
+                                            ${Number(prod.price).toFixed(2)}
+                                          </span>
+                                        )}
+                                      </span>
+
+                                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                        totalStock <= 0
+                                          ? 'bg-red-50 text-red-700'
+                                          : criticalCount > 0 || outOfStockCount > 0
+                                          ? 'bg-amber-50 text-amber-900'
+                                          : 'bg-emerald-50 text-emerald-800'
+                                      }`}>
+                                        Stock total: {totalStock} u. ({(prod.variants || []).length} var.)
+                                      </span>
+
+                                      {outOfStockCount > 0 && (
+                                        <span className="text-[10px] text-red-600 font-bold">
+                                          • {outOfStockCount} agotada(s)
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* ACCIONES RÁPIDAS DE LA FILA */}
+                                <div className="flex items-center justify-end gap-1.5 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-zinc-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedInventoryIds(prev => ({ ...prev, [prod.id]: !prev[prod.id] }))}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1 ${
+                                      isExpanded
+                                        ? 'bg-[#151E28] text-white'
+                                        : 'bg-[#F5F6F8] hover:bg-zinc-200/80 text-zinc-800'
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                      {v.image ? (
-                                        <img src={v.image} className="w-6 h-6 rounded-lg object-cover border border-zinc-200 shrink-0" alt="" />
-                                      ) : (
-                                        <div className="w-6 h-6 rounded-lg bg-zinc-200 text-zinc-400 flex items-center justify-center shrink-0 text-[10px]">🎨</div>
-                                      )}
-                                      <span className="font-bold truncate text-[11px]" title={v.name}>{v.name}</span>
-                                    </div>
+                                    <span>Stock ({(prod.variants || []).length})</span>
+                                    <span className="text-[10px]">{isExpanded ? '▲' : '▼'}</span>
+                                  </button>
 
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      {v.stock <= 0 ? (
-                                        <span className="text-[10px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded-md">Agotado</span>
-                                      ) : v.stock <= 2 ? (
-                                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md">Poco</span>
-                                      ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditProductModal(prod)}
+                                    className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-full font-bold text-xs flex items-center gap-1 transition"
+                                    title="Editar producto"
+                                  >
+                                    <Icon.Edit className="w-3.5 h-3.5" />
+                                    <span>Editar</span>
+                                  </button>
 
-                                      {/* STEPPER DE STOCK */}
-                                      <div className="flex items-center bg-white border border-zinc-300 rounded-lg shadow-2xs">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleQuickStockChange(prod.id, v.name, -1)}
-                                          disabled={v.stock <= 0}
-                                          className="w-6 h-6 rounded-l hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 disabled:opacity-30 active:scale-95"
-                                          title="Restar 1"
-                                        >
-                                          -
-                                        </button>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={v.stock}
-                                          onChange={e => {
-                                            const val = parseInt(e.target.value || '0', 10);
-                                            handleDirectStockChange(prod.id, v.name, val);
-                                          }}
-                                          className="w-8 sm:w-10 text-center font-black text-xs outline-none bg-transparent"
-                                          title="Escribe la cantidad exacta"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => handleQuickStockChange(prod.id, v.name, 1)}
-                                          className="w-6 h-6 rounded-r hover:bg-zinc-100 flex items-center justify-center font-bold text-zinc-600 active:scale-95"
-                                          title="Sumar 1"
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProduct(prod.id)}
+                                    className="p-1.5 bg-zinc-50 hover:bg-red-50 text-zinc-500 hover:text-red-600 rounded-full border border-zinc-200 transition"
+                                    title="Eliminar producto"
+                                  >
+                                    <Icon.Trash className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
+
+                              {/* CAJÓN DESPLEGABLE DE VARIANTES Y STOCK EN VIVO */}
+                              {isExpanded && (
+                                <div className="px-4 pb-4 pt-3 bg-[#F5F6F8] border-t border-zinc-200/70 space-y-2 animate-in fade-in">
+                                  <div className="flex items-center justify-between text-[11px] text-zinc-500 font-semibold">
+                                    <span>Ajuste rápido de existencias por variante:</span>
+                                    <span>Cambios guardados en tiempo real</span>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                    {(prod.variants || []).map(v => (
+                                      <div
+                                        key={v.name}
+                                        className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs bg-white ${
+                                          v.stock <= 0
+                                            ? 'border-red-200 text-red-900'
+                                            : v.stock <= 2
+                                            ? 'border-amber-200 text-amber-900'
+                                            : 'border-zinc-200/80 text-zinc-800'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          {v.image ? (
+                                            <img src={v.image} className="w-6 h-6 rounded-lg object-cover border border-zinc-200 shrink-0" alt="" />
+                                          ) : (
+                                            <div className="w-6 h-6 rounded-lg bg-zinc-100 text-zinc-400 flex items-center justify-center shrink-0 text-[10px]">🎨</div>
+                                          )}
+                                          <span className="font-bold truncate text-[11px]" title={v.name}>{v.name}</span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {v.stock <= 0 ? (
+                                            <span className="text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">Agotado</span>
+                                          ) : v.stock <= 2 ? (
+                                            <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">Poco</span>
+                                          ) : null}
+
+                                          <div className="flex items-center bg-[#F5F6F8] border border-zinc-300 rounded-lg">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleQuickStockChange(prod.id, v.name, -1)}
+                                              disabled={v.stock <= 0}
+                                              className="w-6 h-6 rounded-l hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-700 disabled:opacity-30"
+                                            >
+                                              -
+                                            </button>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={v.stock}
+                                              onChange={e => {
+                                                const val = parseInt(e.target.value || '0', 10);
+                                                handleDirectStockChange(prod.id, v.name, val);
+                                              }}
+                                              className="w-9 text-center font-black text-xs outline-none bg-transparent"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleQuickStockChange(prod.id, v.name, 1)}
+                                              className="w-6 h-6 rounded-r hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-700"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ADMIN TAB 3: SECCIONES */}
               {adminTab === 'sections' && (
@@ -4539,7 +5204,7 @@
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4">
+                    <div className="grid md:grid-cols-3 gap-4">
                       <div>
                         <label className="font-semibold block mb-1">Enlace de Pago Deuna!</label>
                         <input
@@ -4554,6 +5219,16 @@
                           value={adminSettingsForm.payphone_link || ''}
                           onChange={e => setAdminSettingsForm({ ...adminSettingsForm, payphone_link: e.target.value })}
                           className="w-full border rounded-xl p-2.5 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold block mb-1">Recargo Tarjeta Payphone (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={adminSettingsForm.payphone_surcharge_percent ?? 6.0}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, payphone_surcharge_percent: parseFloat(e.target.value || '0') })}
+                          className="w-full border rounded-xl p-2.5 outline-none font-bold text-[#FF2E93]"
                         />
                       </div>
                     </div>
@@ -4894,7 +5569,17 @@
                       <label className="font-semibold text-zinc-700 block mb-1">Sección</label>
                       <select
                         value={editingProduct.section}
-                        onChange={e => setEditingProduct({ ...editingProduct, section: e.target.value, category: (sectionsConfig[e.target.value] || [])[0] || '' })}
+                        onChange={e => {
+                          const nextSec = e.target.value;
+                          const isClothing = (nextSec || '').toUpperCase() === 'ROPA';
+                          setEditingProduct({
+                            ...editingProduct,
+                            section: nextSec,
+                            category: (sectionsConfig[nextSec] || [])[0] || '',
+                            variant_label: isClothing ? 'Color y Talla' : editingProduct.variant_label
+                          });
+                          if (isClothing) setEditVariantMode('color_size');
+                        }}
                         className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold"
                       >
                         {Object.keys(sectionsConfig).map(s => <option key={s} value={s}>{s}</option>)}
@@ -5610,453 +6295,1311 @@
           )}
 
           {/* =========================================================================
-              DRAWER: CARRITO DE COMPRAS & CHECKOUT VIP
+              MODAL INFORMATIVO: PROGRAMA DE PUNTOS KAOJ VIP ($5 OFF POR CADA 50 PUNTOS)
+              ========================================================================= */}
+          {isPointsModalOpen && (
+            <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsPointsModalOpen(false)}>
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-pink-200 relative text-xs" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FF2E93] to-amber-500 text-white flex items-center justify-center shadow-sm">
+                      <Icon.Diamond className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif-kaoj text-lg font-extrabold text-zinc-900 leading-tight">Club Puntos Kaoj VIP</h3>
+                      <p className="text-[11px] text-[#FF2E93] font-bold">¡Por cada 50 puntos tienes $5.00 de descuento!</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setIsPointsModalOpen(false)} className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-600">✕</button>
+                </div>
+
+                {/* REGLA PRINCIPAL DESTACADA */}
+                <div className="bg-gradient-to-r from-amber-50 via-pink-50 to-rose-50 border border-amber-200 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200/80 text-amber-950 px-2.5 py-0.5 rounded-full">Beneficio Exclusivo</span>
+                    <span className="font-black text-[#FF2E93] text-sm">50 Pts = $5.00 OFF</span>
+                  </div>
+                  <p className="text-zinc-700 leading-relaxed text-xs">
+                    En <b>Kaoj Store</b> premiamos todas tus compras. Acumulas <b>1 Punto Kaoj por cada $1.00</b> gastado, y <b>por cada 50 puntos acumulados recibes $5.00 de descuento directo</b> en tu pedido.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                    <div className="bg-white/90 border border-amber-200/80 rounded-xl p-2">
+                      <p className="font-black text-zinc-900 text-sm">50 pts</p>
+                      <p className="text-[10px] text-[#FF2E93] font-extrabold">-$5.00 USD</p>
+                    </div>
+                    <div className="bg-white/90 border border-amber-200/80 rounded-xl p-2">
+                      <p className="font-black text-zinc-900 text-sm">100 pts</p>
+                      <p className="text-[10px] text-[#FF2E93] font-extrabold">-$10.00 USD</p>
+                    </div>
+                    <div className="bg-white/90 border border-amber-200/80 rounded-xl p-2">
+                      <p className="font-black text-zinc-900 text-sm">150 pts</p>
+                      <p className="text-[10px] text-[#FF2E93] font-extrabold">-$15.00 USD</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SALDO ACTUAL O CONSULTA RÁPIDA POR CELULAR */}
+                <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase">Tu Saldo Actual</p>
+                      <p className="text-lg font-black text-zinc-900 flex items-center gap-1.5">
+                        <span>{customerCurrentPoints} Puntos Kaoj</span>
+                        {activeCustomerCode && (
+                          <span className="text-[10px] bg-pink-100 text-[#FF2E93] px-2 py-0.5 rounded-full font-extrabold">
+                            Código {activeCustomerCode}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-zinc-500 block">Descuento disponible</span>
+                      <span className="text-sm font-black text-emerald-700">
+                        ${(Math.floor(customerCurrentPoints / 50) * 5).toFixed(2)} USD
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-zinc-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-[#FF2E93] to-amber-500 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pointsProgressPercent}%` }}
+                    ></div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-600">
+                    {customerCurrentPoints >= 50
+                      ? `🎉 ¡Ya tienes ${Math.floor(customerCurrentPoints / 50) * 50} puntos listos para canjear por $${(Math.floor(customerCurrentPoints / 50) * 5).toFixed(2)} de descuento en el Paso 3 del carrito!`
+                      : `Te faltan ${pointsNeededForNextDiscount} puntos para desbloquear tu próximo descuento de $5.00 USD.`}
+                  </p>
+
+                  {!user && (
+                    <div className="pt-2 border-t border-zinc-200/80 space-y-1.5">
+                      <label className="text-[11px] font-bold text-zinc-700 block">Consulta tus puntos con tu número de WhatsApp:</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          placeholder="Ej. 0991234567"
+                          value={customer.phone}
+                          onChange={e => setCustomer({ ...customer, phone: e.target.value })}
+                          className="flex-1 border border-zinc-300 rounded-xl px-3 py-2 text-xs bg-white font-bold outline-none focus:border-[#FF2E93]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handlePhoneLookup(customer.phone)}
+                          className="bg-zinc-900 hover:bg-black text-white px-3.5 py-2 rounded-xl font-bold text-xs transition"
+                        >
+                          Consultar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPointsModalOpen(false)}
+                  className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold shadow-sm transition"
+                >
+                  ¡Entendido, seguir comprando!
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              DRAWER: CARRITO DE COMPRAS & CHECKOUT VIP POR PASOS (1. DATOS, 2. ENVÍO, 3. PAGO)
               ========================================================================= */}
           {isCartOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end" onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }}>
-              <div className="bg-white w-full max-w-md h-full overflow-y-auto p-6 space-y-5 shadow-2xl flex flex-col justify-between" onClick={e => e.stopPropagation()}>
-                <div>
-                  <div className="flex justify-between items-center border-b pb-4">
+              <div className="bg-white w-full max-w-lg h-full flex flex-col justify-between shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+
+                {/* HEADER FIJO DEL CARRITO Y STEPPER DE PASOS */}
+                <div className="px-5 pt-4 pb-3 border-b border-zinc-100 bg-white z-10 space-y-3 shrink-0">
+                  <div className="flex justify-between items-center">
                     <div>
-                      <h3 className="font-serif-kaoj text-2xl font-bold text-zinc-900">Tu Pedido</h3>
-                      <span className="text-xs text-[#FF2E93] font-semibold">KAOJ STORE BOUTIQUE</span>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-serif-kaoj text-xl sm:text-2xl font-bold text-zinc-900">Tu Compra</h3>
+                        {cart.length > 0 && (
+                          <span className="bg-pink-50 text-[#FF2E93] border border-pink-200 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                            {cart.reduce((a, b) => a + b.qty, 0)} {cart.reduce((a, b) => a + b.qty, 0) === 1 ? 'artículo' : 'artículos'}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-zinc-500 font-medium">KAOJ STORE BOUTIQUE • Compra rápida en 3 pasos</span>
                     </div>
-                    <button onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center font-bold">✕</button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }}
+                      className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-700 transition"
+                    >
+                      ✕
+                    </button>
                   </div>
 
-                  {user && (
-                    <div className="mt-3 bg-pink-50 border border-pink-200 rounded-xl p-2.5 text-xs text-zinc-700 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Icon.Check className="w-4 h-4 text-emerald-600" />
-                        <p>Cuenta: <b>{user.email}</b></p>
-                      </div>
-                      <span className="text-[10px] font-bold text-[#FF2E93]">{customerCurrentPoints} pts</span>
+                  {/* STEPPER INTERACTIVO: 1. DATOS -> 2. ENVÍO -> 3. PAGO */}
+                  {cart.length > 0 && (
+                    <div className="grid grid-cols-3 gap-1.5 bg-zinc-100/90 p-1 rounded-2xl border border-zinc-200/70">
+                      {[
+                        { step: 1, title: '1. Datos', subtitle: 'Tus datos y VIP' },
+                        { step: 2, title: '2. Envío', subtitle: 'Modalidad y tarifa' },
+                        { step: 3, title: '3. Pago', subtitle: 'Método y resumen' }
+                      ].map(s => {
+                        const isActive = checkoutStep === s.step;
+                        const isCompleted = checkoutStep > s.step;
+                        return (
+                          <button
+                            key={s.step}
+                            type="button"
+                            onClick={() => handleGoToStep(s.step)}
+                            className={`py-2 px-2 rounded-xl text-left transition-all flex items-center gap-2 ${
+                              isActive
+                                ? 'bg-white text-zinc-900 shadow-xs border border-pink-200'
+                                : isCompleted
+                                ? 'bg-emerald-50/70 text-emerald-900 hover:bg-white/70'
+                                : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
+                          >
+                            <span className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
+                              isActive
+                                ? 'bg-[#FF2E93] text-white'
+                                : isCompleted
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-zinc-200 text-zinc-600'
+                            }`}>
+                              {isCompleted ? '✓' : s.step}
+                            </span>
+                            <div className="min-w-0">
+                              <p className={`text-[11px] font-extrabold leading-none truncate ${isActive ? 'text-[#FF2E93]' : ''}`}>{s.title}</p>
+                              <p className="text-[9px] text-zinc-400 truncate mt-0.5 hidden sm:block">{s.subtitle}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
+                </div>
 
-                  {/* BARRA DE PROGRESO INTERACTIVA PARA ENVÍO GRATIS */}
-                  {cart.length > 0 && (
-                    qualifiesFreeShipping || subtotal >= freeShippingThreshold ? (
-                      <div className="mt-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-3 space-y-1.5 shadow-xs animate-in fade-in">
-                        <div className="flex items-center justify-between text-xs font-extrabold text-emerald-800">
-                          <span className="flex items-center gap-1.5">
-                            <Icon.Truck className="w-4 h-4 text-emerald-600" /> ¡Felicidades! Tienes Envío Gratis
-                          </span>
-                          <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black">100%</span>
-                        </div>
-                        <div className="w-full bg-emerald-200/60 rounded-full h-2 overflow-hidden">
-                          <div className="bg-emerald-500 h-full rounded-full transition-all duration-500 w-full"></div>
-                        </div>
-                        <p className="text-[10px] text-emerald-700 font-medium">Aplica para entregas locales y envíos Servientrega a todo el Ecuador 🎉</p>
-                      </div>
-                    ) : (
-                      <div className="mt-3 bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-2xl p-3 space-y-1.5 shadow-xs">
-                        <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
-                          <span className="flex items-center gap-1.5">
-                            <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
-                            <span>Te faltan <b className="text-[#FF2E93] font-black">${remainingForFreeShipping.toFixed(2)}</b> para Envío Gratis</span>
-                          </span>
-                          <span className="text-[10px] font-extrabold text-[#FF2E93]">{shippingProgressPercent}%</span>
-                        </div>
-                        <div className="w-full bg-pink-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-[#FF2E93] h-full rounded-full transition-all duration-500"
-                            style={{ width: `${shippingProgressPercent}%` }}
-                          ></div>
-                        </div>
-                        <p className="text-[10px] text-zinc-500 font-medium">Envío Gratis automático desde ${freeShippingThreshold.toFixed(2)} a todo el Ecuador</p>
-                      </div>
-                    )
-                  )}
-
+                {/* CONTENIDO CENTRAL SCROLLEABLE */}
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-xs">
                   {cart.length === 0 ? (
                     <div className="text-center py-16 space-y-3">
-                      <Icon.Bag className="w-12 h-12 text-zinc-300 mx-auto" />
-                      <p className="font-bold text-zinc-700 text-sm">Tu carrito está vacío</p>
-                      <button onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }} className="bg-[#FF2E93] text-white px-5 py-2 rounded-full font-bold text-xs">
+                      <div className="w-16 h-16 rounded-full bg-pink-50 text-[#FF2E93] flex items-center justify-center mx-auto">
+                        <Icon.Bag className="w-8 h-8" />
+                      </div>
+                      <p className="font-bold text-zinc-800 text-sm">Tu carrito está vacío</p>
+                      <p className="text-xs text-zinc-500 max-w-xs mx-auto">
+                        Agrega tus labiales, accesorios o prendas favoritas y acumula Puntos Kaoj VIP ($5.00 de descuento por cada 50 puntos).
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }}
+                        className="bg-[#FF2E93] hover:bg-[#e0157a] text-white px-6 py-2.5 rounded-full font-bold text-xs shadow-sm transition"
+                      >
                         Explorar Catálogo
                       </button>
                     </div>
                   ) : (
-                    <div className="mt-4 space-y-3 divide-y divide-zinc-100">
-                      {cart.map(item => (
-                        <div key={item.key} className="pt-3 flex items-center justify-between gap-3 text-xs">
-                          <img src={item.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={item.name} className="w-12 h-12 rounded-xl object-cover border" />
-                          <div className="flex-1">
-                            <p className="font-bold text-zinc-900 leading-tight">{item.name}</p>
-                            <p className="text-zinc-500 text-[11px]">{item.variant}</p>
-                            <span className="font-extrabold text-[#FF2E93]">${(item.price * item.qty).toFixed(2)}</span>
+                    <>
+                      {/* BARRA DE PROGRESO INTERACTIVA PARA ENVÍO GRATIS */}
+                      {qualifiesFreeShipping || subtotal >= freeShippingThreshold ? (
+                        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-3 space-y-1 shadow-2xs">
+                          <div className="flex items-center justify-between text-xs font-extrabold text-emerald-800">
+                            <span className="flex items-center gap-1.5">
+                              <Icon.Truck className="w-4 h-4 text-emerald-600" /> ¡Felicidades! Tienes Envío Gratis desbloqueado
+                            </span>
+                            <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black">GRATIS</span>
                           </div>
-                          <div className="flex items-center gap-1.5 bg-zinc-50 border rounded-lg p-1">
-                            <button onClick={() => updateCartQty(item.key, -1)} className="w-5 h-5 rounded bg-white flex items-center justify-center font-bold">-</button>
-                            <span className="font-bold px-1.5">{item.qty}</span>
-                            <button onClick={() => updateCartQty(item.key, 1)} className="w-5 h-5 rounded bg-white flex items-center justify-center font-bold">+</button>
-                          </div>
-                          <button onClick={() => removeFromCart(item.key)} className="text-zinc-400 hover:text-red-500 font-bold px-1">✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {cart.length > 0 && (
-                    <form onSubmit={handleCheckoutSubmit} className="mt-6 space-y-4 text-xs">
-                      {/* DATOS CLIENTA */}
-                      <div className="border-t pt-4">
-                        <h4 className="font-bold text-zinc-900 mb-2">Datos para el Envío</h4>
-                        <div className="space-y-2">
-                          <input required placeholder="Nombre y Apellido *" value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} className="w-full border rounded-xl p-2.5 outline-none" />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              required
-                              placeholder="Celular (WhatsApp) *"
-                              value={customer.phone}
-                              onChange={e => {
-                                setCustomer({ ...customer, phone: e.target.value });
-                                handlePhoneLookup(e.target.value);
-                              }}
-                              onBlur={e => handlePhoneLookup(e.target.value)}
-                              className="border rounded-xl p-2.5 outline-none"
-                            />
-                            <input placeholder="Cédula / RUC (Guía)" value={customer.idCard} onChange={e => setCustomer({ ...customer, idCard: e.target.value })} className="border rounded-xl p-2.5 outline-none" />
+                          <div className="w-full bg-emerald-200/60 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-emerald-500 h-full rounded-full w-full"></div>
                           </div>
                         </div>
-
-                        {activeCustomerCode && (
-                          <div className="mt-2.5 bg-pink-50 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between">
-                            <div>
-                              <p className="text-[10px] text-zinc-500">Código VIP de Cliente:</p>
-                              <p className="text-sm font-black text-[#FF2E93] tracking-wider">{activeCustomerCode}</p>
-                            </div>
-                            <span className="text-[9px] bg-white text-[#FF2E93] border border-pink-200 px-2 py-0.5 rounded-full font-bold">
-                              Activo
+                      ) : (
+                        <div className="bg-gradient-to-r from-pink-50 to-rose-50 border border-pink-200 rounded-2xl p-3 space-y-1 shadow-2xs">
+                          <div className="flex items-center justify-between text-xs font-bold text-zinc-800">
+                            <span className="flex items-center gap-1.5">
+                              <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
+                              <span>Te faltan <b className="text-[#FF2E93] font-black">${remainingForFreeShipping.toFixed(2)}</b> para Envío Gratis</span>
                             </span>
+                            <span className="text-[10px] font-extrabold text-[#FF2E93]">{shippingProgressPercent}%</span>
                           </div>
-                        )}
-                      </div>
-
-                      {/* CASILLA DORADA: CANJE DE PUNTOS VIP */}
-                      {canRedeemPoints && (
-                        <div className="bg-gradient-to-r from-amber-50 to-pink-50 border border-amber-300 rounded-2xl p-3 space-y-1.5 shadow-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-amber-900 text-xs flex items-center gap-1.5">
-                              <Icon.Diamond className="w-4 h-4 text-amber-600" /> ¡Tienes {customerCurrentPoints} Puntos Kaoj!
-                            </span>
-                            <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded-md font-black">$5.00 OFF</span>
+                          <div className="w-full bg-pink-100 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-[#FF2E93] h-full rounded-full transition-all duration-500" style={{ width: `${shippingProgressPercent}%` }}></div>
                           </div>
-                          <label className="flex items-center gap-2 cursor-pointer pt-1">
-                            <input
-                              type="checkbox"
-                              checked={applyPointsDiscount}
-                              onChange={e => setApplyPointsDiscount(e.target.checked)}
-                              className="w-4 h-4 accent-[#FF2E93] rounded"
-                            />
-                            <span className="text-xs font-bold text-zinc-800">
-                              Canjear 50 puntos por $5.00 de descuento directo
-                            </span>
-                          </label>
                         </div>
                       )}
 
-                      {/* CUPÓN DE DESCUENTO */}
-                      <div className="bg-pink-50/50 border border-pink-100 rounded-2xl p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-zinc-800 text-xs flex items-center gap-1.5">
-                            <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" /> ¿Tienes un cupón de descuento?
-                          </span>
-                          {appliedCoupon && (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-extrabold">
-                              ✓ Aplicado
-                            </span>
-                          )}
-                        </div>
-                        {appliedCoupon ? (
-                          <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-emerald-700 tracking-wider uppercase">{appliedCoupon.code}</span>
-                              <span className="text-[11px] text-zinc-500">({appliedCoupon.label || appliedCoupon.description})</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleRemoveCoupon}
-                              className="text-[11px] text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5 rounded hover:bg-red-50"
-                            >
-                              Quitar
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              placeholder="Ej. BIENVENIDA / KAOJ5"
-                              value={couponCodeInput}
-                              onChange={e => setCouponCodeInput(e.target.value)}
-                              className="flex-1 border rounded-xl px-3 py-2 text-xs bg-white uppercase tracking-wider outline-none focus:border-[#FF2E93]"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleApplyCoupon}
-                              className="bg-zinc-900 hover:bg-black text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs"
-                            >
-                              Aplicar
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* MÉTODO DE ENTREGA */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="font-bold text-zinc-700">Método de Entrega:</label>
-                          {qualifiesFreeShipping && (
-                            <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">
-                              🎉 Envío Gratis (+${freeShippingThreshold.toFixed(2)})
-                            </span>
-                          )}
-                        </div>
-
-                        <select
-                          value={customer.delivery}
-                          onChange={e => setCustomer({ ...customer, delivery: e.target.value })}
-                          className="w-full border rounded-xl p-2.5 bg-white outline-none font-bold text-xs"
+                      {/* ACORDEÓN DE PRODUCTOS DEL CARRITO (Expandido en Paso 1, compacto en Pasos 2 y 3) */}
+                      <div className="border border-zinc-200 rounded-2xl bg-zinc-50/50 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setShowCartItemsInStep(!showCartItemsInStep)}
+                          className="w-full px-3.5 py-2.5 bg-white flex items-center justify-between text-xs font-bold text-zinc-800 hover:bg-zinc-50 transition"
                         >
-                          {activeDeliveryOptions.map(d => (
-                            <option key={d.id} value={d.id}>
-                              {d.label} {qualifiesFreeShipping && Number(d.price) > 0 ? '(GRATIS)' : Number(d.price) === 0 ? '(GRATIS)' : `(+$${Number(d.price).toFixed(2)})`}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="flex items-center gap-2">
+                            <Icon.Bag className="w-4 h-4 text-[#FF2E93]" />
+                            <span>Productos en tu bolsa ({cart.reduce((a, b) => a + b.qty, 0)})</span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="font-black text-[#FF2E93]">${subtotal.toFixed(2)}</span>
+                            <span className="text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                              {showCartItemsInStep ? 'Ocultar ▲' : 'Ver / Editar ▼'}
+                            </span>
+                          </span>
+                        </button>
 
-                        {/* AVISO IMPORTANTE DE ENVÍOS COOPERATIVA / SERVIENTREGA */}
-                        <div className="bg-pink-50/70 border border-pink-200/90 rounded-2xl p-3 space-y-1 text-xs">
-                          <div className="flex items-center gap-1.5 font-bold text-zinc-900">
-                            <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
-                            <span>Envíos a todo el Ecuador:</span>
-                          </div>
-                          <p className="text-zinc-600 leading-relaxed text-[11px]">
-                            Despachamos de forma segura por <b>Cooperativa de transporte (encomienda)</b> o por <b>Servientrega</b> a domicilio o agencia.
-                          </p>
-                          <p className="text-[10px] text-[#FF2E93] font-bold">
-                            💡 La cooperativa o agencia específica de retiro se coordina directamente por WhatsApp con el vendedor tras confirmar el pedido.
-                          </p>
-                        </div>
-                      </div>
-
-                      {Number(deliveryObj?.price || 0) > 0 && (
-                        <div>
-                          <label className="font-bold text-zinc-700 block mb-1">Dirección o Cooperativa / Agencia de retiro *:</label>
-                          <input
-                            required
-                            placeholder="Ej. Guayaquil, Terminal Terrestre - Cooperativa Reina del Camino / Servientrega..."
-                            value={customer.address}
-                            onChange={e => setCustomer({ ...customer, address: e.target.value })}
-                            className="w-full border rounded-xl p-2.5 outline-none text-xs"
-                          />
-                        </div>
-                      )}
-
-                      {/* FORMA DE PAGO */}
-                      <div>
-                        <label className="font-bold text-zinc-700 block mb-1">Forma de Pago:</label>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          <button type="button" onClick={() => setCustomer({ ...customer, paymentMethod: 'deuna' })} className={`py-2 rounded-xl font-bold text-[11px] border ${customer.paymentMethod === 'deuna' ? 'bg-purple-700 text-white' : 'bg-zinc-50'}`}>
-                            Deuna!
-                          </button>
-                          <button type="button" onClick={() => setCustomer({ ...customer, paymentMethod: 'transferencia' })} className={`py-2 rounded-xl font-bold text-[11px] border ${customer.paymentMethod === 'transferencia' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-50'}`}>
-                            Bancos
-                          </button>
-                          <button type="button" onClick={() => setCustomer({ ...customer, paymentMethod: 'payphone' })} className={`py-2 rounded-xl font-bold text-[11px] border ${customer.paymentMethod === 'payphone' ? 'bg-zinc-900 text-white' : 'bg-zinc-50'}`}>
-                            Payphone
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* INSTRUCCIONES DE PAGO */}
-                      {customer.paymentMethod === 'deuna' && (
-                        <div className="bg-purple-50 border border-purple-200 rounded-2xl p-3 text-center space-y-2">
-                          <p className="text-xs font-semibold text-purple-900">Paga seguro con tu app Deuna!:</p>
-                          <a href={settings.deuna_link} target="_blank" rel="noreferrer" className="block w-full bg-purple-700 text-white py-2 rounded-xl font-bold">
-                            Abrir Deuna! (${total.toFixed(2)})
-                          </a>
-                        </div>
-                      )}
-
-                      {customer.paymentMethod === 'payphone' && (() => {
-                        const amountCents = Math.round(total * 100);
-                        const orderRef = 'KAOJ-' + (customer.code || (customer.phone ? customer.phone.slice(-4) : Date.now().toString().slice(-4)));
-                        let payphoneUrl = settings.payphone_link || 'https://payphone.app/';
-                        try {
-                          const base = payphoneUrl.trim();
-                          const u = new URL(base.startsWith('http') ? base : `https://${base}`);
-                          u.searchParams.set('amount', amountCents.toString());
-                          u.searchParams.set('amountDollars', total.toFixed(2));
-                          u.searchParams.set('reference', orderRef);
-                          u.searchParams.set('clientTransactionId', orderRef);
-                          if (customer.phone) u.searchParams.set('phone', customer.phone.replace(/\D/g, ''));
-                          if (customer.name) u.searchParams.set('clientName', customer.name);
-                          payphoneUrl = u.toString();
-                        } catch (err) {
-                          const sep = payphoneUrl.includes('?') ? '&' : '?';
-                          payphoneUrl = `${payphoneUrl}${sep}amount=${amountCents}&reference=${encodeURIComponent(orderRef)}`;
-                        }
-
-                        return (
-                          <div className="bg-gradient-to-br from-zinc-900 via-zinc-900 to-black text-white border border-zinc-700 rounded-2xl p-4 space-y-3 shadow-lg">
-                            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-                              <div className="flex items-center gap-2">
-                                <span className="bg-[#FF6600] text-white text-[10px] font-black px-2 py-0.5 rounded-full tracking-wide">PAYPHONE</span>
-                                <span className="text-xs font-bold text-zinc-200">Tarjeta Débito / Crédito</span>
-                              </div>
-                              <span className="text-[10px] text-zinc-400 font-medium">Visa • MasterCard • Diners</span>
-                            </div>
-
-                            <div className="bg-zinc-800/80 rounded-xl p-3 flex items-center justify-between text-xs border border-zinc-700/60">
-                              <div>
-                                <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Total a pagar</p>
-                                <p className="text-lg font-black text-white">${total.toFixed(2)} <span className="text-[11px] text-zinc-400 font-normal">USD</span></p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Referencia de Orden</p>
+                        {showCartItemsInStep && (
+                          <div className="p-3 divide-y divide-zinc-200/70 space-y-2.5 bg-white border-t border-zinc-100">
+                            {cart.map(item => (
+                              <div key={item.key} className="pt-2.5 first:pt-0 flex items-center justify-between gap-2.5 text-xs">
+                                <img
+                                  src={item.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                                  alt={item.name}
+                                  className="w-12 h-12 rounded-xl object-cover border border-zinc-200 shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-bold text-zinc-900 leading-tight truncate">{item.name}</p>
+                                  <p className="text-zinc-500 text-[11px] truncate">{item.variant}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="font-extrabold text-[#FF2E93]">${(item.price * item.qty).toFixed(2)}</span>
+                                    <span className="text-[10px] text-zinc-400">(${item.price.toFixed(2)} c/u)</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 bg-zinc-100 border border-zinc-200 rounded-xl p-1">
+                                  <button type="button" onClick={() => updateCartQty(item.key, -1)} className="w-6 h-6 rounded-lg bg-white hover:bg-zinc-50 flex items-center justify-center font-bold shadow-2xs">-</button>
+                                  <span className="font-bold px-1.5 text-xs">{item.qty}</span>
+                                  <button type="button" onClick={() => updateCartQty(item.key, 1)} className="w-6 h-6 rounded-lg bg-white hover:bg-zinc-50 flex items-center justify-center font-bold shadow-2xs">+</button>
+                                </div>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(orderRef);
-                                    showToast(`¡Código de referencia ${orderRef} copiado!`);
-                                  }}
-                                  className="text-xs font-mono font-bold text-[#FF2E93] hover:text-[#ff5aa7] flex items-center gap-1 ml-auto"
-                                  title="Clic para copiar"
+                                  onClick={() => removeFromCart(item.key)}
+                                  className="text-zinc-400 hover:text-red-500 p-1 rounded-lg transition"
+                                  title="Quitar producto"
                                 >
-                                  {orderRef}
-                                  <Icon.Copy className="w-3.5 h-3.5" />
+                                  <Icon.Trash className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <form id="kaoj-checkout-form" onSubmit={handleCheckoutSubmit} className="space-y-4">
+
+                        {/* =====================================================================
+                            PASO 1: DATOS DEL CLIENTE & PUNTOS KAOJ VIP
+                            ===================================================================== */}
+                        {checkoutStep === 1 && (
+                          <div className="space-y-4 animate-in fade-in">
+
+                            {/* BANNER EXPLICATIVO CLARO DE PUNTOS KAOJ VIP */}
+                            <div className="bg-gradient-to-br from-amber-50 via-pink-50 to-white border border-amber-200/90 rounded-2xl p-3.5 space-y-2 shadow-2xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-extrabold text-zinc-900 text-xs flex items-center gap-1.5">
+                                  <Icon.Diamond className="w-4 h-4 text-[#FF2E93]" />
+                                  <span>Programa de Puntos Kaoj VIP</span>
+                                </span>
+                                <span className="bg-amber-200/90 text-amber-950 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                  50 Pts = $5.00 OFF
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-700 leading-relaxed">
+                                Por cada <b>$1.00 de compra ganas 1 punto</b>. Al acumular <b>50 puntos tienes $5.00 de descuento directo</b> (100 pts = $10.00 OFF). Con este pedido sumarás <b className="text-emerald-700">+{pointsEarnedWithOrder} puntos</b>.
+                              </p>
+
+                              {/* ESTADO DE PUNTOS DE LA CLIENTA */}
+                              <div className="bg-white/90 border border-amber-200/70 rounded-xl p-2.5 space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-bold text-zinc-700">
+                                    Tu saldo actual: <b className="text-[#FF2E93]">{customerCurrentPoints} pts</b>
+                                  </span>
+                                  {canRedeemPoints ? (
+                                    <span className="text-emerald-700 font-black text-[10px] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                      ✓ ¡Tienes ${(maxAvailablePointBlocks * 5).toFixed(2)} OFF disponibles!
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-500 text-[10px] font-semibold">
+                                      Faltan {pointsNeededForNextDiscount} pts para $5.00 OFF
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="w-full bg-zinc-100 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className="bg-gradient-to-r from-[#FF2E93] to-amber-500 h-full rounded-full transition-all duration-500"
+                                    style={{ width: `${pointsProgressPercent}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* DATOS DE CONTACTO Y FACTURACIÓN / GUÍA */}
+                            <div className="bg-white border border-zinc-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+                              <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                <h4 className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
+                                  <Icon.User className="w-4 h-4 text-[#FF2E93]" />
+                                  <span>Paso 1: Tus Datos Personales</span>
+                                </h4>
+                                <span className="text-[10px] text-zinc-400">* Campos obligatorios</span>
+                              </div>
+
+                              <div className="space-y-2.5">
+                                <div>
+                                  <label className="font-bold text-zinc-700 text-[11px] block mb-1">Nombre y Apellido *</label>
+                                  <input
+                                    required
+                                    placeholder="Ej. Camila Moreira"
+                                    value={customer.name}
+                                    onChange={e => setCustomer({ ...customer, name: e.target.value })}
+                                    className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs font-medium bg-zinc-50/50 focus:bg-white transition"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                  <div>
+                                    <label className="font-bold text-zinc-700 text-[11px] block mb-1">Celular (WhatsApp) *</label>
+                                    <input
+                                      required
+                                      type="tel"
+                                      placeholder="Ej. 0991234567"
+                                      value={customer.phone}
+                                      onChange={e => {
+                                        setCustomer({ ...customer, phone: e.target.value });
+                                        handlePhoneLookup(e.target.value);
+                                      }}
+                                      onBlur={e => handlePhoneLookup(e.target.value)}
+                                      className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs font-bold bg-zinc-50/50 focus:bg-white transition"
+                                    />
+                                    <span className="text-[10px] text-zinc-400 block mt-0.5">Activa tus puntos VIP automáticamente</span>
+                                  </div>
+
+                                  <div>
+                                    <label className="font-bold text-zinc-700 text-[11px] block mb-1">Cédula o RUC</label>
+                                    <input
+                                      placeholder="Requerido para Servientrega"
+                                      value={customer.idCard}
+                                      onChange={e => setCustomer({ ...customer, idCard: e.target.value })}
+                                      className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-zinc-50/50 focus:bg-white transition"
+                                    />
+                                    <span className="text-[10px] text-zinc-400 block mt-0.5">Para tu guía de envío nacional</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {activeCustomerCode && (
+                                <div className="bg-pink-50/90 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-lg bg-[#FF2E93] text-white font-black text-xs flex items-center justify-center">
+                                      <Icon.Diamond className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-zinc-500 font-semibold">Tu Código Único VIP asignado:</p>
+                                      <p className="text-sm font-black text-[#FF2E93] tracking-wider">{activeCustomerCode}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-[10px] bg-white text-[#FF2E93] border border-pink-200 px-2.5 py-0.5 rounded-full font-extrabold block">
+                                      {customerCurrentPoints} pts actuales
+                                    </span>
+                                    <span className="text-[9px] text-emerald-700 font-bold">
+                                      +{pointsEarnedWithOrder} pts hoy
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* =====================================================================
+                            PASO 2: ENVÍO (4 OPCIONES CON DESGLOSE DINÁMICO DE MÉTODOS Y PRECIOS)
+                            ===================================================================== */}
+                        {checkoutStep === 2 && (
+                          <div className="space-y-4 animate-in fade-in">
+                            <div className="bg-white border border-zinc-200 rounded-2xl p-4 space-y-3.5 shadow-2xs">
+                              <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                <div>
+                                  <h4 className="font-bold text-zinc-900 text-xs flex items-center gap-1.5">
+                                    <Icon.Truck className="w-4 h-4 text-[#FF2E93]" />
+                                    <span>Paso 2: Elige cómo recibir tu pedido</span>
+                                  </h4>
+                                  <p className="text-[11px] text-zinc-500 mt-0.5">Selecciona una modalidad para ver sus opciones y tarifas:</p>
+                                </div>
+                                {qualifiesFreeShipping && (
+                                  <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    🎉 Envío Gratis
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* 4 TARJETAS PRINCIPALES DE MODALIDAD DE ENVÍO */}
+                              <div className="grid grid-cols-2 gap-2">
+                                {SHIPPING_CATEGORIES.map(cat => {
+                                  const isSelected = activeShippingCategory === cat.id;
+                                  return (
+                                    <button
+                                      key={cat.id}
+                                      type="button"
+                                      onClick={() => handleSelectShippingCategory(cat.id)}
+                                      className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                                        isSelected
+                                          ? 'border-[#FF2E93] bg-pink-50/70 ring-1 ring-[#FF2E93] shadow-xs'
+                                          : 'border-zinc-200 bg-zinc-50/60 hover:bg-white hover:border-zinc-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between w-full">
+                                        <span className="text-base">{cat.icon}</span>
+                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                          cat.id === 'retiro' || qualifiesFreeShipping
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : isSelected
+                                            ? 'bg-[#FF2E93] text-white'
+                                            : 'bg-zinc-200 text-zinc-700'
+                                        }`}>
+                                          {cat.id !== 'retiro' && qualifiesFreeShipping ? 'GRATIS' : cat.badge}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <p className={`font-extrabold text-xs leading-tight ${isSelected ? 'text-[#FF2E93]' : 'text-zinc-900'}`}>
+                                          {cat.title}
+                                        </p>
+                                        <p className="text-[10px] text-zinc-500 leading-tight mt-0.5">
+                                          {cat.subtitle}
+                                        </p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* DESGLOSE DINÁMICO DE SUB-MÉTODOS Y PRECIOS SEGÚN LA MODALIDAD SELECCIONADA */}
+                              <div className="bg-zinc-50 border border-zinc-200/90 rounded-2xl p-3 space-y-2">
+                                <p className="text-[11px] font-extrabold text-zinc-700 uppercase tracking-wider flex items-center justify-between">
+                                  <span>
+                                    {activeShippingCategory === 'retiro' && '📍 Selecciona el punto de retiro personal:'}
+                                    {activeShippingCategory === 'domicilio' && '🛵 Selecciona tu ciudad (Manta o Portoviejo):'}
+                                    {activeShippingCategory === 'cooperativa' && '🚌 Selecciona el destino de la Cooperativa:'}
+                                    {activeShippingCategory === 'servientrega' && '📦 Selecciona la modalidad de Servientrega:'}
+                                  </span>
+                                </p>
+
+                                <div className="space-y-2">
+                                  {categorySubMethods.map(method => {
+                                    const isMethodSelected = deliveryObj?.id === method.id;
+                                    const methodPrice = Number(method.price || 0);
+                                    const effectivePrice = (qualifiesFreeShipping && methodPrice > 0) ? 0 : methodPrice;
+
+                                    return (
+                                      <label
+                                        key={method.id}
+                                        onClick={() => setCustomer(prev => ({
+                                          ...prev,
+                                          delivery: method.id,
+                                          city: method.city || (method.id.includes('manta') ? 'Manta' : method.id.includes('portoviejo') ? 'Portoviejo' : prev.city)
+                                        }))}
+                                        className={`flex items-start justify-between gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                                          isMethodSelected
+                                            ? 'bg-white border-[#FF2E93] shadow-xs ring-1 ring-[#FF2E93]/40'
+                                            : 'bg-white/70 border-zinc-200 hover:border-pink-200'
+                                        }`}
+                                      >
+                                        <div className="flex items-start gap-2.5 min-w-0">
+                                          <input
+                                            type="radio"
+                                            name="delivery_submethod"
+                                            checked={isMethodSelected}
+                                            onChange={() => {}}
+                                            className="mt-0.5 accent-[#FF2E93]"
+                                          />
+                                          <div className="min-w-0">
+                                            <p className="font-bold text-zinc-900 text-xs leading-snug">{method.label}</p>
+                                            {method.note && (
+                                              <p className="text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{method.note}</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          {effectivePrice === 0 ? (
+                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                              GRATIS
+                                            </span>
+                                          ) : (
+                                            <span className="font-black text-xs text-[#FF2E93]">
+                                              +${effectivePrice.toFixed(2)}
+                                            </span>
+                                          )}
+                                          {qualifiesFreeShipping && methodPrice > 0 && (
+                                            <span className="block text-[9px] text-zinc-400 line-through">${methodPrice.toFixed(2)}</span>
+                                          )}
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* CAMPOS DINÁMICOS DE DIRECCIÓN / DESTINO SEGÚN LA SELECCIÓN */}
+                              {activeShippingCategory === 'retiro' && (
+                                <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 space-y-2">
+                                  <p className="text-[11px] text-emerald-900 font-semibold">
+                                    ✓ Coordinaremos contigo por WhatsApp el día y hora exacta para tu entrega en <b>{deliveryObj?.label}</b> sin costo adicional.
+                                  </p>
+                                  <input
+                                    placeholder="Nota u horario preferido de retiro (Opcional)..."
+                                    value={customer.deliveryNotes || ''}
+                                    onChange={e => setCustomer({ ...customer, deliveryNotes: e.target.value })}
+                                    className="w-full border border-emerald-200 rounded-xl p-2 text-xs bg-white outline-none focus:border-emerald-500"
+                                  />
+                                </div>
+                              )}
+
+                              {activeShippingCategory === 'domicilio' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div>
+                                    <label className="font-bold text-zinc-700 text-[11px] block mb-1">
+                                      Dirección exacta y referencia en {deliveryObj?.id?.includes('manta') ? 'Manta' : 'Portoviejo'} *
+                                    </label>
+                                    <input
+                                      required
+                                      placeholder={`Ej. ${deliveryObj?.id?.includes('manta') ? 'Manta, Cdla. Universitaria, calle 15 y av. 24, casa blanca' : 'Portoviejo, Av. Manabí y América, frente al parque...'}`}
+                                      value={customer.address}
+                                      onChange={e => setCustomer({ ...customer, address: e.target.value })}
+                                      className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                    />
+                                  </div>
+                                  <input
+                                    placeholder="Referencia adicional o indicación para el motorizado (Opcional)"
+                                    value={customer.deliveryNotes || ''}
+                                    onChange={e => setCustomer({ ...customer, deliveryNotes: e.target.value })}
+                                    className="w-full border border-zinc-200 rounded-xl p-2 text-xs bg-zinc-50 outline-none focus:bg-white"
+                                  />
+                                </div>
+                              )}
+
+                              {activeShippingCategory === 'cooperativa' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="font-bold text-zinc-700 text-[11px] block mb-1">Ciudad / Cantón de destino *</label>
+                                      <input
+                                        required
+                                        placeholder="Ej. Chone / Guayaquil / Quito..."
+                                        value={customer.city || ''}
+                                        onChange={e => setCustomer({ ...customer, city: e.target.value })}
+                                        className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="font-bold text-zinc-700 text-[11px] block mb-1">Cédula de quien retira</label>
+                                      <input
+                                        placeholder="Cédula / RUC"
+                                        value={customer.idCard}
+                                        onChange={e => setCustomer({ ...customer, idCard: e.target.value })}
+                                        className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="font-bold text-zinc-700 text-[11px] block mb-1">Cooperativa preferida / Oficina de retiro *</label>
+                                    <input
+                                      required
+                                      placeholder="Ej. Cooperativa Reina del Camino - Terminal Terrestre"
+                                      value={customer.address}
+                                      onChange={e => setCustomer({ ...customer, address: e.target.value })}
+                                      className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {activeShippingCategory === 'servientrega' && (
+                                <div className="space-y-2.5 pt-1">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="font-bold text-zinc-700 text-[11px] block mb-1">Ciudad y Provincia *</label>
+                                      <input
+                                        required
+                                        placeholder="Ej. Guayaquil, Guayas"
+                                        value={customer.city || ''}
+                                        onChange={e => setCustomer({ ...customer, city: e.target.value })}
+                                        className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="font-bold text-zinc-700 text-[11px] block mb-1">Cédula / RUC (Obligatorio Guía) *</label>
+                                      <input
+                                        required
+                                        placeholder="10 o 13 dígitos"
+                                        value={customer.idCard}
+                                        onChange={e => setCustomer({ ...customer, idCard: e.target.value })}
+                                        className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white font-bold"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="font-bold text-zinc-700 text-[11px] block mb-1">
+                                      {deliveryObj?.id === 'servientrega_agencia'
+                                        ? 'Agencia Oficial de Servientrega donde retirarás *'
+                                        : 'Dirección exacta de domicilio u oficina *'}
+                                    </label>
+                                    <input
+                                      required
+                                      placeholder={
+                                        deliveryObj?.id === 'servientrega_agencia'
+                                          ? 'Ej. Agencia Servientrega Centro / Mall del Sol...'
+                                          : 'Ej. Calle principal, secundaria, número de casa y referencia...'
+                                      }
+                                      value={customer.address}
+                                      onChange={e => setCustomer({ ...customer, address: e.target.value })}
+                                      className="w-full border border-zinc-300 focus:border-[#FF2E93] rounded-xl p-2.5 outline-none text-xs bg-white"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* =====================================================================
+                            PASO 3: PAGO (PUNTOS VIP, CUPÓN SIN SUGERENCIA, DEUNA / TRANSFERENCIA / PAYPHONE CON RECARGO)
+                            ===================================================================== */}
+                        {checkoutStep === 3 && (
+                          <div className="space-y-4 animate-in fade-in">
+
+                            {/* RESUMEN COMPACTO DE DATOS Y ENVÍO CON OPCIÓN DE CAMBIAR */}
+                            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2 text-[11px]">
+                              <div className="flex items-center justify-between border-b border-zinc-200/70 pb-1.5">
+                                <div className="min-w-0">
+                                  <span className="text-zinc-400 font-bold uppercase text-[9px] block">1. Cliente</span>
+                                  <p className="font-bold text-zinc-800 truncate">
+                                    {customer.name} • {customer.phone} {activeCustomerCode ? `(${activeCustomerCode})` : ''}
+                                  </p>
+                                </div>
+                                <button type="button" onClick={() => setCheckoutStep(1)} className="text-[#FF2E93] font-bold hover:underline shrink-0 ml-2">
+                                  Cambiar
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="min-w-0">
+                                  <span className="text-zinc-400 font-bold uppercase text-[9px] block">2. Método de Envío</span>
+                                  <p className="font-bold text-zinc-800 truncate">
+                                    {deliveryObj?.label} ({finalShippingAfterCoupon === 0 ? 'GRATIS' : `$${finalShippingAfterCoupon.toFixed(2)}`})
+                                  </p>
+                                  {(customer.city || customer.address) && (
+                                    <p className="text-zinc-500 truncate text-[10px]">
+                                      {[customer.city, customer.address].filter(Boolean).join(' - ')}
+                                    </p>
+                                  )}
+                                </div>
+                                <button type="button" onClick={() => setCheckoutStep(2)} className="text-[#FF2E93] font-bold hover:underline shrink-0 ml-2">
+                                  Cambiar
                                 </button>
                               </div>
                             </div>
 
-                            <a
-                              href={payphoneUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block w-full text-center bg-gradient-to-r from-[#FF6600] to-[#E05500] hover:brightness-110 text-white py-2.5 rounded-xl font-black text-sm tracking-wide shadow-lg transition-transform active:scale-98"
-                            >
-                              💳 Pagar ${total.toFixed(2)} en Payphone
-                            </a>
+                            {/* SECCIÓN DE PUNTOS VIP: CLARA Y TRANSPARENTE ($5 DE DESCUENTO POR CADA 50 PUNTOS) */}
+                            <div className="bg-gradient-to-r from-amber-50 to-pink-50 border border-amber-300 rounded-2xl p-3.5 space-y-2 shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-amber-950 text-xs flex items-center gap-1.5">
+                                  <Icon.Diamond className="w-4 h-4 text-[#FF2E93]" />
+                                  <span>Tus Puntos Kaoj VIP: <b>{customerCurrentPoints} pts</b></span>
+                                </span>
+                                <span className="text-[10px] bg-amber-200 text-amber-950 px-2 py-0.5 rounded-full font-black">
+                                  50 pts = $5.00 OFF
+                                </span>
+                              </div>
 
-                            <div className="pt-1">
-                              <label className="font-bold text-zinc-300 text-[11px] block mb-1">
-                                Número de Autorización o Celular de tu pago Payphone *:
-                              </label>
-                              <input
-                                required
-                                placeholder="Ej. Aut #839201 o número celular de cobro..."
-                                value={customer.payphoneRef}
-                                onChange={e => setCustomer({ ...customer, payphoneRef: e.target.value })}
-                                className="w-full border border-zinc-700 rounded-xl p-2.5 text-xs bg-zinc-800 text-white placeholder-zinc-500 outline-none focus:border-[#FF2E93]"
-                              />
-                              <p className="text-[10px] text-zinc-400 mt-1">
-                                💡 Tras pagar en Payphone, escribe el código de confirmación recibido para validar tu pedido al instante.
+                              <p className="text-[11px] text-zinc-700">
+                                Recuerda: <b>Por cada 50 puntos acumulados tienes $5.00 de descuento directo</b>.
                               </p>
+
+                              {canRedeemPoints ? (
+                                <div className="bg-white border border-amber-300 rounded-xl p-2.5 space-y-2">
+                                  <label className="flex items-center justify-between gap-2 cursor-pointer">
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={applyPointsDiscount}
+                                        onChange={e => setApplyPointsDiscount(e.target.checked)}
+                                        className="w-4 h-4 accent-[#FF2E93] rounded"
+                                      />
+                                      <span className="text-xs font-extrabold text-zinc-900">
+                                        Canjear {activeRedeemBlocks * 50 || 50} puntos por -${(activeRedeemBlocks * 5 || 5).toFixed(2)} de descuento
+                                      </span>
+                                    </div>
+                                    <span className="text-xs font-black text-emerald-700">
+                                      -${(applyPointsDiscount ? pointsDiscountAmount : 5).toFixed(2)}
+                                    </span>
+                                  </label>
+
+                                  {applyPointsDiscount && maxRedeemableBlocks > 1 && (
+                                    <div className="flex items-center justify-between pt-1.5 border-t border-zinc-100 text-[11px]">
+                                      <span className="text-zinc-600 font-semibold">¿Cuántos bloques de 50 pts usar?</span>
+                                      <select
+                                        value={redeemBlocksCount}
+                                        onChange={e => setRedeemBlocksCount(Number(e.target.value))}
+                                        className="border border-amber-300 rounded-lg px-2 py-1 font-bold text-zinc-900 bg-amber-50/50 outline-none"
+                                      >
+                                        {Array.from({ length: maxRedeemableBlocks }).map((_, idx) => {
+                                          const b = idx + 1;
+                                          return (
+                                            <option key={b} value={b}>
+                                              {b * 50} puntos (-${(b * 5).toFixed(2)} USD)
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="bg-white/80 border border-amber-200/70 rounded-xl p-2.5 flex items-center justify-between text-[11px]">
+                                  <span className="text-zinc-600">
+                                    {customerCurrentPoints > 0
+                                      ? `Te faltan ${pointsNeededForNextDiscount} puntos para tus próximos $5.00 de descuento.`
+                                      : 'Con esta compra empezarás a acumular puntos para tus $5.00 de descuento.'}
+                                  </span>
+                                  <span className="font-extrabold text-emerald-700 shrink-0 ml-2">
+                                    +{pointsEarnedWithOrder} pts hoy
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* CUPÓN DE DESCUENTO (SIN SUGERIR CUPONES EN EL CHECKOUT) */}
+                            <div className="bg-white border border-zinc-200 rounded-2xl p-3 space-y-2">
+                              {appliedCoupon ? (
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <Icon.Tag className="w-3.5 h-3.5 text-emerald-700" />
+                                    <span className="font-black text-emerald-800 tracking-wider uppercase">{appliedCoupon.code}</span>
+                                    <span className="text-[11px] text-emerald-700">(-${couponDiscountAmount.toFixed(2)})</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleRemoveCoupon}
+                                    className="text-[11px] text-red-500 hover:text-red-700 font-bold px-2 py-0.5 rounded hover:bg-red-50"
+                                  >
+                                    Quitar
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCouponInputBox(!showCouponInputBox)}
+                                    className="w-full flex items-center justify-between text-xs font-bold text-zinc-700 hover:text-[#FF2E93] transition"
+                                  >
+                                    <span className="flex items-center gap-1.5">
+                                      <Icon.Tag className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                      <span>¿Tienes un código de cupón?</span>
+                                    </span>
+                                    <span className="text-[10px] text-zinc-400 font-semibold">
+                                      {showCouponInputBox ? 'Ocultar ▲' : 'Ingresar código ▼'}
+                                    </span>
+                                  </button>
+                                  {showCouponInputBox && (
+                                    <div className="flex gap-2 pt-1.5">
+                                      <input
+                                        type="text"
+                                        placeholder="Ingresa tu código aquí"
+                                        value={couponCodeInput}
+                                        onChange={e => setCouponCodeInput(e.target.value)}
+                                        className="flex-1 border border-zinc-300 rounded-xl px-3 py-2 text-xs bg-zinc-50 focus:bg-white uppercase tracking-wider outline-none focus:border-[#FF2E93]"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleApplyCoupon}
+                                        className="bg-zinc-900 hover:bg-black text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-2xs"
+                                      >
+                                        Aplicar
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                            {/* SELECCIÓN DE MÉTODO DE PAGO: DEUNA, TRANSFERENCIA BANCARIA, TARJETA (PAYPHONE) */}
+                            <div className="bg-white border border-zinc-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+                              <label className="font-bold text-zinc-900 text-xs block">
+                                Selecciona tu Método de Pago:
+                              </label>
+
+                              <div className="grid grid-cols-3 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomer({ ...customer, paymentMethod: 'deuna' })}
+                                  className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                                    customer.paymentMethod === 'deuna'
+                                      ? 'bg-purple-700 text-white border-purple-700 shadow-sm'
+                                      : 'bg-zinc-50 text-zinc-800 border-zinc-200 hover:bg-white'
+                                  }`}
+                                >
+                                  <span className="font-extrabold text-xs">Deuna!</span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    customer.paymentMethod === 'deuna' ? 'bg-purple-900/60 text-purple-100' : 'bg-emerald-50 text-emerald-700'
+                                  }`}>
+                                    Sin recargo
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomer({ ...customer, paymentMethod: 'transferencia' })}
+                                  className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                                    customer.paymentMethod === 'transferencia'
+                                      ? 'bg-[#FF2E93] text-white border-[#FF2E93] shadow-sm'
+                                      : 'bg-zinc-50 text-zinc-800 border-zinc-200 hover:bg-white'
+                                  }`}
+                                >
+                                  <span className="font-extrabold text-xs leading-tight">Transferencia</span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    customer.paymentMethod === 'transferencia' ? 'bg-pink-800/60 text-pink-100' : 'bg-emerald-50 text-emerald-700'
+                                  }`}>
+                                    Sin recargo
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomer({ ...customer, paymentMethod: 'payphone' })}
+                                  className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                                    customer.paymentMethod === 'payphone'
+                                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
+                                      : 'bg-zinc-50 text-zinc-800 border-zinc-200 hover:bg-white'
+                                  }`}
+                                >
+                                  <span className="font-extrabold text-xs leading-tight">Tarjeta (Payphone)</span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    customer.paymentMethod === 'payphone' ? 'bg-[#FF6600] text-white' : 'bg-amber-100 text-amber-900'
+                                  }`}>
+                                    +{payphoneSurchargePercent}% tarjeta
+                                  </span>
+                                </button>
+                              </div>
+
+                              {/* INSTRUCCIONES Y ACCIONES SEGÚN EL MÉTODO DE PAGO */}
+                              {customer.paymentMethod === 'deuna' && (
+                                <div className="bg-purple-50/80 border border-purple-200 rounded-2xl p-3.5 space-y-2.5 text-center">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-bold text-purple-950">Pago directo con Deuna! (Banco Pichincha)</span>
+                                    <span className="font-black text-purple-900">${total.toFixed(2)} USD</span>
+                                  </div>
+                                  {settings.deuna_qr_url && (
+                                    <img src={settings.deuna_qr_url} alt="QR Deuna" className="w-36 h-36 mx-auto rounded-xl border border-purple-200 object-contain bg-white p-1.5" />
+                                  )}
+                                  <a
+                                    href={settings.deuna_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold text-xs shadow-xs transition"
+                                  >
+                                    Abrir App Deuna! y pagar ${total.toFixed(2)}
+                                  </a>
+                                  <p className="text-[10px] text-purple-800">
+                                    Titular: <b>{settings.bank_pichincha_name}</b> • Luego sube la captura de tu comprobante abajo.
+                                  </p>
+                                </div>
+                              )}
+
+                              {customer.paymentMethod === 'transferencia' && (
+                                <div className="bg-[#F5F6F8] border border-zinc-200/80 rounded-2xl p-3.5 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="font-bold text-zinc-900 text-xs">Elige tu banco para transferir:</p>
+                                    <span className="font-black text-zinc-900 text-xs">${total.toFixed(2)} USD</span>
+                                  </div>
+
+                                  {/* SELECTOR VISUAL DE BANCOS CON LOGOS OFICIALES */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {/* BOTÓN BANCO GUAYAQUIL */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedTransferBank('guayaquil')}
+                                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                                        selectedTransferBank === 'guayaquil'
+                                          ? 'bg-white border-[#D8006C] ring-2 ring-[#D8006C]/20 shadow-xs'
+                                          : 'bg-white/60 border-zinc-200 hover:bg-white opacity-75 hover:opacity-100'
+                                      }`}
+                                    >
+                                      {/* Logo Vectorial Banco Guayaquil */}
+                                      <div className="w-9 h-9 rounded-xl bg-[#D8006C] flex items-center justify-center shrink-0 shadow-2xs">
+                                        <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                          <path d="M4 5a2 2 0 012-2h6a5 5 0 013.9 8.12A5.5 5.5 0 0112.5 21H6a2 2 0 01-2-2V5zm4 3v3h4a1.5 1.5 0 000-3H8zm0 6v3.5h4.5a1.75 1.75 0 000-3.5H8z" />
+                                        </svg>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="font-extrabold text-zinc-900 text-[11px] leading-tight truncate">Banco Guayaquil</p>
+                                        <span className="text-[10px] text-[#D8006C] font-bold block">Cuenta Ahorros</span>
+                                      </div>
+                                    </button>
+
+                                    {/* BOTÓN BANCO PICHINCHA */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedTransferBank('pichincha')}
+                                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                                        selectedTransferBank === 'pichincha'
+                                          ? 'bg-white border-[#0F265C] ring-2 ring-[#FFDD00] shadow-xs'
+                                          : 'bg-white/60 border-zinc-200 hover:bg-white opacity-75 hover:opacity-100'
+                                      }`}
+                                    >
+                                      {/* Logo Vectorial Banco Pichincha */}
+                                      <div className="w-9 h-9 rounded-xl bg-[#FFDD00] border border-amber-300 flex items-center justify-center shrink-0 shadow-2xs">
+                                        <svg className="w-5 h-5 text-[#0F265C]" viewBox="0 0 24 24" fill="currentColor">
+                                          <path d="M4 4h16v16H4V4zm3.5 3.5v9h3v-3h2.5a3 3 0 000-6H7.5zm3 2.5h2a.75.75 0 010 1.5h-2V10z" />
+                                        </svg>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="font-extrabold text-[#0F265C] text-[11px] leading-tight truncate">Banco Pichincha</p>
+                                        <span className="text-[10px] text-zinc-600 font-bold block">Cuenta Ahorros</span>
+                                      </div>
+                                    </button>
+                                  </div>
+
+                                  {/* TARJETA LIMPIA CON SOLO LOS DATOS DEL BANCO SELECCIONADO */}
+                                  {selectedTransferBank === 'guayaquil' ? (
+                                    <div className="bg-white rounded-xl border border-pink-200/80 p-3.5 space-y-2.5 shadow-2xs animate-in fade-in">
+                                      <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="w-2.5 h-2.5 rounded-full bg-[#D8006C]"></span>
+                                          <span className="font-extrabold text-xs text-zinc-900">Banco Guayaquil • Cuenta de Ahorros</span>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-[#D8006C] bg-pink-50 px-2 py-0.5 rounded-full">Seleccionado</span>
+                                      </div>
+
+                                      <div className="flex items-center justify-between bg-[#F5F6F8] rounded-xl p-2.5">
+                                        <div>
+                                          <span className="text-[10px] text-zinc-500 font-semibold block">Número de Cuenta</span>
+                                          <span className="font-mono font-black text-sm text-zinc-900 tracking-wider">{settings.bank_guayaquil_acc}</span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(settings.bank_guayaquil_acc, 'Cuenta Banco Guayaquil')}
+                                          className="px-3 py-1.5 bg-[#D8006C] hover:bg-[#b5005a] text-white rounded-lg font-bold text-[11px] flex items-center gap-1.5 shadow-2xs transition"
+                                        >
+                                          <Icon.Copy className="w-3.5 h-3.5" /> Copiar Cuenta
+                                        </button>
+                                      </div>
+
+                                      <div className="flex items-center justify-between text-[11px] pt-0.5">
+                                        <div>
+                                          <p className="text-zinc-500">Titular: <b className="text-zinc-900">{settings.bank_guayaquil_name}</b></p>
+                                          <p className="text-zinc-500">Cédula / RUC: <b className="text-zinc-900 font-mono">{settings.bank_guayaquil_id}</b></p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(settings.bank_guayaquil_id, 'Cédula titular')}
+                                          className="text-[10px] font-bold text-zinc-600 hover:text-[#D8006C] bg-zinc-100 hover:bg-pink-50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition"
+                                        >
+                                          <Icon.Copy className="w-3 h-3" /> Copiar CI
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="bg-white rounded-xl border border-amber-300/80 p-3.5 space-y-2.5 shadow-2xs animate-in fade-in">
+                                      <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="w-2.5 h-2.5 rounded-full bg-[#FFDD00] border border-[#0F265C]"></span>
+                                          <span className="font-extrabold text-xs text-[#0F265C]">Banco Pichincha • Cuenta de Ahorros</span>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-[#0F265C] bg-amber-100 px-2 py-0.5 rounded-full">Seleccionado</span>
+                                      </div>
+
+                                      <div className="flex items-center justify-between bg-[#F5F6F8] rounded-xl p-2.5">
+                                        <div>
+                                          <span className="text-[10px] text-zinc-500 font-semibold block">Número de Cuenta</span>
+                                          <span className="font-mono font-black text-sm text-[#0F265C] tracking-wider">{settings.bank_pichincha_acc}</span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(settings.bank_pichincha_acc, 'Cuenta Banco Pichincha')}
+                                          className="px-3 py-1.5 bg-[#0F265C] hover:bg-black text-white rounded-lg font-bold text-[11px] flex items-center gap-1.5 shadow-2xs transition"
+                                        >
+                                          <Icon.Copy className="w-3.5 h-3.5" /> Copiar Cuenta
+                                        </button>
+                                      </div>
+
+                                      <div className="flex items-center justify-between text-[11px] pt-0.5">
+                                        <div>
+                                          <p className="text-zinc-500">Titular: <b className="text-zinc-900">{settings.bank_pichincha_name}</b></p>
+                                          <p className="text-zinc-500">Cédula / RUC: <b className="text-zinc-900 font-mono">{settings.bank_pichincha_id}</b></p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyToClipboard(settings.bank_pichincha_id, 'Cédula titular')}
+                                          className="text-[10px] font-bold text-zinc-600 hover:text-[#0F265C] bg-zinc-100 hover:bg-amber-50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition"
+                                        >
+                                          <Icon.Copy className="w-3 h-3" /> Copiar CI
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {customer.paymentMethod === 'payphone' && (() => {
+                                const amountCents = Math.round(total * 100);
+                                const orderRef = 'KAOJ-' + (activeCustomerCode || (customer.phone ? customer.phone.slice(-4) : Date.now().toString().slice(-4)));
+                                let payphoneUrl = settings.payphone_link || 'https://payphone.app/';
+                                try {
+                                  const base = payphoneUrl.trim();
+                                  const u = new URL(base.startsWith('http') ? base : `https://${base}`);
+                                  u.searchParams.set('amount', amountCents.toString());
+                                  u.searchParams.set('amountDollars', total.toFixed(2));
+                                  u.searchParams.set('reference', orderRef);
+                                  u.searchParams.set('clientTransactionId', orderRef);
+                                  if (customer.phone) u.searchParams.set('phone', customer.phone.replace(/\D/g, ''));
+                                  if (customer.name) u.searchParams.set('clientName', customer.name);
+                                  payphoneUrl = u.toString();
+                                } catch (err) {
+                                  const sep = payphoneUrl.includes('?') ? '&' : '?';
+                                  payphoneUrl = `${payphoneUrl}${sep}amount=${amountCents}&reference=${encodeURIComponent(orderRef)}`;
+                                }
+
+                                return (
+                                  <div className="bg-gradient-to-br from-zinc-900 via-zinc-900 to-black text-white border border-zinc-700 rounded-2xl p-4 space-y-3 shadow-lg">
+                                    <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className="bg-[#FF6600] text-white text-[10px] font-black px-2 py-0.5 rounded-full tracking-wide">PAYPHONE</span>
+                                        <span className="text-xs font-bold text-zinc-200">Tarjeta Débito / Crédito</span>
+                                      </div>
+                                      <span className="text-[10px] text-zinc-400 font-medium">Visa • MasterCard • Diners</span>
+                                    </div>
+
+                                    {/* DESGLOSE CLARO DEL RECARGO POR COMISIÓN DE TARJETA PAYPHONE */}
+                                    <div className="bg-zinc-800/90 rounded-xl p-3 space-y-1.5 text-xs border border-zinc-700/70">
+                                      <div className="flex justify-between text-zinc-300 text-[11px]">
+                                        <span>Subtotal pedido + envío:</span>
+                                        <span>${baseTotalBeforeCardFee.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex justify-between text-amber-400 font-semibold text-[11px]">
+                                        <span>Recargo comisión tarjeta ({payphoneSurchargePercent}%):</span>
+                                        <span>+${payphoneSurchargeAmount.toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between pt-1.5 border-t border-zinc-700">
+                                        <div>
+                                          <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Total con recargo</p>
+                                          <p className="text-lg font-black text-white">${total.toFixed(2)} <span className="text-[11px] text-zinc-400 font-normal">USD</span></p>
+                                        </div>
+                                        <div className="text-right">
+                                          <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Referencia</p>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(orderRef);
+                                              showToast(`¡Código de referencia ${orderRef} copiado!`);
+                                            }}
+                                            className="text-xs font-mono font-bold text-[#FF2E93] hover:text-[#ff5aa7] flex items-center gap-1 ml-auto"
+                                          >
+                                            {orderRef}
+                                            <Icon.Copy className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <a
+                                      href={payphoneUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block w-full text-center bg-gradient-to-r from-[#FF6600] to-[#E05500] hover:brightness-110 text-white py-2.5 rounded-xl font-black text-xs sm:text-sm tracking-wide shadow-lg transition-transform active:scale-98"
+                                    >
+                                      💳 Pagar ${total.toFixed(2)} con Tarjeta en Payphone
+                                    </a>
+
+                                    <div className="pt-1 space-y-2">
+                                      <div>
+                                        <label className="font-bold text-zinc-300 text-[11px] block mb-1">
+                                          Número de Autorización / Referencia de tu pago Payphone *:
+                                        </label>
+                                        <input
+                                          placeholder="Ej. Aut #839201 o celular registrado en Payphone..."
+                                          value={customer.payphoneRef}
+                                          onChange={e => setCustomer({ ...customer, payphoneRef: e.target.value })}
+                                          className="w-full border border-zinc-700 rounded-xl p-2.5 text-xs bg-zinc-800 text-white placeholder-zinc-500 outline-none focus:border-[#FF2E93]"
+                                        />
+                                      </div>
+                                      <p className="text-[10px] text-zinc-400">
+                                        💡 Tras completar el pago en Payphone, escribe el código de autorización arriba o adjunta la captura abajo.
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* SUBIDA DE COMPROBANTE DE PAGO CON VISTA PREVIA */}
+                              <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2">
+                                <p className="font-bold text-amber-950 text-xs flex items-center justify-between">
+                                  <span>
+                                    {customer.paymentMethod === 'payphone'
+                                      ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):'
+                                      : 'Sube la captura de tu comprobante de pago *:'}
+                                  </span>
+                                  {uploading && <span className="text-[10px] text-[#FF2E93] animate-pulse">Subiendo...</span>}
+                                </p>
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  onChange={async e => {
+                                    if (e.target.files[0]) {
+                                      const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
+                                      if (url) setCustomer({ ...customer, receiptUrl: url });
+                                    }
+                                  }}
+                                  className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-zinc-900 file:text-white hover:file:bg-black"
+                                />
+                                {customer.receiptUrl && (
+                                  <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl p-2">
+                                    <div className="flex items-center gap-2">
+                                      <img src={customer.receiptUrl} alt="Comprobante" className="w-9 h-9 rounded-lg object-cover border" onError={e => { e.target.style.display = 'none'; }} />
+                                      <span className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
+                                        <Icon.Check className="w-3.5 h-3.5" /> Comprobante cargado correctamente
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCustomer({ ...customer, receiptUrl: '' })}
+                                      className="text-[10px] text-red-500 font-bold hover:underline"
+                                    >
+                                      Cambiar
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* DESGLOSE FINANCIERO COMPLETO Y TRANSPARENTE */}
+                            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 space-y-1.5 text-xs">
+                              <div className="flex justify-between text-zinc-600">
+                                <span>Subtotal productos ({cart.reduce((a, b) => a + b.qty, 0)}):</span>
+                                <span className="font-bold text-zinc-900">${subtotal.toFixed(2)}</span>
+                              </div>
+
+                              {pointsDiscountAmount > 0 && (
+                                <div className="flex justify-between text-[#FF2E93] font-bold">
+                                  <span>Descuento Puntos VIP ({pointsToRedeemNow} pts):</span>
+                                  <span>-${pointsDiscountAmount.toFixed(2)}</span>
+                                </div>
+                              )}
+
+                              {couponDiscountAmount > 0 && (
+                                <div className="flex justify-between text-emerald-700 font-bold">
+                                  <span>Cupón promocional ({appliedCoupon?.code}):</span>
+                                  <span>-${couponDiscountAmount.toFixed(2)}</span>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between text-zinc-600">
+                                <span className="truncate pr-2">Envío ({deliveryObj?.label}):</span>
+                                <span className="font-bold text-zinc-900 shrink-0">
+                                  {finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : `$${finalShippingAfterCoupon.toFixed(2)}`}
+                                </span>
+                              </div>
+
+                              {payphoneSurchargeAmount > 0 && (
+                                <div className="flex justify-between text-amber-800 font-bold">
+                                  <span>Recargo Tarjeta Payphone (+{payphoneSurchargePercent}%):</span>
+                                  <span>+${payphoneSurchargeAmount.toFixed(2)}</span>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between text-base font-black text-zinc-900 pt-2 border-t border-zinc-200">
+                                <span>Total a Pagar:</span>
+                                <span className="text-[#FF2E93]">${total.toFixed(2)} USD</span>
+                              </div>
+
+                              <div className="pt-1 text-[11px] text-emerald-700 font-bold flex items-center justify-between">
+                                <span>Puntos Kaoj que acumulas hoy:</span>
+                                <span className="flex items-center gap-1">
+                                  <Icon.Diamond className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                  <span>+{pointsEarnedWithOrder} pts (50 pts = $5 OFF)</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        );
-                      })()}
-
-                      {customer.paymentMethod === 'transferencia' && (
-                        <div className="bg-pink-50/70 border border-pink-200 rounded-2xl p-3 space-y-2.5">
-                          <p className="font-bold text-[#FF2E93]">Cuentas Bancarias Kaoj Store</p>
-
-                          <div className="bg-white p-2.5 rounded-xl border flex justify-between items-center text-[11px]">
-                            <div>
-                              <p><b>Banco Guayaquil (Ahorros):</b> {settings.bank_guayaquil_acc}</p>
-                              <p className="text-zinc-500">{settings.bank_guayaquil_name} • CI: {settings.bank_guayaquil_id}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(settings.bank_guayaquil_acc, 'Cuenta B. Guayaquil')}
-                              className="p-1.5 hover:bg-pink-50 rounded-lg text-zinc-500 hover:text-[#FF2E93]"
-                              title="Copiar número"
-                            >
-                              <Icon.Copy className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          <div className="bg-white p-2.5 rounded-xl border flex justify-between items-center text-[11px]">
-                            <div>
-                              <p><b>Banco Pichincha (Ahorros):</b> {settings.bank_pichincha_acc}</p>
-                              <p className="text-zinc-500">{settings.bank_pichincha_name} • CI: {settings.bank_pichincha_id}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(settings.bank_pichincha_acc, 'Cuenta B. Pichincha')}
-                              className="p-1.5 hover:bg-pink-50 rounded-lg text-zinc-500 hover:text-[#FF2E93]"
-                              title="Copiar número"
-                            >
-                              <Icon.Copy className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* SUBIDA DE COMPROBANTE PARA TRANSFERENCIA Y DEUNA */}
-                      {customer.paymentMethod !== 'payphone' && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
-                          <p className="font-bold text-amber-900 text-xs">Sube la captura de tu comprobante de pago *:</p>
-                          <input type="file" accept="image/*,application/pdf" onChange={async e => {
-                            if (e.target.files[0]) {
-                              const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
-                              if (url) setCustomer({ ...customer, receiptUrl: url });
-                            }
-                          }} className="w-full text-xs" />
-                          {customer.receiptUrl && <p className="text-emerald-700 font-bold flex items-center gap-1"><Icon.Check className="w-3.5 h-3.5" /> Comprobante cargado</p>}
-                        </div>
-                      )}
-
-                      {/* DESGLOSE TOTAL */}
-                      <div className="border-t pt-3 space-y-1">
-                        <div className="flex justify-between"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
-                        {pointsDiscountAmount > 0 && (
-                          <div className="flex justify-between text-[#FF2E93] font-bold">
-                            <span>Descuento VIP (50 Pts):</span><span>-${pointsDiscountAmount.toFixed(2)}</span>
-                          </div>
                         )}
-                        {couponDiscountAmount > 0 && (
-                          <div className="flex justify-between text-emerald-600 font-bold">
-                            <span>Cupón ({appliedCoupon?.code}):</span><span>-${couponDiscountAmount.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span>Envío:</span><span>{finalShippingCost === 0 ? 'GRATIS' : `$${finalShippingCost.toFixed(2)}`}</span>
-                        </div>
-                        <div className="flex justify-between text-base font-black text-zinc-900 pt-1 border-t">
-                          <span>Total:</span><span className="text-[#FF2E93]">${total.toFixed(2)}</span>
-                        </div>
-                        <div className="pt-1 text-[11px] text-emerald-700 font-bold flex items-center justify-end gap-1">
-                          <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> Ganarás +{pointsEarnedWithOrder} Puntos Kaoj con esta compra
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={uploading || isSubmittingOrder}
-                        className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
-                          uploading || isSubmittingOrder
-                            ? 'bg-zinc-400 text-white cursor-not-allowed'
-                            : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-[0.99]'
-                        }`}
-                      >
-                        {isSubmittingOrder ? (
-                          <>
-                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                            <span>Verificando inventario y procesando orden...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Icon.WhatsApp className="w-4 h-4 text-white" />
-                            <span>Confirmar y Enviar a WhatsApp</span>
-                          </>
-                        )}
-                      </button>
-                    </form>
+                      </form>
+                    </>
                   )}
                 </div>
+
+                {/* FOOTER FIJO DE NAVEGACIÓN POR PASOS */}
+                {cart.length > 0 && (
+                  <div className="px-5 py-3.5 border-t border-zinc-200 bg-white z-10 shrink-0">
+                    {checkoutStep === 1 && (
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <span className="text-[10px] text-zinc-400 font-bold uppercase block">Subtotal actual</span>
+                          <span className="text-base font-black text-zinc-900">${subtotal.toFixed(2)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleGoToStep(2)}
+                          className="flex-1 bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 active:scale-98"
+                        >
+                          <span>Continuar a Envío</span>
+                          <Icon.ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {checkoutStep === 2 && (
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => handleGoToStep(1)}
+                          className="px-3.5 py-3 rounded-xl border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 font-bold text-xs flex items-center gap-1 transition"
+                        >
+                          <Icon.ChevronLeft className="w-4 h-4" />
+                          <span>Datos</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleGoToStep(3)}
+                          className="flex-1 bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 active:scale-98"
+                        >
+                          <span>Continuar al Pago (${(Math.max(0, subtotal - productDiscounts) + finalShippingAfterCoupon).toFixed(2)})</span>
+                          <Icon.ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {checkoutStep === 3 && (
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => handleGoToStep(2)}
+                          className="px-3.5 py-3.5 rounded-xl border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 font-bold text-xs flex items-center gap-1 transition"
+                        >
+                          <Icon.ChevronLeft className="w-4 h-4" />
+                          <span>Envío</span>
+                        </button>
+                        <button
+                          type="submit"
+                          form="kaoj-checkout-form"
+                          disabled={uploading || isSubmittingOrder}
+                          className={`flex-1 py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 ${
+                            uploading || isSubmittingOrder
+                              ? 'bg-zinc-400 text-white cursor-not-allowed'
+                              : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-[0.99]'
+                          }`}
+                        >
+                          {isSubmittingOrder ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                              <span>Procesando tu pedido...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Icon.WhatsApp className="w-4 h-4 text-white" />
+                              <span>Confirmar Pedido (${total.toFixed(2)})</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -6277,6 +7820,14 @@
                             ) : (
                               <span className="text-2xl font-black text-zinc-900">${Number(quickViewProduct.price).toFixed(2)}</span>
                             )}
+                          </div>
+
+                          <div className="mt-2 bg-amber-50/90 border border-amber-200 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-amber-950 flex items-center gap-1">
+                              <Icon.Diamond className="w-3.5 h-3.5 text-[#FF2E93]" />
+                              <span>Suma +{Math.max(1, Math.floor(Number(quickViewProduct.discount_price || quickViewProduct.price || 0)))} Puntos Kaoj VIP</span>
+                            </span>
+                            <span className="text-[10px] font-black text-[#FF2E93]">50 pts = $5.00 OFF</span>
                           </div>
 
                           {/* SELECTOR DE VARIANTES EN MODAL: COLOR Y TALLA SEPARADOS O SIMPLE */}

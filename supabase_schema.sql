@@ -205,6 +205,16 @@ CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_status ON public.kaoj_deuna_payments(s
 CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_matched_order ON public.kaoj_deuna_payments(matched_order_code);
 CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_created_at ON public.kaoj_deuna_payments(created_at DESC);
 
+-- Habilitar RLS inmediatamente en la misma sección para evitar alertas de Supabase
+ALTER TABLE public.kaoj_deuna_payments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Inserción de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Inserción de pagos deuna" ON public.kaoj_deuna_payments FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Lectura de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Lectura de pagos deuna" ON public.kaoj_deuna_payments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Actualización de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Actualización de pagos deuna" ON public.kaoj_deuna_payments FOR UPDATE USING (true);
+
 -- -------------------------------------------------------------------------
 -- 6. TABLA: kaoj_carts (Carritos Persistentes de Google)
 -- -------------------------------------------------------------------------

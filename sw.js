@@ -1,11 +1,10 @@
 // =========================================================================
 // SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Soporte Offline)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v8';
+const CACHE_NAME = 'kaoj-store-v10';
 const STATIC_ASSETS = [
   './',
   './index.html',
-  './app.js',
   './manifest.json',
   './icons/kaoj-logo.png',
   './icons/icon-192.png',
@@ -19,9 +18,11 @@ const STATIC_ASSETS = [
 
 const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
+  'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
+  'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.min.js',
   'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
 ];
 
 // Instalación del Service Worker: cachear recursos esenciales locales y CDN

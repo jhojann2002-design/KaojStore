@@ -67,20 +67,28 @@ $$\text{Código VIP} = \text{1ª Letra del Nombre (Mayúscula)} + \text{Últimos
 
 ---
 
-## 🗄️ Actualización de Base de Datos en Supabase
+## 🗄️ Actualización de Base de Datos en Supabase (Seguridad Blindada)
 
 1. Abre tu panel en [supabase.com](https://supabase.com) -> **SQL Editor**.
 2. Copia todo el contenido de [`supabase_schema.sql`](./supabase_schema.sql) y haz clic en **Run**.
-3. El script creará y actualizará automáticamente las tablas `kaoj_products`, `kaoj_orders`, `kaoj_settings`, `kaoj_customers`, `kaoj_reviews`, el bucket de storage `kaoj-assets` y todas las políticas de seguridad RLS.
+3. El script creará y configurará automáticamente:
+   - **Políticas RLS estrictas:** Bloqueo de accesos no autorizados a pedidos, clientes y ajustes.
+   - **PIN Administrativo Seguro con Bcrypt:** Almacenado en `kaoj_admin_auth` con hash criptográfico (nunca expuesto al público).
+   - **Funciones PostgreSQL `SECURITY DEFINER`:** Gestión atómica de pedidos, inventario, clientes y ajustes.
+   - **Protección contra colisión de Códigos VIP:** Los clientes se anclan por número de celular único.
+   - **Rastreo seguro:** Los pedidos se consultan mediante función protegida sin exponer datos de otras clientas.
 
 ---
 
-## 🔐 Panel de Control de Administración
+## 🔐 Panel de Control de Administración Protegido
 
-- Botón **"⚙️ Admin"** en la barra superior.
-- **PIN por defecto:** `2026` (modificable en la pestaña de Ajustes).
+- Botón **"⚙️ Admin"** en la barra superior o en el pie de página.
+- **PIN por defecto:** `2026` (verificado en el servidor mediante hash Bcrypt; modificable en la pestaña de Ajustes).
 - **Pestañas disponibles:**
-  - **📦 Inventario:** Creación de productos, fotos en la nube y control de stock (+ / -).
-  - **🛍️ Pedidos:** Cambio de estado (`Pendiente`, `Verificado`, `En Camino`, `Entregado`), botón de **Guía Servientrega** imprimible y notificación a la clienta por WhatsApp.
+  - **📊 Métricas:** Ventas realizadas, pedidos por despachar, clientas registradas y alertas de stock bajo.
+  - **📦 Inventario:** Creación de productos, fotos en la nube y control de existencias en tiempo real (+ / -).
+  - **🏷️ Secciones:** Administrador dinámico de departamentos y subcategorías.
+  - **🛍️ Pedidos:** Cambio de estado (`Pendiente`, `Verificado`, `En Camino`, `Entregado`), botón de **Guía Servientrega** imprimible, reversión atómica de ventas y notificación a la clienta por WhatsApp.
   - **📸 Reseñas:** Moderación de opiniones y fotos compartidas por compradoras.
-  - **⚙️ Ajustes:** Link de Payphone, WhatsApp, Deuna QR, cuentas bancarias y PIN de seguridad.
+  - **💎 Clientes VIP:** Directorio con código único, celular, total comprado y puntos acumulados.
+  - **⚙️ Ajustes:** Link de Payphone, WhatsApp, Deuna QR, cuentas bancarias y cambio de PIN de seguridad.

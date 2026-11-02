@@ -829,13 +829,14 @@
           deliveryNotes: '',
           paymentMethod: 'deuna',
           receiptUrl: '',
+          receiptRef: '',
           payphoneRef: ''
         };
         try {
           const savedDraft = localStorage.getItem('kaoj_customer_draft');
           if (savedDraft) {
             const parsed = JSON.parse(savedDraft);
-            return { ...defaults, ...parsed, receiptUrl: '', payphoneRef: '' };
+            return { ...defaults, ...parsed, receiptUrl: '', receiptRef: '', payphoneRef: '' };
           }
         } catch (e) {}
         return defaults;
@@ -843,7 +844,7 @@
 
       useEffect(() => {
         try {
-          const { receiptUrl, payphoneRef, ...draftToSave } = customer;
+          const { receiptUrl, receiptRef, payphoneRef, ...draftToSave } = customer;
           localStorage.setItem('kaoj_customer_draft', JSON.stringify(draftToSave));
         } catch (e) {}
       }, [customer]);
@@ -1955,6 +1956,7 @@
         ].filter(Boolean).join(' | ');
 
         const adminNotesParts = [];
+        if (customer.receiptRef && customer.receiptRef.trim()) adminNotesParts.push(`Comprobante #: ${customer.receiptRef.trim()}`);
         if (appliedCoupon) adminNotesParts.push(`Cupón: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})`);
         if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
         if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
@@ -1976,9 +1978,9 @@
           points_earned: pointsEarnedWithOrder,
           points_redeemed: pointsToRedeemNow,
           payment_method:
-            customer.paymentMethod === 'deuna' ? 'Deuna!' :
+            customer.paymentMethod === 'deuna' ? `Deuna!${customer.receiptRef ? ` (Comp: ${customer.receiptRef.trim()})` : ''}` :
             customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` :
-            `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`,
+            `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${customer.receiptRef ? ` • Comp: ${customer.receiptRef.trim()}` : ''})`,
           receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
           items: cart,
           status: 'pendiente',
@@ -2063,6 +2065,7 @@
           `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` +
           (payphoneSurchargeAmount > 0 ? `*Recargo Tarjeta Payphone (${payphoneSurchargePercent}%):* +$${payphoneSurchargeAmount.toFixed(2)}\n` : '') +
           `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` +
+          (customer.receiptRef ? `*N° Comprobante Bancario:* ${customer.receiptRef.trim()}\n` : '') +
           `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts (Cada 50 pts = $5.00 OFF)\n\n` +
           (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') +
           `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
@@ -2108,7 +2111,7 @@
         setAppliedCoupon(null);
         setCouponCodeInput('');
         setShowCouponInputBox(false);
-        setCustomer(prev => ({ ...prev, receiptUrl: '', payphoneRef: '' }));
+        setCustomer(prev => ({ ...prev, receiptUrl: '', receiptRef: '', payphoneRef: '' }));
         setIsSubmittingOrder(false);
         showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste +${pointsEarnedWithOrder} Puntos Kaoj VIP.`);
         fetchInitialData();
@@ -7204,8 +7207,27 @@
                                     Abrir App Deuna! y pagar ${total.toFixed(2)}
                                   </a>
                                   <p className="text-[10px] text-purple-800">
-                                    Titular: <b>{settings.bank_pichincha_name}</b> • Luego sube la captura de tu comprobante abajo.
+                                    Titular: <b>{settings.bank_pichincha_name}</b> • Cuenta vinculada: <b>{settings.bank_pichincha_acc}</b>
                                   </p>
+                                  {/* AVISO DE CORREO PARA VALIDACIÓN AUTOMÁTICA */}
+                                  <div className="bg-white border border-purple-200 rounded-xl p-2.5 text-left space-y-1.5 shadow-2xs">
+                                    <p className="text-[10px] font-extrabold text-purple-950 flex items-center gap-1">
+                                      <span>⚡</span>
+                                      <span>¿Pagarás desde tu app bancaria? Pon este correo al notificar:</span>
+                                    </p>
+                                    <div className="flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-lg px-2.5 py-1.5 gap-2">
+                                      <span className="font-mono font-black text-[11px] text-purple-950 truncate select-all">
+                                        {settings.email_contact || 'kaoj.store.ecu@gmail.com'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(settings.email_contact || 'kaoj.store.ecu@gmail.com', 'Correo para validación automática')}
+                                        className="shrink-0 px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md font-bold text-[10px] flex items-center gap-1 transition"
+                                      >
+                                        <Icon.Copy className="w-3 h-3" /> Copiar correo
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
 
@@ -7341,6 +7363,34 @@
                                       </div>
                                     </div>
                                   )}
+
+                                  {/* AVISO OBLIGATORIO DE CORREO PARA VALIDACIÓN AUTOMÁTICA DE TRANSFERENCIA */}
+                                  <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 space-y-2 shadow-2xs">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-sm leading-none mt-0.5">⚡</span>
+                                      <div className="text-[11px] leading-snug text-amber-950">
+                                        <p className="font-extrabold">¡Importante para validar tu transferencia al instante!</p>
+                                        <p className="text-[10px] text-amber-900 mt-0.5">
+                                          En la app de tu banco, donde pide <b>"Correo electrónico a notificar"</b>, ingresa obligatoriamente nuestro correo para que el banco nos confirme tu pago de forma automática:
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center justify-between bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 gap-2">
+                                      <div className="min-w-0">
+                                        <span className="text-[9px] uppercase font-bold text-zinc-400 block leading-none">Correo de notificación bancaria</span>
+                                        <span className="font-mono font-black text-xs text-zinc-900 truncate block select-all">
+                                          {settings.email_contact || 'kaoj.store.ecu@gmail.com'}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(settings.email_contact || 'kaoj.store.ecu@gmail.com', 'Correo kaoj.store.ecu@gmail.com')}
+                                        className="shrink-0 px-3 py-1.5 bg-[#151E28] hover:bg-[#FF2E93] text-white rounded-lg font-bold text-[10px] flex items-center gap-1.5 shadow-2xs transition"
+                                      >
+                                        <Icon.Copy className="w-3.5 h-3.5" /> Copiar Correo
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
 
@@ -7434,8 +7484,22 @@
                                 );
                               })()}
 
-                              {/* SUBIDA DE COMPROBANTE DE PAGO CON VISTA PREVIA */}
-                              <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2">
+                              {/* SUBIDA DE COMPROBANTE DE PAGO + N° DE COMPROBANTE PARA AUTO-VALIDACIÓN */}
+                              <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2.5">
+                                {customer.paymentMethod !== 'payphone' && (
+                                  <div>
+                                    <label className="font-bold text-amber-950 text-[11px] block mb-1">
+                                      N° de Comprobante / Documento bancario (Para validación rápida):
+                                    </label>
+                                    <input
+                                      type="text"
+                                      placeholder="Ej: 48291042 (Los dígitos del comprobante de tu banco o Deuna)"
+                                      value={customer.receiptRef || ''}
+                                      onChange={e => setCustomer({ ...customer, receiptRef: e.target.value })}
+                                      className="w-full border border-amber-300 rounded-xl px-3 py-2 text-xs bg-white text-zinc-900 placeholder-zinc-400 outline-none focus:border-[#151E28] font-mono"
+                                    />
+                                  </div>
+                                )}
                                 <p className="font-bold text-amber-950 text-xs flex items-center justify-between">
                                   <span>
                                     {customer.paymentMethod === 'payphone'

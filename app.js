@@ -1125,6 +1125,7 @@ function App() {
       deliveryNotes: '',
       paymentMethod: 'deuna',
       receiptUrl: '',
+      receiptRef: '',
       payphoneRef: ''
     };
     try {
@@ -1135,6 +1136,7 @@ function App() {
           ...defaults,
           ...parsed,
           receiptUrl: '',
+          receiptRef: '',
           payphoneRef: ''
         };
       }
@@ -1145,6 +1147,7 @@ function App() {
     try {
       const {
         receiptUrl,
+        receiptRef,
         payphoneRef,
         ...draftToSave
       } = customer;
@@ -2262,6 +2265,7 @@ function App() {
     const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
     const formattedFullAddress = [customer.city ? `Ciudad: ${customer.city.trim()}` : '', customer.address ? customer.address.trim() : '', customer.deliveryNotes ? `Nota: ${customer.deliveryNotes.trim()}` : ''].filter(Boolean).join(' | ');
     const adminNotesParts = [];
+    if (customer.receiptRef && customer.receiptRef.trim()) adminNotesParts.push(`Comprobante #: ${customer.receiptRef.trim()}`);
     if (appliedCoupon) adminNotesParts.push(`Cupón: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})`);
     if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
     if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
@@ -2281,7 +2285,7 @@ function App() {
       total: total,
       points_earned: pointsEarnedWithOrder,
       points_redeemed: pointsToRedeemNow,
-      payment_method: customer.paymentMethod === 'deuna' ? 'Deuna!' : customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` : `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`,
+      payment_method: customer.paymentMethod === 'deuna' ? `Deuna!${customer.receiptRef ? ` (Comp: ${customer.receiptRef.trim()})` : ''}` : customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` : `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${customer.receiptRef ? ` • Comp: ${customer.receiptRef.trim()}` : ''})`,
       receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
       items: cart,
       status: 'pendiente',
@@ -2346,7 +2350,7 @@ function App() {
     const officialWhatsApp = formatWhatsAppPhone(settings.whatsapp_number);
     const itemsListText = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
     const paymentLabel = customer.paymentMethod === 'deuna' ? 'Deuna! (Sin recargo)' : customer.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${customer.payphoneRef || 'Adjunto'})` : `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`;
-    const whatsappMsg = `*NUEVO PEDIDO KAOJ STORE*\n\n` + `*Orden:* ${orderCode}\n` + `*Código VIP Cliente:* *${activeCustomerCode}*\n` + `*Cliente:* ${customer.name}\n` + `*Celular:* ${customer.phone}\n` + (customer.idCard ? `*Cédula/RUC:* ${customer.idCard}\n` : '') + `*Modalidad de Envío:* ${deliveryObj.label}\n` + (formattedFullAddress ? `*Destino / Dirección:* ${formattedFullAddress}\n` : '') + `*Forma de Pago:* ${paymentLabel}\n\n` + `*PRODUCTOS COMPRADOS:*\n${itemsListText}\n\n` + `*Subtotal:* $${subtotal.toFixed(2)}\n` + (pointsDiscountAmount > 0 ? `*Descuento Puntos VIP (${pointsToRedeemNow} Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') + (couponDiscountAmount > 0 ? `*Cupón (${appliedCoupon.code}):* -$${couponDiscountAmount.toFixed(2)}\n` : '') + `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` + (payphoneSurchargeAmount > 0 ? `*Recargo Tarjeta Payphone (${payphoneSurchargePercent}%):* +$${payphoneSurchargeAmount.toFixed(2)}\n` : '') + `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` + `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts (Cada 50 pts = $5.00 OFF)\n\n` + (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') + `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
+    const whatsappMsg = `*NUEVO PEDIDO KAOJ STORE*\n\n` + `*Orden:* ${orderCode}\n` + `*Código VIP Cliente:* *${activeCustomerCode}*\n` + `*Cliente:* ${customer.name}\n` + `*Celular:* ${customer.phone}\n` + (customer.idCard ? `*Cédula/RUC:* ${customer.idCard}\n` : '') + `*Modalidad de Envío:* ${deliveryObj.label}\n` + (formattedFullAddress ? `*Destino / Dirección:* ${formattedFullAddress}\n` : '') + `*Forma de Pago:* ${paymentLabel}\n\n` + `*PRODUCTOS COMPRADOS:*\n${itemsListText}\n\n` + `*Subtotal:* $${subtotal.toFixed(2)}\n` + (pointsDiscountAmount > 0 ? `*Descuento Puntos VIP (${pointsToRedeemNow} Pts):* -$${pointsDiscountAmount.toFixed(2)}\n` : '') + (couponDiscountAmount > 0 ? `*Cupón (${appliedCoupon.code}):* -$${couponDiscountAmount.toFixed(2)}\n` : '') + `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` + (payphoneSurchargeAmount > 0 ? `*Recargo Tarjeta Payphone (${payphoneSurchargePercent}%):* +$${payphoneSurchargeAmount.toFixed(2)}\n` : '') + `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` + (customer.receiptRef ? `*N° Comprobante Bancario:* ${customer.receiptRef.trim()}\n` : '') + `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts (Cada 50 pts = $5.00 OFF)\n\n` + (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') + `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
     const whatsappUrl = `https://wa.me/${officialWhatsApp}?text=${encodeURIComponent(whatsappMsg)}`;
 
     // 6. Activar el Modal de Confirmación de Pedido (Resistente a bloqueadores móviles)
@@ -2391,6 +2395,7 @@ function App() {
     setCustomer(prev => ({
       ...prev,
       receiptUrl: '',
+      receiptRef: '',
       payphoneRef: ''
     }));
     setIsSubmittingOrder(false);
@@ -6947,7 +6952,21 @@ function App() {
     className: "block w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold text-xs shadow-xs transition"
   }, "Abrir App Deuna! y pagar $", total.toFixed(2)), /*#__PURE__*/React.createElement("p", {
     className: "text-[10px] text-purple-800"
-  }, "Titular: ", /*#__PURE__*/React.createElement("b", null, settings.bank_pichincha_name), " • Luego sube la captura de tu comprobante abajo.")), customer.paymentMethod === 'transferencia' && /*#__PURE__*/React.createElement("div", {
+  }, "Titular: ", /*#__PURE__*/React.createElement("b", null, settings.bank_pichincha_name), " • Cuenta vinculada: ", /*#__PURE__*/React.createElement("b", null, settings.bank_pichincha_acc)), /*#__PURE__*/React.createElement("div", {
+    className: "bg-white border border-purple-200 rounded-xl p-2.5 text-left space-y-1.5 shadow-2xs"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-[10px] font-extrabold text-purple-950 flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("span", null, "⚡"), /*#__PURE__*/React.createElement("span", null, "¿Pagarás desde tu app bancaria? Pon este correo al notificar:")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-lg px-2.5 py-1.5 gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "font-mono font-black text-[11px] text-purple-950 truncate select-all"
+  }, settings.email_contact || 'kaoj.store.ecu@gmail.com'), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => copyToClipboard(settings.email_contact || 'kaoj.store.ecu@gmail.com', 'Correo para validación automática'),
+    className: "shrink-0 px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md font-bold text-[10px] flex items-center gap-1 transition"
+  }, /*#__PURE__*/React.createElement(Icon.Copy, {
+    className: "w-3 h-3"
+  }), " Copiar correo")))), customer.paymentMethod === 'transferencia' && /*#__PURE__*/React.createElement("div", {
     className: "bg-[#F5F6F8] border border-zinc-200/80 rounded-2xl p-3.5 space-y-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center justify-between"
@@ -7073,7 +7092,33 @@ function App() {
     className: "text-[10px] font-bold text-zinc-600 hover:text-[#0F265C] bg-zinc-100 hover:bg-amber-50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition"
   }, /*#__PURE__*/React.createElement(Icon.Copy, {
     className: "w-3 h-3"
-  }), " Copiar CI")))), customer.paymentMethod === 'payphone' && (() => {
+  }), " Copiar CI"))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-amber-50 border-2 border-amber-300 rounded-xl p-3 space-y-2 shadow-2xs"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-start gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-sm leading-none mt-0.5"
+  }, "⚡"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[11px] leading-snug text-amber-950"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-extrabold"
+  }, "¡Importante para validar tu transferencia al instante!"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[10px] text-amber-900 mt-0.5"
+  }, "En la app de tu banco, donde pide ", /*#__PURE__*/React.createElement("b", null, "\"Correo electrónico a notificar\""), ", ingresa obligatoriamente nuestro correo para que el banco nos confirme tu pago de forma automática:"))), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 gap-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "min-w-0"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[9px] uppercase font-bold text-zinc-400 block leading-none"
+  }, "Correo de notificación bancaria"), /*#__PURE__*/React.createElement("span", {
+    className: "font-mono font-black text-xs text-zinc-900 truncate block select-all"
+  }, settings.email_contact || 'kaoj.store.ecu@gmail.com')), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => copyToClipboard(settings.email_contact || 'kaoj.store.ecu@gmail.com', 'Correo kaoj.store.ecu@gmail.com'),
+    className: "shrink-0 px-3 py-1.5 bg-[#151E28] hover:bg-[#FF2E93] text-white rounded-lg font-bold text-[10px] flex items-center gap-1.5 shadow-2xs transition"
+  }, /*#__PURE__*/React.createElement(Icon.Copy, {
+    className: "w-3.5 h-3.5"
+  }), " Copiar Correo")))), customer.paymentMethod === 'payphone' && (() => {
     const amountCents = Math.round(total * 100);
     const orderRef = 'KAOJ-' + (activeCustomerCode || (customer.phone ? customer.phone.slice(-4) : Date.now().toString().slice(-4)));
     let payphoneUrl = settings.payphone_link || 'https://payphone.app/';
@@ -7151,8 +7196,19 @@ function App() {
       className: "text-[10px] text-zinc-400"
     }, "💡 Tras completar el pago en Payphone, escribe el código de autorización arriba o adjunta la captura abajo.")));
   })(), /*#__PURE__*/React.createElement("div", {
-    className: "bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2"
-  }, /*#__PURE__*/React.createElement("p", {
+    className: "bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2.5"
+  }, customer.paymentMethod !== 'payphone' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    className: "font-bold text-amber-950 text-[11px] block mb-1"
+  }, "N° de Comprobante / Documento bancario (Para validación rápida):"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    placeholder: "Ej: 48291042 (Los dígitos del comprobante de tu banco o Deuna)",
+    value: customer.receiptRef || '',
+    onChange: e => setCustomer({
+      ...customer,
+      receiptRef: e.target.value
+    }),
+    className: "w-full border border-amber-300 rounded-xl px-3 py-2 text-xs bg-white text-zinc-900 placeholder-zinc-400 outline-none focus:border-[#151E28] font-mono"
+  })), /*#__PURE__*/React.createElement("p", {
     className: "font-bold text-amber-950 text-xs flex items-center justify-between"
   }, /*#__PURE__*/React.createElement("span", null, customer.paymentMethod === 'payphone' ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):' : 'Sube la captura de tu comprobante de pago *:'), uploading && /*#__PURE__*/React.createElement("span", {
     className: "text-[10px] text-[#FF2E93] animate-pulse"

@@ -1,6 +1,6 @@
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v16)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v17)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v16';
+const CACHE_NAME = 'kaoj-store-v17';
 const STATIC_ASSETS = [
   './',
   './index.html',

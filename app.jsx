@@ -1636,36 +1636,44 @@ ESTADO: ${status.toUpperCase()}
       const [showInstallBanner, setShowInstallBanner] = useState(false);
       const [isIosDevice, setIsIosDevice] = useState(false);
       const [showIosGuide, setShowIosGuide] = useState(false);
+      const [showAdminInstallGuide, setShowAdminInstallGuide] = useState(false);
 
       useEffect(() => {
         try {
-          const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+          const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
           if (isStandalone) return;
 
-          const dismissedTime = localStorage.getItem('kaoj_pwa_dismissed');
-          if (dismissedTime && Date.now() - Number(dismissedTime) < 5 * 24 * 60 * 60 * 1000) {
-            return;
-          }
-
-          const userAgent = window.navigator.userAgent.toLowerCase();
-          const isIos = /iphone|ipad|ipod/.test(userAgent) && !window.MSStream;
+          const userAgent = (typeof window !== 'undefined' && window.navigator.userAgent) ? window.navigator.userAgent.toLowerCase() : '';
+          const isIos = /iphone|ipad|ipod/.test(userAgent) && !(typeof window !== 'undefined' && window.MSStream);
           if (isIos) {
             setIsIosDevice(true);
-            const timer = setTimeout(() => setShowInstallBanner(true), 3500);
-            return () => clearTimeout(timer);
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+            const dismissedTime = localStorage.getItem(dismissedKey);
+            if (!dismissedTime || Date.now() - Number(dismissedTime) > 3 * 24 * 60 * 60 * 1000) {
+              const timer = setTimeout(() => setShowInstallBanner(true), 3500);
+              return () => clearTimeout(timer);
+            }
+            return;
           }
 
           const promptHandler = (e) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            setShowInstallBanner(true);
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+            const dismissedTime = localStorage.getItem(dismissedKey);
+            if (!dismissedTime || Date.now() - Number(dismissedTime) > 2 * 24 * 60 * 60 * 1000) {
+              setShowInstallBanner(true);
+            }
           };
           window.addEventListener('beforeinstallprompt', promptHandler);
 
           const installedHandler = () => {
             setShowInstallBanner(false);
             setDeferredPrompt(null);
-            showToast('¡Kaoj Store se ha instalado correctamente! 🎉');
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            showToast(isAppAdmin ? '¡Kaoj Admin se ha instalado correctamente! 📲✨' : '¡Kaoj Store se ha instalado correctamente! 🎉');
           };
           window.addEventListener('appinstalled', installedHandler);
 
@@ -1677,11 +1685,19 @@ ESTADO: ${status.toUpperCase()}
       }, []);
 
       const handleInstallApp = async () => {
+        const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
         if (isIosDevice) {
           setShowIosGuide(true);
           return;
         }
-        if (!deferredPrompt) return;
+        if (!deferredPrompt) {
+          if (isAppAdmin) {
+            setShowAdminInstallGuide(true);
+          } else {
+            showToast('Toca los 3 puntos (⋮) en tu navegador y pulsa "Instalar aplicación"', 'info');
+          }
+          return;
+        }
         try {
           deferredPrompt.prompt();
           const choice = await deferredPrompt.userChoice;
@@ -1689,14 +1705,18 @@ ESTADO: ${status.toUpperCase()}
             setShowInstallBanner(false);
             setDeferredPrompt(null);
           }
-        } catch (e) {}
+        } catch (e) {
+          if (isAppAdmin) setShowAdminInstallGuide(true);
+        }
       };
 
       const handleDismissInstall = () => {
         setShowInstallBanner(false);
         setShowIosGuide(false);
         try {
-          localStorage.setItem('kaoj_pwa_dismissed', Date.now().toString());
+          const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+          const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+          localStorage.setItem(dismissedKey, Date.now().toString());
         } catch (e) {}
       };
 
@@ -4670,6 +4690,14 @@ ESTADO: ${status.toUpperCase()}
                   <button onClick={() => { setAdminTab('settings'); window.location.hash = '#/admin/settings'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Settings className="w-4 h-4" /> Ajustes
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleInstallApp}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF007F] via-[#FF2E93] to-pink-500 text-white hover:brightness-110 shadow-xs transition flex items-center gap-1.5 shrink-0"
+                    title="Instalar Kaoj Admin como aplicación independiente en tu teléfono"
+                  >
+                    <span>📲</span> Instalar App
+                  </button>
                   <button onClick={() => {
                     sessionStorage.removeItem('kaoj_admin_authenticated');
                     sessionStorage.removeItem('kaoj_admin_pin');
@@ -4726,6 +4754,14 @@ ESTADO: ${status.toUpperCase()}
                       <Icon.Bell className="w-3.5 h-3.5" /> Activar Notificaciones
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleInstallApp}
+                    className="px-3 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    title="Instalar Kaoj Admin en tu pantalla de inicio"
+                  >
+                    <span>📲</span> Instalar App
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -10745,17 +10781,21 @@ ESTADO: ${status.toUpperCase()}
             <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40">
               <div className="bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 text-white p-3.5 rounded-3xl border border-pink-500/30 shadow-2xl flex items-center justify-between gap-3">
                 <img
-                  src="icons/icon-192.png"
-                  alt="Kaoj Store"
+                  src={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "icons/icon-admin-192.png" : "icons/icon-192.png"}
+                  alt={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Kaoj Admin" : "Kaoj Store"}
                   className="w-11 h-11 rounded-2xl shadow-md border border-white/10 shrink-0 object-cover"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-extrabold text-xs text-white">Kaoj Store App</span>
+                    <span className="font-extrabold text-xs text-white">
+                      {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Kaoj Admin" : "Kaoj Store App"}
+                    </span>
                     <span className="text-[9px] bg-[#FF2E93] text-white px-1.5 py-0.2 rounded-full font-black">PWA</span>
                   </div>
                   <p className="text-[11px] text-zinc-300 truncate">
-                    {isIosDevice ? 'Agrega la app a tu pantalla de inicio' : 'Instala la app para comprar más rápido'}
+                    {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')))
+                      ? (isIosDevice ? 'Agrega el panel a tu pantalla de inicio' : 'App de administración con alertas y pedidos')
+                      : (isIosDevice ? 'Agrega la app a tu pantalla de inicio' : 'Instala la app para comprar más rápido')}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -10764,7 +10804,7 @@ ESTADO: ${status.toUpperCase()}
                     onClick={handleInstallApp}
                     className="bg-[#FF2E93] hover:bg-[#e0157a] text-white text-xs font-black px-3.5 py-2 rounded-xl shadow-md transition active:scale-95"
                   >
-                    Instalar
+                    {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Instalar Admin" : "Instalar"}
                   </button>
                   <button
                     type="button"
@@ -10793,6 +10833,48 @@ ESTADO: ${status.toUpperCase()}
                   </ol>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* MODAL GUÍA DE INSTALACIÓN ADMIN INDEPENDIENTE */}
+          {showAdminInstallGuide && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-zinc-200 space-y-4">
+                <div className="flex items-center gap-3">
+                  <img src="icons/icon-admin-192.png" alt="Kaoj Admin" className="w-12 h-12 rounded-2xl shadow-md border border-zinc-200 object-cover" />
+                  <div>
+                    <h3 className="font-extrabold text-base text-zinc-900 leading-tight">Instalar App Kaoj Admin</h3>
+                    <p className="text-xs text-zinc-500">App independiente de la tienda de clientes</p>
+                  </div>
+                </div>
+
+                <div className="bg-pink-50 border border-pink-200/80 rounded-2xl p-3.5 space-y-2 text-xs text-zinc-800">
+                  <p className="font-bold text-[#FF007F] flex items-center gap-1.5">
+                    <span>💡</span> ¿Por qué salía que ya estaba instalada?
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-zinc-600">
+                    Tu teléfono ya tiene instalada la <b>Tienda Kaoj</b> de clientes. Ahora hemos configurado el <b>Panel Admin</b> con su propia identidad exclusiva (<code className="font-mono bg-white px-1 rounded border border-pink-200">kaoj-admin-app</code>) para que funcione como una aplicación totalmente separada en tu pantalla.
+                  </p>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <p className="font-bold text-zinc-800">Pasos para instalarla en tu Android / Chrome:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-zinc-700 text-[11.5px] leading-relaxed bg-zinc-50 p-3.5 rounded-2xl border border-zinc-200">
+                    <li>Abre esta página (<code className="bg-white px-1.5 py-0.5 rounded border border-zinc-300 font-mono text-[10px]">admin.html</code>) en <b>Google Chrome</b>.</li>
+                    <li>Toca los <b>3 puntos (⋮)</b> arriba a la derecha de Chrome.</li>
+                    <li>Selecciona <b>"Instalar aplicación"</b> o <b>"Agregar a la pantalla principal"</b>.</li>
+                    <li>¡Y listo! Se creará el acceso directo independiente con el icono negro y dorado de <b>Kaoj Admin</b>.</li>
+                  </ol>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAdminInstallGuide(false)}
+                  className="w-full py-3 bg-zinc-900 hover:bg-black text-white text-xs font-bold rounded-2xl shadow-md transition"
+                >
+                  Entendido, ¡Listo! ✨
+                </button>
+              </div>
             </div>
           )}
 

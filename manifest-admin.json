@@ -1,9 +1,10 @@
 {
-  "name": "KAOJ STORE - Panel de Control Administrativo",
+  "id": "kaoj-admin-app",
+  "name": "KAOJ ADMIN - Panel de Control",
   "short_name": "Kaoj Admin",
   "description": "Panel de administración exclusivo de Kaoj Store. Gestión en tiempo real de inventario, pedidos, alertas sonoras y configuración.",
-  "start_url": "./admin.html#/admin",
-  "scope": "./",
+  "start_url": "./admin.html",
+  "scope": "./admin.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#151E28",

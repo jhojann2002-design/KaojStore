@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.kaoj_products (
 
 ALTER TABLE public.kaoj_products ADD COLUMN IF NOT EXISTS section TEXT NOT NULL DEFAULT 'MAQUILLAJES';
 ALTER TABLE public.kaoj_products ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.kaoj_products ADD COLUMN IF NOT EXISTS video TEXT DEFAULT '';
 ALTER TABLE public.kaoj_products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
 CREATE INDEX IF NOT EXISTS idx_kaoj_products_section ON public.kaoj_products(section);
@@ -682,6 +683,7 @@ BEGIN
             discount_price = NULLIF(prod_data->>'discount_price', '')::NUMERIC,
             image = prod_data->>'image',
             images = COALESCE(prod_data->'images', '[]'::jsonb),
+            video = COALESCE(prod_data->>'video', ''),
             description = COALESCE(prod_data->>'description', ''),
             variant_label = COALESCE(prod_data->>'variant_label', 'Tono / Talla'),
             variants = COALESCE(prod_data->'variants', '[]'::jsonb),
@@ -691,7 +693,7 @@ BEGIN
         RETURN jsonb_build_object('success', true, 'id', target_id);
     ELSE
         INSERT INTO public.kaoj_products (
-            name, section, category, price, discount_price, image, images,
+            name, section, category, price, discount_price, image, images, video,
             description, variant_label, variants, is_active
         ) VALUES (
             prod_data->>'name',
@@ -701,6 +703,7 @@ BEGIN
             NULLIF(prod_data->>'discount_price', '')::NUMERIC,
             prod_data->>'image',
             COALESCE(prod_data->'images', '[]'::jsonb),
+            COALESCE(prod_data->>'video', ''),
             COALESCE(prod_data->>'description', ''),
             COALESCE(prod_data->>'variant_label', 'Tono / Talla'),
             COALESCE(prod_data->'variants', '[]'::jsonb),
@@ -941,11 +944,11 @@ FOR SELECT USING (bucket_id = 'kaoj-assets');
 DROP POLICY IF EXISTS "Permitir subida pública a kaoj-assets" ON storage.objects;
 DROP POLICY IF EXISTS "Permitir actualización en kaoj-assets" ON storage.objects;
 
--- Permitir subir solo imágenes y documentos PDF con extensiones seguras
+-- Permitir subir imágenes, documentos PDF y videos con extensiones seguras
 CREATE POLICY "Permitir subida pública a kaoj-assets" ON storage.objects 
 FOR INSERT WITH CHECK (
     bucket_id = 'kaoj-assets'
-    AND (LOWER(storage.extension(name)) IN ('jpg', 'jpeg', 'png', 'webp', 'svg', 'pdf'))
+    AND (LOWER(storage.extension(name)) IN ('jpg', 'jpeg', 'png', 'webp', 'svg', 'pdf', 'mp4', 'webm', 'mov', 'ogg', 'm4v'))
 );
 
 -- 11. PRODUCTOS INICIALES DE EJEMPLO (Solo se insertan si no existen, NUNCA borra productos reales)

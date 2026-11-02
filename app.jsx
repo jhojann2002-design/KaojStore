@@ -233,6 +233,16 @@
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
       ),
+      Play: ({ className = "w-4 h-4", filled = true }) => (
+        <svg className={className} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z" />
+        </svg>
+      ),
+      Video: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      ),
       WhatsApp: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="currentColor" viewBox="0 0 24 24">
           <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.275.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.043.072.043.419-.101.824zM12 2C6.477 2 2 6.477 2 12c0 1.891.524 3.662 1.435 5.178L2 22l4.966-1.394A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
@@ -1849,7 +1859,70 @@ ESTADO: ${status.toUpperCase()}
         }
       }
 
-      // Obtener todas las imágenes de un producto (galería múltiple, variantes y fotos de tonos)
+      // Detección de URLs de Video (Directos MP4/WebM/MOV o YouTube / Shorts)
+      function isVideoUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        const clean = url.trim().toLowerCase();
+        if (clean.match(/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i)) return true;
+        if (clean.includes('youtube.com/watch') || clean.includes('youtu.be/') || clean.includes('youtube.com/shorts/')) return true;
+        if (clean.includes('vimeo.com/')) return true;
+        return false;
+      }
+
+      // Convertir URLs de YouTube / Shorts a URL incrustable (embed)
+      function getYouTubeEmbedUrl(url) {
+        if (!url || typeof url !== 'string') return null;
+        const u = url.trim();
+        const shortsMatch = u.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+        if (shortsMatch && shortsMatch[1]) {
+          return `https://www.youtube-nocookie.com/embed/${shortsMatch[1]}?autoplay=1&mute=1&playsinline=1&rel=0`;
+        }
+        const ytMatch = u.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+        if (ytMatch && ytMatch[1]) {
+          return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&playsinline=1&rel=0`;
+        }
+        return null;
+      }
+
+      // Obtener el video de un producto (desde columna directa, variante[0] o imágenes)
+      function getProductVideo(product) {
+        if (!product) return '';
+        if (product.video && typeof product.video === 'string' && product.video.trim()) {
+          return product.video.trim();
+        }
+        if (product.variants?.[0]?.video && typeof product.variants[0].video === 'string' && product.variants[0].video.trim()) {
+          return product.variants[0].video.trim();
+        }
+        if (Array.isArray(product.images)) {
+          const v = product.images.find(img => isVideoUrl(img));
+          if (v) return v.trim();
+        }
+        return '';
+      }
+
+      // Obtener todos los medios de un producto (Video primero si existe + todas las fotos)
+      function getProductMedia(product) {
+        if (!product) return [{ type: 'image', url: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' }];
+        const media = [];
+        const videoUrl = getProductVideo(product);
+        if (videoUrl) {
+          media.push({
+            type: 'video',
+            url: videoUrl,
+            isYouTube: !!getYouTubeEmbedUrl(videoUrl),
+            embedUrl: getYouTubeEmbedUrl(videoUrl)
+          });
+        }
+        const images = getProductImages(product);
+        images.forEach(img => {
+          if (img && img !== videoUrl) {
+            media.push({ type: 'image', url: img });
+          }
+        });
+        return media.length > 0 ? media : [{ type: 'image', url: product.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' }];
+      }
+
+      // Obtener todas las imágenes de un producto (galería múltiple, variantes y fotos de tonos, excluyendo videos)
       function getProductImages(product) {
         if (!product) return ['https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
         const list = [];
@@ -1857,7 +1930,7 @@ ESTADO: ${status.toUpperCase()}
         // 1. Array `images` directo del producto
         if (Array.isArray(product.images)) {
           product.images.forEach(img => {
-            if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
+            if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
               list.push(img.trim());
             }
           });
@@ -1866,25 +1939,25 @@ ESTADO: ${status.toUpperCase()}
         // 2. Galería almacenada en variantes[0].gallery (compatibilidad sin requerir cambios de esquema)
         if (Array.isArray(product.variants?.[0]?.gallery)) {
           product.variants[0].gallery.forEach(img => {
-            if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
+            if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
               list.push(img.trim());
             }
           });
         }
 
         // 3. Foto principal
-        if (product.image && typeof product.image === 'string' && product.image.trim() && !list.includes(product.image.trim())) {
+        if (product.image && typeof product.image === 'string' && product.image.trim() && !isVideoUrl(product.image) && !list.includes(product.image.trim())) {
           list.unshift(product.image.trim());
         }
 
         // 4. Fotos de variantes o tonos
         (product.variants || []).forEach(v => {
-          if (v.image && typeof v.image === 'string' && v.image.trim() && !list.includes(v.image.trim())) {
+          if (v.image && typeof v.image === 'string' && v.image.trim() && !isVideoUrl(v.image) && !list.includes(v.image.trim())) {
             list.push(v.image.trim());
           }
         });
 
-        return list.length > 0 ? list : [product.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
+        return list.length > 0 ? list : [product.image && !isVideoUrl(product.image) ? product.image : 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
       }
 
       // Auto-detección de cliente VIP y saldo de puntos al escribir celular en el checkout
@@ -2176,6 +2249,7 @@ ESTADO: ${status.toUpperCase()}
         discount_price: '',
         image: '',
         images: [],
+        video: '',
         description: '',
         variant_label: 'Tono / Talla',
         variants: [
@@ -3295,23 +3369,28 @@ ESTADO: ${status.toUpperCase()}
       }
 
       // =======================================================================
-      // 6. SUBIDA DE ARCHIVOS A SUPABASE STORAGE
+      // 6. SUBIDA DE ARCHIVOS A SUPABASE STORAGE (FOTOS Y VIDEOS)
       // =======================================================================
       async function uploadFileToSupabase(file, folder = 'products') {
         if (!file) return null;
-        if (file.size > 5 * 1024 * 1024) {
-          showToast('El archivo supera el tamaño máximo permitido (5 MB).', 'error');
+        const isVideo = (file.type && file.type.startsWith('video/')) || folder === 'videos' || /\.(mp4|webm|mov|ogg|m4v)$/i.test(file.name);
+        const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+        if (file.size > maxSize) {
+          showToast(`El archivo supera el tamaño máximo permitido (${isVideo ? '50 MB' : '5 MB'}).`, 'error');
           return null;
         }
-        const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'application/pdf'];
-        if (!validTypes.includes(file.type)) {
-          showToast('Formato no permitido. Solo se aceptan imágenes (JPG, PNG, WebP) o PDF.', 'error');
+        const validTypes = [
+          'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml', 'application/pdf',
+          'video/mp4', 'video/webm', 'video/quicktime', 'video/ogg', 'video/x-m4v'
+        ];
+        if (!validTypes.includes(file.type) && !isVideo) {
+          showToast('Formato no permitido. Se aceptan fotos (JPG, PNG, WebP), videos (MP4, MOV, WebM) o PDF.', 'error');
           return null;
         }
 
         setUploading(true);
         try {
-          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+          const ext = (file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg')).toLowerCase();
           const cleanName = file.name.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 15);
           const fileName = `${folder}/${Date.now()}_${cleanName}.${ext}`;
 
@@ -3319,11 +3398,16 @@ ESTADO: ${status.toUpperCase()}
             .from('kaoj-assets')
             .upload(fileName, file, { cacheControl: '3600', upsert: true });
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            if (isVideo && uploadError.message?.toLowerCase().includes('policy')) {
+              throw new Error('Supabase Storage RLS no tiene habilitado video aún. Puedes pegar el enlace de YouTube o Shorts directamente.');
+            }
+            throw uploadError;
+          }
 
           const { data } = supabase.storage.from('kaoj-assets').getPublicUrl(fileName);
           setUploading(false);
-          showToast('Foto cargada. Recuerda pulsar "Guardar" al terminar');
+          showToast(isVideo ? '¡Video cargado con éxito! Recuerda guardar el producto.' : 'Foto cargada. Recuerda pulsar "Guardar" al terminar');
           return data.publicUrl;
         } catch (err) {
           setUploading(false);
@@ -3420,6 +3504,7 @@ ESTADO: ${status.toUpperCase()}
       function openEditProductModal(prod) {
         const cloned = JSON.parse(JSON.stringify(prod));
         cloned.images = getProductImages(cloned);
+        cloned.video = getProductVideo(cloned);
         const hasColorSize = (cloned.variants || []).some(v => v.color && v.size);
         if (hasColorSize) {
           setEditVariantMode('color_size');
@@ -3495,9 +3580,13 @@ ESTADO: ${status.toUpperCase()}
           ? editingProduct.images.filter(Boolean)
           : (editingProduct.image ? [editingProduct.image] : []);
         const primaryImage = prodImages[0] || editingProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
+        const prodVideo = (editingProduct.video || '').trim();
 
         if (finalVariants.length > 0 && prodImages.length > 0) {
           finalVariants[0].gallery = prodImages;
+        }
+        if (finalVariants.length > 0) {
+          finalVariants[0].video = prodVideo;
         }
 
         setUploading(true);
@@ -3510,6 +3599,7 @@ ESTADO: ${status.toUpperCase()}
             discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
             image: primaryImage,
             images: prodImages,
+            video: prodVideo,
             description: editingProduct.description,
             variant_label: finalVariantLabel,
             variants: finalVariants
@@ -3578,9 +3668,13 @@ ESTADO: ${status.toUpperCase()}
           ? newProd.images.filter(Boolean)
           : (newProd.image ? [newProd.image] : []);
         const primaryImage = prodImages[0] || newProd.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
+        const prodVideo = (newProd.video || '').trim();
 
         if (finalVariants.length > 0 && prodImages.length > 0) {
           finalVariants[0].gallery = prodImages;
+        }
+        if (finalVariants.length > 0) {
+          finalVariants[0].video = prodVideo;
         }
 
         const prodPayload = {
@@ -3591,6 +3685,7 @@ ESTADO: ${status.toUpperCase()}
           discount_price: newProd.discount_price ? parseFloat(newProd.discount_price) : null,
           image: primaryImage,
           images: prodImages,
+          video: prodVideo,
           description: newProd.description.trim(),
           variant_label: finalVariantLabel,
           variants: finalVariants,
@@ -3626,6 +3721,7 @@ ESTADO: ${status.toUpperCase()}
           discount_price: '',
           image: '',
           images: [],
+          video: '',
           description: '',
           variant_label: isClothing ? 'Color y Talla' : 'Tono / Talla',
           variants: [{ name: '01 Rosa', stock: 5, image: '' }]
@@ -4371,6 +4467,11 @@ ESTADO: ${status.toUpperCase()}
                             ) : (
                               <span className="bg-white/95 text-[#151E28] px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase shadow-2xs">
                                 {prod.category || prod.section}
+                              </span>
+                            )}
+                            {getProductVideo(prod) && (
+                              <span className="bg-black/85 backdrop-blur-xs text-white px-2 py-0.5 rounded-full text-[9px] font-black tracking-wide inline-flex items-center gap-1 shadow-2xs">
+                                <Icon.Play className="w-2.5 h-2.5 fill-[#FF007F] text-[#FF007F]" /> Video
                               </span>
                             )}
                           </div>
@@ -5378,6 +5479,105 @@ ESTADO: ${status.toUpperCase()}
                             </div>
                           </div>
 
+                          {/* VIDEO DEL PRODUCTO (OPCIONAL) */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <label className="font-semibold text-zinc-700 block text-xs flex items-center gap-1.5">
+                                <Icon.Video className="w-3.5 h-3.5 text-[#FF007F]" />
+                                <span>Video del Producto (Opcional)</span>
+                              </label>
+                              {newProd.video && (
+                                <button
+                                  type="button"
+                                  onClick={() => setNewProd({ ...newProd, video: '' })}
+                                  className="text-[10px] text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                                >
+                                  Quitar video
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
+                              {newProd.video ? (
+                                <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-zinc-200">
+                                  <div className="w-20 h-20 rounded-lg overflow-hidden bg-black shrink-0 relative flex items-center justify-center">
+                                    {getYouTubeEmbedUrl(newProd.video) ? (
+                                      <iframe
+                                        src={getYouTubeEmbedUrl(newProd.video)}
+                                        title="Preview"
+                                        className="w-full h-full pointer-events-none"
+                                      />
+                                    ) : (
+                                      <video
+                                        src={newProd.video}
+                                        className="w-full h-full object-cover"
+                                        controls
+                                        playsInline
+                                        muted
+                                      />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0 space-y-1">
+                                    <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                      <Icon.Check className="w-3 h-3" /> Video listo
+                                    </span>
+                                    <p className="text-[11px] text-zinc-600 truncate font-mono">{newProd.video}</p>
+                                    <label className="cursor-pointer text-[10px] font-bold text-[#FF007F] hover:underline inline-flex items-center gap-1">
+                                      <Icon.Edit className="w-3 h-3" /> Cambiar archivo
+                                      <input
+                                        type="file"
+                                        accept="video/*"
+                                        className="hidden"
+                                        onChange={async e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            const url = await uploadFileToSupabase(e.target.files[0], 'videos');
+                                            if (url) setNewProd({ ...newProd, video: url });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                    {/* Botón para subir archivo de video */}
+                                    <label className="flex-1 py-2 px-3 rounded-xl border-2 border-dashed border-pink-200 hover:border-[#FF007F] bg-white hover:bg-pink-50/40 flex items-center justify-center gap-2 cursor-pointer transition text-zinc-700 hover:text-[#FF007F]">
+                                      <Icon.Video className="w-4 h-4 text-[#FF007F]" />
+                                      <span className="text-xs font-bold">Subir video (MP4 / MOV)</span>
+                                      <input
+                                        type="file"
+                                        accept="video/*"
+                                        className="hidden"
+                                        onChange={async e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            const url = await uploadFileToSupabase(e.target.files[0], 'videos');
+                                            if (url) setNewProd({ ...newProd, video: url });
+                                          }
+                                        }}
+                                      />
+                                    </label>
+
+                                    {/* Input directo para link de YouTube / Shorts / URL externa */}
+                                    <div className="flex-1 flex items-center gap-1.5 bg-white border border-zinc-200 rounded-xl px-2.5 py-1.5 focus-within:border-[#FF007F]">
+                                      <Icon.Play className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                      <input
+                                        type="url"
+                                        placeholder="O pega link YouTube / Shorts"
+                                        value={newProd.video || ''}
+                                        onChange={e => setNewProd({ ...newProd, video: e.target.value.trim() })}
+                                        className="w-full text-xs outline-none bg-transparent"
+                                      />
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-zinc-400">
+                                    Admite clips de prueba, swatches o reels (hasta 50 MB o enlace de YouTube).
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           <div>
                             <label className="font-semibold text-zinc-700 block mb-1">Descripción</label>
                             <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Detalles del producto..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
@@ -5880,6 +6080,11 @@ ESTADO: ${status.toUpperCase()}
                                       <span className="text-[10px] bg-zinc-100 text-zinc-500 font-medium px-2 py-0.5 rounded-full">
                                         {prod.category}
                                       </span>
+                                      {getProductVideo(prod) && (
+                                        <span className="text-[10px] bg-pink-50 text-[#FF007F] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 border border-pink-200">
+                                          <Icon.Play className="w-2.5 h-2.5 fill-[#FF007F]" /> Con Video
+                                        </span>
+                                      )}
                                     </div>
 
                                     <div className="flex items-center gap-3 text-xs flex-wrap">
@@ -7591,6 +7796,105 @@ ESTADO: ${status.toUpperCase()}
                         <span>Puedes subir varias fotos (frente, detalle, modelo).</span>
                         <span>JPG, PNG, WEBP</span>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* VIDEO DEL PRODUCTO EN EDICIÓN (OPCIONAL) */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-semibold text-zinc-700 block text-xs flex items-center gap-1.5">
+                        <Icon.Video className="w-3.5 h-3.5 text-[#FF007F]" />
+                        <span>Video del Producto (Opcional)</span>
+                      </label>
+                      {editingProduct.video && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct({ ...editingProduct, video: '' })}
+                          className="text-[10px] text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                        >
+                          Quitar video
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
+                      {editingProduct.video ? (
+                        <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-zinc-200">
+                          <div className="w-20 h-20 rounded-lg overflow-hidden bg-black shrink-0 relative flex items-center justify-center">
+                            {getYouTubeEmbedUrl(editingProduct.video) ? (
+                              <iframe
+                                src={getYouTubeEmbedUrl(editingProduct.video)}
+                                title="Preview"
+                                className="w-full h-full pointer-events-none"
+                              />
+                            ) : (
+                              <video
+                                src={editingProduct.video}
+                                className="w-full h-full object-cover"
+                                controls
+                                playsInline
+                                muted
+                              />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <Icon.Check className="w-3 h-3" /> Video listo
+                            </span>
+                            <p className="text-[11px] text-zinc-600 truncate font-mono">{editingProduct.video}</p>
+                            <label className="cursor-pointer text-[10px] font-bold text-[#FF007F] hover:underline inline-flex items-center gap-1">
+                              <Icon.Edit className="w-3 h-3" /> Cambiar archivo
+                              <input
+                                type="file"
+                                accept="video/*"
+                                className="hidden"
+                                onChange={async e => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const url = await uploadFileToSupabase(e.target.files[0], 'videos');
+                                    if (url) setEditingProduct({ ...editingProduct, video: url });
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            {/* Botón para subir archivo de video */}
+                            <label className="flex-1 py-2 px-3 rounded-xl border-2 border-dashed border-pink-200 hover:border-[#FF007F] bg-white hover:bg-pink-50/40 flex items-center justify-center gap-2 cursor-pointer transition text-zinc-700 hover:text-[#FF007F]">
+                              <Icon.Video className="w-4 h-4 text-[#FF007F]" />
+                              <span className="text-xs font-bold">Subir video (MP4 / MOV)</span>
+                              <input
+                                type="file"
+                                accept="video/*"
+                                className="hidden"
+                                onChange={async e => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const url = await uploadFileToSupabase(e.target.files[0], 'videos');
+                                    if (url) setEditingProduct({ ...editingProduct, video: url });
+                                  }
+                                }}
+                              />
+                            </label>
+
+                            {/* Input directo para link de YouTube / Shorts / URL externa */}
+                            <div className="flex-1 flex items-center gap-1.5 bg-white border border-zinc-200 rounded-xl px-2.5 py-1.5 focus-within:border-[#FF007F]">
+                              <Icon.Play className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                              <input
+                                type="url"
+                                placeholder="O pega link YouTube / Shorts"
+                                value={editingProduct.video || ''}
+                                onChange={e => setEditingProduct({ ...editingProduct, video: e.target.value.trim() })}
+                                className="w-full text-xs outline-none bg-transparent"
+                              />
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-zinc-400">
+                            Admite clips de prueba, swatches o reels (hasta 50 MB o enlace de YouTube).
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -9733,31 +10037,64 @@ ESTADO: ${status.toUpperCase()}
                   const stock = varObj ? varObj.stock : 0;
                   const hasDiscount = Boolean(quickViewProduct.discount_price && Number(quickViewProduct.discount_price) < Number(quickViewProduct.price));
                   const allImages = getProductImages(quickViewProduct);
-                  const activePhotoUrl = allImages[quickViewActiveImageIndex] || displayImg || allImages[0];
+                  const allMedia = getProductMedia(quickViewProduct);
+                  const activeMedia = allMedia[quickViewActiveImageIndex] || (displayImg ? { type: 'image', url: displayImg } : allMedia[0]) || { type: 'image', url: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' };
 
                   return (
                     <>
-                      {/* GALERÍA DE FOTOS: FOTO PRINCIPAL + MINIATURAS + CONTROLES */}
+                      {/* GALERÍA DE MEDIOS: FOTO / VIDEO PRINCIPAL + MINIATURAS + CONTROLES */}
                       <div className="md:w-1/2 flex flex-col bg-gradient-to-b from-zinc-50 to-pink-50/20 border-b md:border-b-0 md:border-r border-zinc-100">
-                        {/* FOTO GRANDE PRINCIPAL */}
+                        {/* ELEMENTO MULTIMEDIA GRANDE PRINCIPAL */}
                         <div className="relative min-h-[280px] sm:min-h-[360px] max-h-[50vh] md:max-h-[65vh] flex-1 flex items-center justify-center p-3 sm:p-5 overflow-hidden">
-                          <img
-                            src={activePhotoUrl}
-                            alt={quickViewProduct.name}
-                            className="w-full h-full max-h-[46vh] md:max-h-[60vh] object-contain drop-shadow-sm transition-all duration-300"
-                          />
+                          {activeMedia.type === 'video' ? (
+                            activeMedia.isYouTube ? (
+                              <div className="w-full h-full min-h-[260px] sm:min-h-[340px] flex items-center justify-center p-1">
+                                <iframe
+                                  src={activeMedia.embedUrl}
+                                  title={quickViewProduct.name}
+                                  className="w-full h-full aspect-video rounded-2xl shadow-sm border border-zinc-200"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                />
+                              </div>
+                            ) : (
+                              <video
+                                key={activeMedia.url}
+                                src={activeMedia.url}
+                                controls
+                                playsInline
+                                autoPlay
+                                loop
+                                className="w-full h-full max-h-[46vh] md:max-h-[60vh] object-contain rounded-2xl drop-shadow-sm bg-black/5"
+                              />
+                            )
+                          ) : (
+                            <img
+                              src={activeMedia.url}
+                              alt={quickViewProduct.name}
+                              className="w-full h-full max-h-[46vh] md:max-h-[60vh] object-contain drop-shadow-sm transition-all duration-300"
+                            />
+                          )}
 
-                          {/* FLECHAS DE NAVEGACIÓN ANTERIOR / SIGUIENTE (SI HAY MÁS DE 1 FOTO) */}
-                          {allImages.length > 1 && (
+                          {/* BADGE SI ES VIDEO */}
+                          {activeMedia.type === 'video' && (
+                            <span className="absolute top-3 left-3 bg-black/80 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm z-10">
+                              <Icon.Play className="w-2.5 h-2.5 fill-[#FF007F] text-[#FF007F]" />
+                              <span>Video Demostrativo</span>
+                            </span>
+                          )}
+
+                          {/* FLECHAS DE NAVEGACIÓN ANTERIOR / SIGUIENTE (SI HAY MÁS DE 1 ELEMENTO) */}
+                          {allMedia.length > 1 && (
                             <>
                               <button
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex - 1 + allImages.length) % allImages.length);
+                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex - 1 + allMedia.length) % allMedia.length);
                                 }}
-                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80"
-                                title="Foto anterior"
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80 cursor-pointer z-20"
+                                title="Elemento anterior"
                               >
                                 <Icon.ChevronLeft className="w-4 h-4 text-zinc-800" />
                               </button>
@@ -9765,37 +10102,45 @@ ESTADO: ${status.toUpperCase()}
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex + 1) % allImages.length);
+                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex + 1) % allMedia.length);
                                 }}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80"
-                                title="Foto siguiente"
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80 cursor-pointer z-20"
+                                title="Elemento siguiente"
                               >
                                 <Icon.ChevronRight className="w-4 h-4 text-zinc-800" />
                               </button>
 
-                              {/* INDICADOR DE FOTO ACTUAL (ej. 1 / 3) */}
-                              <span className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-                                {quickViewActiveImageIndex + 1} / {allImages.length}
+                              {/* INDICADOR DE FOTO / VIDEO ACTUAL (ej. 1 / 3) */}
+                              <span className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs z-10">
+                                {quickViewActiveImageIndex + 1} / {allMedia.length}
                               </span>
                             </>
                           )}
                         </div>
 
-                        {/* MINIATURAS (THUMBNAILS) SI HAY MÁS DE 1 FOTO */}
-                        {allImages.length > 1 && (
+                        {/* MINIATURAS (THUMBNAILS) SI HAY MÁS DE 1 ELEMENTO */}
+                        {allMedia.length > 1 && (
                           <div className="p-2 sm:p-2.5 bg-white/70 backdrop-blur-xs border-t border-zinc-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
-                            {allImages.map((imgUrl, idx) => (
+                            {allMedia.map((m, idx) => (
                               <button
                                 key={idx}
                                 type="button"
                                 onClick={() => setQuickViewActiveImageIndex(idx)}
-                                className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition shrink-0 bg-white shadow-2xs ${
+                                className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition shrink-0 shadow-2xs flex items-center justify-center cursor-pointer ${
                                   quickViewActiveImageIndex === idx
-                                    ? 'border-zinc-950 ring-2 ring-zinc-300 scale-105'
-                                    : 'border-zinc-200 hover:border-pink-300 opacity-70 hover:opacity-100'
+                                    ? 'border-[#FF007F] ring-2 ring-pink-200 scale-105 bg-white'
+                                    : 'border-zinc-200 hover:border-pink-300 opacity-75 hover:opacity-100 bg-white'
                                 }`}
+                                title={m.type === 'video' ? 'Ver video' : `Foto ${idx + 1}`}
                               >
-                                <img src={imgUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                                {m.type === 'video' ? (
+                                  <div className="w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-white p-0.5">
+                                    <Icon.Play className="w-4 h-4 text-[#FF007F] fill-[#FF007F]" />
+                                    <span className="text-[7px] font-black uppercase tracking-tight text-white mt-0.5">VIDEO</span>
+                                  </div>
+                                ) : (
+                                  <img src={m.url} alt="" className="w-full h-full object-contain p-0.5" />
+                                )}
                               </button>
                             ))}
                           </div>
@@ -9856,7 +10201,7 @@ ESTADO: ${status.toUpperCase()}
                                           setQuickViewSelectedVar(nextVarName);
                                           const nextImg = matchedVar?.image || colorVar?.image;
                                           if (nextImg) {
-                                            const targetIdx = allImages.indexOf(nextImg);
+                                            const targetIdx = allMedia.findIndex(m => m.url === nextImg);
                                             if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
                                           }
                                           setActiveVariants({
@@ -9968,7 +10313,7 @@ ESTADO: ${status.toUpperCase()}
                                     onClick={() => {
                                       setQuickViewSelectedVar(v.name);
                                       if (v.image) {
-                                        const targetIdx = allImages.indexOf(v.image);
+                                        const targetIdx = allMedia.findIndex(m => m.url === v.image);
                                         if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
                                       }
                                       setActiveVariants({

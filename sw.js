@@ -1,64 +1,50 @@
 // =========================================================================
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Soporte Offline)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v11)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v10';
+const CACHE_NAME = 'kaoj-store-v11';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icons/kaoj-logo.png',
+  './icons/favicon.png',
+  './icons/apple-touch-icon.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
-  './icons/favicon.png',
+  './icons/favicon.svg',
   './icons/icon-192.svg',
-  './icons/icon-512.svg',
-  './icons/favicon.svg'
+  './icons/icon-512.svg'
 ];
 
 const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
   'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.min.js',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.min.js'
 ];
 
-// Instalación del Service Worker: cachear recursos esenciales locales y CDN
+// Instalación: cachear de forma no bloqueante con Promise.allSettled
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async cache => {
-      // Cachear assets locales
-      try {
-        await cache.addAll(STATIC_ASSETS);
-      } catch (err) {
-        console.warn('Error cacheando assets locales:', err);
-      }
-      // Cachear assets de CDN
-      for (const url of CDN_ASSETS) {
-        try {
-          const resp = await fetch(url, { mode: 'cors' });
-          if (resp && resp.status === 200) {
-            await cache.put(url, resp);
-          }
-        } catch (err) {
-          // Ignorar fallas de red durante install para no bloquear el registro
-        }
-      }
+      await Promise.allSettled(
+        STATIC_ASSETS.map(url => cache.add(url).catch(() => {}))
+      );
+      await Promise.allSettled(
+        CDN_ASSETS.map(url => cache.add(url).catch(() => {}))
+      );
     })
   );
   self.skipWaiting();
 });
 
-// Activación del Service Worker: limpiar cachés obsoletos
+// Activación: purgar inmediatamente cualquier versión previa
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then(keys => {
       return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
           }
         })
       );
@@ -67,11 +53,11 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Intercepción de peticiones (Network First con fallback a Cache para app, Cache First para CDNs)
+// Intercepción de peticiones
 self.addEventListener('fetch', event => {
   const url = event.request.url;
 
-  // Ignorar peticiones dinámicas de Supabase o WhatsApp para asegurar datos frescos
+  // Supabase, WhatsApp o métodos no GET siempre van directos a la red
   if (
     url.includes('supabase.co') ||
     url.includes('wa.me') ||
@@ -80,10 +66,32 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Para librerías CDN externas y fuentes: Cache First con fallback a Network
+  // Navegación principal (cargar index.html de la boutique): Network First
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          const fallback = await caches.match('./index.html') || await caches.match('./');
+          if (fallback) return fallback;
+          return new Response('Sin conexión', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+        })
+    );
+    return;
+  }
+
+  // Recursos CDN: Cache First con fallback a Network
   if (
-    url.includes('unpkg.com') ||
     url.includes('cdn.jsdelivr.net') ||
+    url.includes('unpkg.com') ||
     url.includes('cdn.tailwindcss.com') ||
     url.includes('fonts.googleapis.com') ||
     url.includes('fonts.gstatic.com')
@@ -92,9 +100,9 @@ self.addEventListener('fetch', event => {
       caches.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(response => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then(c => c.put(event.request, copy));
+          if (response && (response.status === 200 || response.type === 'opaque')) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
           }
           return response;
         }).catch(() => cached);
@@ -103,25 +111,16 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Para recursos de la tienda (index.html, manifest, imágenes locales): Network First
+  // Demás assets estáticos locales (imágenes, iconos, json)
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
+    caches.match(event.request).then(cached => {
+      return cached || fetch(event.request).then(response => {
         if (response && response.status === 200) {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
-          });
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
         }
         return response;
-      })
-      .catch(() => {
-        return caches.match(event.request).then(cachedResponse => {
-          if (cachedResponse) return cachedResponse;
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
-          }
-        });
-      })
+      }).catch(() => cached);
+    })
   );
 });

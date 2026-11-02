@@ -1900,11 +1900,21 @@ ESTADO: ${status.toUpperCase()}
         return '';
       }
 
-      // Obtener todos los medios de un producto (Video primero si existe + todas las fotos)
+      // Obtener todos los medios de un producto (Foto principal SIEMPRE primero, luego fotos de galería/variantes y video)
       function getProductMedia(product) {
         if (!product) return [{ type: 'image', url: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' }];
         const media = [];
         const videoUrl = getProductVideo(product);
+
+        // 1. Fotos del producto (la foto principal está garantizada en images[0])
+        const images = getProductImages(product);
+        images.forEach(img => {
+          if (img && img !== videoUrl) {
+            media.push({ type: 'image', url: img });
+          }
+        });
+
+        // 2. Video del producto como elemento secundario / complementario en la galería
         if (videoUrl) {
           media.push({
             type: 'video',
@@ -1913,21 +1923,24 @@ ESTADO: ${status.toUpperCase()}
             embedUrl: getYouTubeEmbedUrl(videoUrl)
           });
         }
-        const images = getProductImages(product);
-        images.forEach(img => {
-          if (img && img !== videoUrl) {
-            media.push({ type: 'image', url: img });
-          }
-        });
+
         return media.length > 0 ? media : [{ type: 'image', url: product.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' }];
       }
 
-      // Obtener todas las imágenes de un producto (galería múltiple, variantes y fotos de tonos, excluyendo videos)
+      // Obtener todas las imágenes de un producto (La foto principal SIEMPRE en el índice 0, luego galería y variantes)
       function getProductImages(product) {
         if (!product) return ['https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
         const list = [];
 
-        // 1. Array `images` directo del producto
+        // 1. FOTO PRINCIPAL ABSOLUTA (Garantiza primera impresión en catálogo y vista rápida)
+        const mainPhoto = (product.image && typeof product.image === 'string' && product.image.trim() && !isVideoUrl(product.image))
+          ? product.image.trim()
+          : null;
+        if (mainPhoto) {
+          list.push(mainPhoto);
+        }
+
+        // 2. Array `images` directo del producto (sin repetir la foto principal)
         if (Array.isArray(product.images)) {
           product.images.forEach(img => {
             if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
@@ -1936,7 +1949,7 @@ ESTADO: ${status.toUpperCase()}
           });
         }
 
-        // 2. Galería almacenada en variantes[0].gallery (compatibilidad sin requerir cambios de esquema)
+        // 3. Galería almacenada en variantes[0].gallery (compatibilidad)
         if (Array.isArray(product.variants?.[0]?.gallery)) {
           product.variants[0].gallery.forEach(img => {
             if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
@@ -1945,12 +1958,7 @@ ESTADO: ${status.toUpperCase()}
           });
         }
 
-        // 3. Foto principal
-        if (product.image && typeof product.image === 'string' && product.image.trim() && !isVideoUrl(product.image) && !list.includes(product.image.trim())) {
-          list.unshift(product.image.trim());
-        }
-
-        // 4. Fotos de variantes o tonos
+        // 4. Fotos de variantes o tonos (secundarias para flechitas o al tocar el tono)
         (product.variants || []).forEach(v => {
           if (v.image && typeof v.image === 'string' && v.image.trim() && !isVideoUrl(v.image) && !list.includes(v.image.trim())) {
             list.push(v.image.trim());
@@ -4436,7 +4444,7 @@ ESTADO: ${status.toUpperCase()}
                     const hasLowStockVariant = (prod.variants || []).some(v => v.stock > 0 && v.stock <= 2);
                     const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
-                    const displayImage = activeVar.image || varObj?.image || (hasColorAndSize ? prod.variants?.find(v => v.color === currentColor && v.image)?.image : null) || prod.image;
+                    const displayImage = activeVar.image || prod.image || varObj?.image || (hasColorAndSize ? prod.variants?.find(v => v.color === currentColor && v.image)?.image : null) || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
                     const cardImages = getProductImages(prod);
 
                     return (
@@ -10038,7 +10046,57 @@ ESTADO: ${status.toUpperCase()}
                   const hasDiscount = Boolean(quickViewProduct.discount_price && Number(quickViewProduct.discount_price) < Number(quickViewProduct.price));
                   const allImages = getProductImages(quickViewProduct);
                   const allMedia = getProductMedia(quickViewProduct);
-                  const activeMedia = allMedia[quickViewActiveImageIndex] || (displayImg ? { type: 'image', url: displayImg } : allMedia[0]) || { type: 'image', url: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' };
+                  const activeMedia = allMedia[quickViewActiveImageIndex] || allMedia[0] || { type: 'image', url: quickViewProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600' };
+
+                  // Navegación bidireccional de fotos/video: al cambiar de foto con flechita o miniatura,
+                  // si la foto pertenece a un tono o color/talla, se actualiza automáticamente la selección de variante
+                  const handleGalleryNavigate = (nextIdx) => {
+                    setQuickViewActiveImageIndex(nextIdx);
+                    const targetMedia = allMedia[nextIdx];
+                    if (!targetMedia || targetMedia.type !== 'image' || !targetMedia.url) return;
+                    const url = targetMedia.url.trim();
+
+                    if (hasColorAndSize) {
+                      const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+                      if (matchedVar && matchedVar.color) {
+                        const newColor = matchedVar.color;
+                        const matchingSizeVar = (quickViewProduct.variants || []).find(v => v.color === newColor && v.size === currentSize && v.stock > 0)
+                          || (quickViewProduct.variants || []).find(v => v.color === newColor && v.stock > 0)
+                          || matchedVar;
+                        const nextSize = matchingSizeVar.size || currentSize;
+                        const nextVarName = matchingSizeVar.name || `${newColor} - ${nextSize}`;
+                        setQuickViewSelectedVar(nextVarName);
+                        setActiveVariants(prev => ({
+                          ...prev,
+                          [quickViewProduct.id]: {
+                            color: newColor,
+                            size: nextSize,
+                            variantName: nextVarName,
+                            image: matchingSizeVar.image || matchedVar.image
+                          }
+                        }));
+                      }
+                    } else {
+                      const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+                      if (matchedVar) {
+                        setQuickViewSelectedVar(matchingVar.name);
+                        setActiveVariants(prev => ({
+                          ...prev,
+                          [quickViewProduct.id]: {
+                            variantName: matchingVar.name,
+                            image: matchingVar.image
+                          }
+                        }));
+                      }
+                    }
+                  };
+
+                  // Identificar variante que corresponde a la foto actual (si aplica)
+                  const matchingVariantForActiveMedia = activeMedia.type === 'image' && (
+                    hasColorAndSize
+                      ? (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.color
+                      : (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.name
+                  );
 
                   return (
                     <>
@@ -10076,13 +10134,22 @@ ESTADO: ${status.toUpperCase()}
                             />
                           )}
 
-                          {/* BADGE SI ES VIDEO */}
-                          {activeMedia.type === 'video' && (
+                          {/* BADGES INTELIGENTES: VIDEO / FOTO PRINCIPAL / TONO SELECCIONADO */}
+                          {activeMedia.type === 'video' ? (
                             <span className="absolute top-3 left-3 bg-black/80 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm z-10">
                               <Icon.Play className="w-2.5 h-2.5 fill-[#FF007F] text-[#FF007F]" />
                               <span>Video Demostrativo</span>
                             </span>
-                          )}
+                          ) : quickViewActiveImageIndex === 0 ? (
+                            <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-xs text-[#151E28] text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow-2xs z-10 border border-zinc-200/80">
+                              Foto Principal
+                            </span>
+                          ) : matchingVariantForActiveMedia ? (
+                            <span className="absolute top-3 left-3 bg-black/80 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-xs z-10 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF007F]"></span>
+                              <span>{matchingVariantForActiveMedia}</span>
+                            </span>
+                          ) : null}
 
                           {/* FLECHAS DE NAVEGACIÓN ANTERIOR / SIGUIENTE (SI HAY MÁS DE 1 ELEMENTO) */}
                           {allMedia.length > 1 && (
@@ -10091,7 +10158,7 @@ ESTADO: ${status.toUpperCase()}
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex - 1 + allMedia.length) % allMedia.length);
+                                  handleGalleryNavigate((quickViewActiveImageIndex - 1 + allMedia.length) % allMedia.length);
                                 }}
                                 className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80 cursor-pointer z-20"
                                 title="Elemento anterior"
@@ -10102,7 +10169,7 @@ ESTADO: ${status.toUpperCase()}
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex + 1) % allMedia.length);
+                                  handleGalleryNavigate((quickViewActiveImageIndex + 1) % allMedia.length);
                                 }}
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80 cursor-pointer z-20"
                                 title="Elemento siguiente"
@@ -10125,13 +10192,13 @@ ESTADO: ${status.toUpperCase()}
                               <button
                                 key={idx}
                                 type="button"
-                                onClick={() => setQuickViewActiveImageIndex(idx)}
+                                onClick={() => handleGalleryNavigate(idx)}
                                 className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition shrink-0 shadow-2xs flex items-center justify-center cursor-pointer ${
                                   quickViewActiveImageIndex === idx
                                     ? 'border-[#FF007F] ring-2 ring-pink-200 scale-105 bg-white'
                                     : 'border-zinc-200 hover:border-pink-300 opacity-75 hover:opacity-100 bg-white'
                                 }`}
-                                title={m.type === 'video' ? 'Ver video' : `Foto ${idx + 1}`}
+                                title={m.type === 'video' ? 'Ver video' : idx === 0 ? 'Foto principal' : `Foto ${idx + 1}`}
                               >
                                 {m.type === 'video' ? (
                                   <div className="w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-white p-0.5">

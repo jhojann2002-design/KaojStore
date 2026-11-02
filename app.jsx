@@ -1538,6 +1538,139 @@ ESTADO: ${status.toUpperCase()}
       }, 350);
     }
 
+    // =========================================================================
+    // VERIFICADOR DE CÓDIGOS QR DE COMPROBANTES PICHINCHA / DEUNA
+    // =========================================================================
+    function parsePichinchaReceiptQR(text) {
+      if (!text || typeof text !== 'string') return null;
+      const trimmed = text.trim();
+      const parts = trimmed.split(':');
+      if (parts.length < 8) return null;
+
+      const isPichincha = trimmed.toUpperCase().includes('PICHINCHA') ||
+                          parts[0].trim() === 'ONLINE' ||
+                          trimmed.toUpperCase().includes('DEUNA') ||
+                          trimmed.toUpperCase().includes('BP_TO_');
+      if (!isPichincha) return null;
+
+      const type = parts[1] ? parts[1].trim() : '';
+      const bank = parts[2] ? parts[2].trim() : 'Banco Pichincha';
+      const senderName = parts[3] ? parts[3].trim() : '';
+      const senderAcc = parts[4] ? parts[4].trim() : '';
+      const channel = parts[5] ? parts[5].trim() : '';
+      const receiverName = parts[6] ? parts[6].trim() : '';
+      const receiverAcc = parts[7] ? parts[7].trim() : '';
+      const amount = parseFloat(parts[8]) || 0;
+      const timestampRaw = parts[9] ? parts[9].trim() : '';
+      const uuid = parts[10] ? parts[10].trim() : '';
+      const secuencial = parts[11] ? parts[11].trim() : '';
+      const hash = parts[12] ? parts[12].trim() : '';
+
+      let transferDate = '';
+      if (timestampRaw && /^\d+$/.test(timestampRaw)) {
+        try {
+          const tsNum = parseInt(timestampRaw, 10);
+          const dateObj = new Date(tsNum > 1e11 ? tsNum : tsNum * 1000);
+          if (!isNaN(dateObj.getTime())) {
+            transferDate = dateObj.toLocaleDateString('es-EC', {
+              day: '2-digit', month: '2-digit', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            });
+          }
+        } catch (_) {}
+      }
+
+      return {
+        raw: trimmed,
+        type,
+        bank,
+        senderName,
+        senderAcc,
+        channel,
+        receiverName,
+        receiverAcc,
+        amount,
+        timestampRaw,
+        transferDate,
+        uuid,
+        secuencial,
+        hash
+      };
+    }
+
+    function scanQRCodeFromImage(imageSource) {
+      return new Promise((resolve) => {
+        try {
+          if (typeof window.jsQR !== 'function') {
+            return resolve(null);
+          }
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+
+          const runDetection = () => {
+            try {
+              const origW = img.naturalWidth || img.width;
+              const origH = img.naturalHeight || img.height;
+              if (!origW || !origH) return resolve(null);
+
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+              const maxDim = 1200;
+              const scale = Math.min(1, maxDim / Math.max(origW, origH));
+              const width = Math.round(origW * scale);
+              const height = Math.round(origH * scale);
+
+              canvas.width = width;
+              canvas.height = height;
+              ctx.drawImage(img, 0, 0, width, height);
+
+              // 1. Imagen completa
+              let imgData = ctx.getImageData(0, 0, width, height);
+              let qr = window.jsQR(imgData.data, width, height, { inversionAttempts: 'attemptBoth' });
+              if (qr && qr.data) return resolve(qr.data);
+
+              // 2. Mitad inferior (típico en vouchers Banco Pichincha)
+              const cropY = Math.floor(height * 0.35);
+              const cropH = height - cropY;
+              let bottomData = ctx.getImageData(0, cropY, width, cropH);
+              let qrBottom = window.jsQR(bottomData.data, width, cropH, { inversionAttempts: 'attemptBoth' });
+              if (qrBottom && qrBottom.data) return resolve(qrBottom.data);
+
+              // 3. Mitad superior
+              let topData = ctx.getImageData(0, 0, width, Math.floor(height * 0.65));
+              let qrTop = window.jsQR(topData.data, width, Math.floor(height * 0.65), { inversionAttempts: 'attemptBoth' });
+              if (qrTop && qrTop.data) return resolve(qrTop.data);
+
+              resolve(null);
+            } catch (err) {
+              console.warn('Error escaneando QR:', err);
+              resolve(null);
+            }
+          };
+
+          if (typeof File !== 'undefined' && imageSource instanceof File || typeof Blob !== 'undefined' && imageSource instanceof Blob) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              img.onload = runDetection;
+              img.onerror = () => resolve(null);
+              img.src = e.target.result;
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(imageSource);
+          } else if (typeof imageSource === 'string') {
+            img.onload = runDetection;
+            img.onerror = () => resolve(null);
+            img.src = imageSource;
+          } else {
+            resolve(null);
+          }
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+
     function getOrderWhatsAppMessage(order) {
       if (!order) return '';
       const name = (order.customer_name || 'Clienta').trim().split(' ')[0];
@@ -1551,6 +1684,8 @@ ESTADO: ${status.toUpperCase()}
         return `¡Hola ${name}! Te saludamos de Kaoj Store 💅. Hemos recibido tu orden *#${code}* por *$${total}*. Estamos a la espera de la confirmación de tu pago para proceder de inmediato con el alistamiento de tu paquete ✨.`;
       } else if (status === 'verificado') {
         return `¡Hola ${name}! 💖 Confirmamos la recepción de tu pago para el pedido *#${code}*. Ya tenemos tu orden en preparación en bodega con todo el cuidado y cariño de Kaoj Store 💅📦.`;
+      } else if (status === 'empacado') {
+        return `¡Hola ${name}! 🎁📦 ¡Tu pedido *#${code}* ya está completamente empacado y listo para despacho en bodega de Kaoj Store! En breve te compartiremos el comprobante de envío o guía de transporte ✨💖.`;
       } else if (status === 'en_camino') {
         return `¡Hola ${name}! 🚚 Tu pedido *#${code}* de Kaoj Store ya va en camino hacia: ${delivery}${address ? ` (${address})` : ''}. ¡Muy pronto estará en tus manos! ✨💅`;
       } else if (status === 'entregado') {
@@ -1700,13 +1835,14 @@ ESTADO: ${status.toUpperCase()}
           paymentMethod: 'deuna',
           receiptUrl: '',
           receiptRef: '',
+          receiptQrData: null,
           payphoneRef: ''
         };
         try {
           const savedDraft = localStorage.getItem('kaoj_customer_draft');
           if (savedDraft) {
             const parsed = JSON.parse(savedDraft);
-            return { ...defaults, ...parsed, receiptUrl: '', receiptRef: '', payphoneRef: '' };
+            return { ...defaults, ...parsed, receiptUrl: '', receiptRef: '', receiptQrData: null, payphoneRef: '' };
           }
         } catch (e) {}
         return defaults;
@@ -1714,7 +1850,7 @@ ESTADO: ${status.toUpperCase()}
 
       useEffect(() => {
         try {
-          const { receiptUrl, receiptRef, payphoneRef, ...draftToSave } = customer;
+          const { receiptUrl, receiptRef, receiptQrData, payphoneRef, ...draftToSave } = customer;
           localStorage.setItem('kaoj_customer_draft', JSON.stringify(draftToSave));
         } catch (e) {}
       }, [customer]);
@@ -1814,6 +1950,9 @@ ESTADO: ${status.toUpperCase()}
 
       // Modales de Comprobantes, Nota de Venta e Impresora Térmica 58mm
       const [customerReceiptModal, setCustomerReceiptModal] = useState(null);
+      const [adminReceiptModal, setAdminReceiptModal] = useState(null);
+      const [adminReceiptScanning, setAdminReceiptScanning] = useState(false);
+      const [adminReceiptQrResult, setAdminReceiptQrResult] = useState(null);
       const [adminSalesNoteModal, setAdminSalesNoteModal] = useState(null);
       const [adminThermalTicketModal, setAdminThermalTicketModal] = useState(null);
       const [showDeunaQrModal, setShowDeunaQrModal] = useState(false);
@@ -2257,6 +2396,7 @@ ESTADO: ${status.toUpperCase()}
         const totalCount = orders.length;
         const pendingList = orders.filter(o => o.status === 'pendiente');
         const verifiedList = orders.filter(o => o.status === 'verificado');
+        const empacadoList = orders.filter(o => o.status === 'empacado');
         const enCaminoList = orders.filter(o => o.status === 'en_camino');
         const deliveredList = orders.filter(o => o.status === 'entregado');
         const cancelledList = orders.filter(o => o.status === 'cancelado');
@@ -2275,6 +2415,7 @@ ESTADO: ${status.toUpperCase()}
           pendingCount: pendingList.length,
           pendingRevenue,
           verifiedCount: verifiedList.length,
+          empacadoCount: empacadoList.length,
           enCaminoCount: enCaminoList.length,
           deliveredCount: deliveredList.length,
           cancelledCount: cancelledList.length,
@@ -2368,6 +2509,22 @@ ESTADO: ${status.toUpperCase()}
         setOrders(prev => prev.map(o => selectedOrderIds.includes(o.id) ? { ...o, status: newStatus } : o));
         setSelectedOrderIds([]);
         showToast(`¡${count} pedidos actualizados a ${newStatus.toUpperCase()}! ⚡`, 'success');
+      };
+
+      const handleBatchDeleteCancelledOrders = async () => {
+        const cancelledSelected = orders.filter(o => selectedOrderIds.includes(o.id) && o.status === 'cancelado');
+        if (cancelledSelected.length === 0) return;
+        if (!window.confirm(`¿Estás segura de eliminar permanentemente los ${cancelledSelected.length} pedidos cancelados seleccionados? Esta acción no se puede deshacer.`)) return;
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+        for (const ord of cancelledSelected) {
+          try {
+            await supabase.rpc('kaoj_admin_delete_order', { admin_pin: adminPin, target_order_id: ord.id });
+            await supabase.from('kaoj_orders').delete().eq('id', ord.id);
+          } catch (_) {}
+        }
+        setOrders(prev => prev.filter(o => !cancelledSelected.some(c => c.id === o.id)));
+        setSelectedOrderIds(prev => prev.filter(id => !cancelledSelected.some(c => c.id === id)));
+        showToast(`Se eliminaron definitivamente ${cancelledSelected.length} pedidos cancelados.`, 'success');
       };
       const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
       const [adminInventorySection, setAdminInventorySection] = useState('TODOS');
@@ -3253,6 +3410,22 @@ ESTADO: ${status.toUpperCase()}
         if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
         if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
 
+        // Verificación inteligente de comprobante Banco Pichincha / DeUna
+        let initialStatus = 'pendiente';
+        if (customer.receiptQrData) {
+          const qr = customer.receiptQrData;
+          adminNotesParts.push(
+            `[QR PICHINCHA VERIFICADO: $${Number(qr.amount).toFixed(2)} | Emisor: ${qr.senderName} | Ref: ${qr.secuencial || qr.uuid} | Dest: ${qr.receiverName} (${qr.receiverAcc})]`
+          );
+          const receiverMatches = (qr.receiverAcc && qr.receiverAcc.includes('7440')) ||
+                                  (qr.receiverName && qr.receiverName.toUpperCase().includes('DEMERA')) ||
+                                  (settings.bank_pichincha_acc && qr.receiverAcc && qr.receiverAcc.includes(settings.bank_pichincha_acc.slice(-4)));
+          const amountMatches = qr.amount >= (total - 0.05);
+          if (receiverMatches && amountMatches) {
+            initialStatus = 'verificado';
+          }
+        }
+
         const orderData = {
           order_code: orderCode,
           customer_code: activeCustomerCode,
@@ -3275,7 +3448,7 @@ ESTADO: ${status.toUpperCase()}
             `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${customer.receiptRef ? ` • Comp: ${customer.receiptRef.trim()}` : ''})`,
           receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
           items: cart,
-          status: 'pendiente',
+          status: initialStatus,
           admin_notes: adminNotesParts.join(' • ')
         };
 
@@ -3419,7 +3592,7 @@ ESTADO: ${status.toUpperCase()}
         setAppliedCoupon(null);
         setCouponCodeInput('');
         setShowCouponInputBox(false);
-        setCustomer(prev => ({ ...prev, receiptUrl: '', receiptRef: '', payphoneRef: '' }));
+        setCustomer(prev => ({ ...prev, receiptUrl: '', receiptRef: '', receiptQrData: null, payphoneRef: '' }));
         setIsSubmittingOrder(false);
         showToast(`¡Pedido ${orderCode} generado con éxito! Ganaste +${pointsEarnedWithOrder} Puntos Kaoj VIP.`);
         fetchInitialData();
@@ -3522,6 +3695,50 @@ ESTADO: ${status.toUpperCase()}
           setUploading(false);
           console.error('Error al revertir orden:', err);
           showToast('Error al revertir la venta: ' + err.message, 'error');
+        }
+      }
+
+      // =======================================================================
+      // ELIMINAR PEDIDO CANCELADO (Solo Administrador: Borrado permanente)
+      // =======================================================================
+      async function handleDeleteOrder(order) {
+        if (!order || !order.id) return;
+        if (order.status !== 'cancelado') {
+          return showToast('Solo se pueden eliminar pedidos que ya se encuentren en estado Cancelado.', 'error');
+        }
+
+        const confirmMsg = `¿Deseas eliminar permanentemente el pedido cancelado #${order.order_code} de ${order.customer_name}?\n\n` +
+          `• Esta acción borrará el pedido de la base de datos de manera definitiva.\n` +
+          `• Ya no aparecerá en tus listas ni reportes.`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        setUploading(true);
+        try {
+          const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+          const { error: rpcErr } = await supabase.rpc('kaoj_admin_delete_order', {
+            admin_pin: adminPin,
+            target_order_id: order.id
+          });
+
+          if (rpcErr) {
+            const { error: directErr } = await supabase
+              .from('kaoj_orders')
+              .delete()
+              .eq('id', order.id);
+            if (directErr && !directErr.message?.includes('row-level security')) {
+              throw directErr;
+            }
+          }
+
+          setOrders(prev => prev.filter(o => o.id !== order.id));
+          setSelectedOrderIds(prev => prev.filter(id => id !== order.id));
+          setUploading(false);
+          showToast(`Pedido cancelado #${order.order_code} eliminado permanentemente.`, 'success');
+        } catch (err) {
+          setUploading(false);
+          console.error('Error al eliminar orden cancelada:', err);
+          showToast('Error al eliminar el pedido: ' + err.message, 'error');
         }
       }
 
@@ -6561,7 +6778,7 @@ ESTADO: ${status.toUpperCase()}
                 <div className="space-y-4">
 
                   {/* 1. TARJETAS KPI DE DESPACHO Y CONTROL RÁPIDO */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                     <button
                       type="button"
                       onClick={() => setAdminFilterStatus('todos')}
@@ -6596,11 +6813,24 @@ ESTADO: ${status.toUpperCase()}
                       className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'verificado' ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-purple-200 bg-purple-50/30 hover:bg-purple-50'}`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase font-bold text-purple-800">📦 Por Empacar</span>
+                        <span className="text-[10px] uppercase font-bold text-purple-800">✓ Verificados</span>
                         <Icon.Check className="w-3.5 h-3.5 text-purple-600" />
                       </div>
                       <p className="text-lg font-black text-purple-900 mt-1">{orderStats.verifiedCount}</p>
                       <p className="text-[10px] text-purple-700 font-bold truncate">Pagos listos para empaque</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('empacado')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'empacado' ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-indigo-800">📦 Empacados</span>
+                        <Icon.Box className="w-3.5 h-3.5 text-indigo-600" />
+                      </div>
+                      <p className="text-lg font-black text-indigo-900 mt-1">{orderStats.empacadoCount}</p>
+                      <p className="text-[10px] text-indigo-700 font-bold truncate">Listos para despacho</p>
                     </button>
 
                     <button
@@ -6619,7 +6849,7 @@ ESTADO: ${status.toUpperCase()}
                     <button
                       type="button"
                       onClick={() => setAdminFilterStatus('entregado')}
-                      className={`p-3 rounded-2xl border text-left transition shadow-2xs col-span-2 sm:col-span-1 ${adminFilterStatus === 'entregado' ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-zinc-200 bg-white hover:border-zinc-300'}`}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'entregado' ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-zinc-200 bg-white hover:border-zinc-300'}`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] uppercase font-bold text-emerald-800">✓ Entregados</span>
@@ -6735,15 +6965,15 @@ ESTADO: ${status.toUpperCase()}
                     <div className="flex items-center justify-between gap-2 flex-wrap border-t border-zinc-100 pt-2.5">
                       <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
                         <span className="text-[11px] font-bold text-zinc-400 shrink-0 self-center mr-1">Estado:</span>
-                        {['todos', 'pendiente', 'verificado', 'en_camino', 'entregado', 'cancelado'].map(st => (
+                        {['todos', 'pendiente', 'verificado', 'empacado', 'en_camino', 'entregado', 'cancelado'].map(st => (
                           <button
                             key={st}
                             type="button"
                             onClick={() => setAdminFilterStatus(st)}
                             className={`px-3 py-1 rounded-xl font-bold uppercase tracking-wider text-[10px] whitespace-nowrap transition ${
                               adminFilterStatus === st
-                                ? (st === 'cancelado' ? 'bg-red-600 text-white' : st === 'pendiente' ? 'bg-amber-500 text-white' : st === 'verificado' ? 'bg-purple-600 text-white' : st === 'en_camino' ? 'bg-blue-600 text-white' : st === 'entregado' ? 'bg-emerald-600 text-white' : 'bg-[#FF2E93] text-white')
-                                : (st === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200')
+                                ? (st === 'cancelado' ? 'bg-red-600 text-white' : st === 'pendiente' ? 'bg-amber-500 text-white' : st === 'verificado' ? 'bg-purple-600 text-white' : st === 'empacado' ? 'bg-indigo-600 text-white' : st === 'en_camino' ? 'bg-blue-600 text-white' : st === 'entregado' ? 'bg-emerald-600 text-white' : 'bg-[#FF2E93] text-white')
+                                : (st === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' : st === 'empacado' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200')
                             }`}
                           >
                             {st} ({st === 'todos' ? orders.length : orders.filter(o => o.status === st).length})
@@ -6776,6 +7006,13 @@ ESTADO: ${status.toUpperCase()}
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleBatchUpdateOrderStatus('empacado')}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                        >
+                          <Icon.Box className="w-3.5 h-3.5" /> Marcar Empacados
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleBatchUpdateOrderStatus('en_camino')}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
                         >
@@ -6788,6 +7025,16 @@ ESTADO: ${status.toUpperCase()}
                         >
                           <Icon.Check className="w-3.5 h-3.5" /> Marcar Entregados
                         </button>
+                        {selectedOrderIds.some(id => orders.find(o => o.id === id)?.status === 'cancelado') && (
+                          <button
+                            type="button"
+                            onClick={handleBatchDeleteCancelledOrders}
+                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                            title="Eliminar permanentemente pedidos cancelados seleccionados"
+                          >
+                            <Icon.Trash className="w-3.5 h-3.5" /> Eliminar Cancelados
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setSelectedOrderIds([])}
@@ -6945,14 +7192,20 @@ ESTADO: ${status.toUpperCase()}
                                       <span className="text-[10px] text-zinc-600 truncate max-w-[90px]">{order.payment_method}</span>
                                     </div>
                                     {order.receipt_url && order.receipt_url.startsWith('http') && (
-                                      <a
-                                        href={order.receipt_url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-[10px] text-[#FF2E93] font-bold underline block mt-0.5"
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAdminReceiptModal(order);
+                                          setAdminReceiptQrResult(null);
+                                        }}
+                                        className="text-[10px] text-[#FF2E93] hover:text-[#d00067] font-bold underline flex items-center gap-1 mt-0.5 text-left"
+                                        title="Abrir comprobante y verificador QR"
                                       >
-                                        📎 Ver Comprobante
-                                      </a>
+                                        <span>📎 Ver Comprobante</span>
+                                        {order.admin_notes && order.admin_notes.includes('QR PICHINCHA VERIFICADO') && (
+                                          <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1 rounded font-black no-underline">✓ QR</span>
+                                        )}
+                                      </button>
                                     )}
                                   </td>
 
@@ -6979,12 +7232,14 @@ ESTADO: ${status.toUpperCase()}
                                           className={`text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
                                             order.status === 'pendiente' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                                             order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                            order.status === 'empacado' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                                             order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
                                             'bg-emerald-50 text-emerald-800 border-emerald-200'
                                           }`}
                                         >
                                           <option value="pendiente">⏳ Pendiente</option>
                                           <option value="verificado">✓ Verificado</option>
+                                          <option value="empacado">📦 Empacado</option>
                                           <option value="en_camino">🚚 En Camino</option>
                                           <option value="entregado">✓ Entregado</option>
                                         </select>
@@ -7001,6 +7256,16 @@ ESTADO: ${status.toUpperCase()}
                                           </button>
                                         )}
                                         {order.status === 'verificado' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateOrderStatus(order, 'empacado')}
+                                            className="block text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2 py-0.5 rounded-md transition shadow-2xs"
+                                            title="Marcar paquete como empacado en bodega"
+                                          >
+                                            📦 Marcar Empacado
+                                          </button>
+                                        )}
+                                        {order.status === 'empacado' && (
                                           <button
                                             type="button"
                                             onClick={() => handleUpdateOrderStatus(order, 'en_camino')}
@@ -7077,8 +7342,8 @@ ESTADO: ${status.toUpperCase()}
                                         </button>
                                       )}
 
-                                      {/* Cancelar */}
-                                      {!isCancelled && (
+                                      {/* Cancelar o Eliminar */}
+                                      {!isCancelled ? (
                                         <button
                                           type="button"
                                           onClick={() => handleCancelOrder(order)}
@@ -7086,6 +7351,16 @@ ESTADO: ${status.toUpperCase()}
                                           title="Cancelar pedido y revertir stock al inventario"
                                         >
                                           <Icon.Close className="w-3.5 h-3.5" />
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteOrder(order)}
+                                          className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition font-bold text-[10px] inline-flex items-center gap-1 border border-red-200"
+                                          title="Eliminar permanentemente este pedido cancelado"
+                                        >
+                                          <Icon.Trash className="w-3.5 h-3.5" />
+                                          <span>Eliminar</span>
                                         </button>
                                       )}
                                     </div>
@@ -7174,12 +7449,14 @@ ESTADO: ${status.toUpperCase()}
                                       className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none ${
                                         order.status === 'pendiente' ? 'bg-amber-50 text-amber-800 border-amber-200' :
                                         order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                        order.status === 'empacado' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                                         order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
                                         'bg-emerald-50 text-emerald-800 border-emerald-200'
                                       }`}
                                     >
                                       <option value="pendiente">⏳ Pendiente</option>
                                       <option value="verificado">✓ Verificado</option>
+                                      <option value="empacado">📦 Empacado</option>
                                       <option value="en_camino">🚚 En Camino</option>
                                       <option value="entregado">✓ Entregado</option>
                                     </select>
@@ -7196,6 +7473,16 @@ ESTADO: ${status.toUpperCase()}
                                       </button>
                                     )}
                                     {order.status === 'verificado' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOrderStatus(order, 'empacado')}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs transition shadow-2xs"
+                                        title="Marcar paquete como empacado en bodega"
+                                      >
+                                        📦 Marcar Empacado
+                                      </button>
+                                    )}
+                                    {order.status === 'empacado' && (
                                       <button
                                         type="button"
                                         onClick={() => handleUpdateOrderStatus(order, 'en_camino')}
@@ -7272,14 +7559,25 @@ ESTADO: ${status.toUpperCase()}
                                 {((order.payment_method || '').toLowerCase().includes('guayaquil') || ((order.payment_method || '').toLowerCase().includes('transferencia') && !(order.payment_method || '').toLowerCase().includes('pichincha'))) && <img src={PAYMENT_ICONS.guayaquil} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Guayaquil" />}
                                 <b className="capitalize text-zinc-900">{order.payment_method}</b>
                                 {order.receipt_url && order.receipt_url.startsWith('http') && (
-                                  <a href={order.receipt_url} target="_blank" rel="noreferrer" className="text-[#FF2E93] underline ml-1 font-bold">
-                                    📎 Ver Comprobante
-                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAdminReceiptModal(order);
+                                      setAdminReceiptQrResult(null);
+                                    }}
+                                    className="text-[#FF2E93] hover:text-[#d00067] underline ml-1 font-bold inline-flex items-center gap-1"
+                                    title="Abrir comprobante y verificar QR"
+                                  >
+                                    <span>📎 Ver Comprobante</span>
+                                    {order.admin_notes && order.admin_notes.includes('QR PICHINCHA VERIFICADO') && (
+                                      <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded font-black no-underline">✓ QR</span>
+                                    )}
+                                  </button>
                                 )}
                               </span>
 
                               <div className="flex items-center gap-2 flex-wrap">
-                                {!isCancelled && (
+                                {!isCancelled ? (
                                   <button
                                     type="button"
                                     onClick={() => handleCancelOrder(order)}
@@ -7288,6 +7586,16 @@ ESTADO: ${status.toUpperCase()}
                                   >
                                     <Icon.Close className="w-3.5 h-3.5 text-red-600 inline mr-1" />
                                     <span>Cancelar</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteOrder(order)}
+                                    className="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-xl transition shadow-xs flex items-center gap-1.5"
+                                    title="Eliminar permanentemente este pedido cancelado"
+                                  >
+                                    <Icon.Trash className="w-3.5 h-3.5" />
+                                    <span>Eliminar Pedido</span>
                                   </button>
                                 )}
 
@@ -9035,11 +9343,11 @@ ESTADO: ${status.toUpperCase()}
               ========================================================================= */}
           {waitlistModalData && (
             <div
-              className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[95] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
               onClick={() => { setWaitlistModalData(null); setWaitlistSubmitted(false); }}
             >
               <div
-                className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-pink-100 relative text-xs"
+                className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-pink-100 relative z-[95] text-xs"
                 onClick={e => e.stopPropagation()}
               >
                 {/* CABECERA */}
@@ -10308,28 +10616,88 @@ ESTADO: ${status.toUpperCase()}
                                   type="file"
                                   accept="image/*,application/pdf"
                                   onChange={async e => {
-                                    if (e.target.files[0]) {
-                                      const url = await uploadFileToSupabase(e.target.files[0], 'receipts');
-                                      if (url) setCustomer({ ...customer, receiptUrl: url });
+                                    const file = e.target.files[0];
+                                    if (!file) return;
+                                    setUploading(true);
+
+                                    // 1. Escaneo inteligente del código QR de la transferencia en segundo plano
+                                    scanQRCodeFromImage(file).then(qrRaw => {
+                                      if (qrRaw) {
+                                        const parsed = parsePichinchaReceiptQR(qrRaw);
+                                        if (parsed) {
+                                          setCustomer(prev => ({
+                                            ...prev,
+                                            receiptRef: parsed.secuencial || prev.receiptRef,
+                                            receiptQrData: parsed
+                                          }));
+                                          showToast(`✓ Comprobante Pichincha/DeUna verificado: $${parsed.amount.toFixed(2)} por ${parsed.senderName}`, 'success');
+                                        }
+                                      }
+                                    }).catch(err => console.warn('QR scan error:', err));
+
+                                    // 2. Subida del comprobante a Supabase Storage
+                                    const url = await uploadFileToSupabase(file, 'receipts');
+                                    if (url) {
+                                      setCustomer(prev => ({ ...prev, receiptUrl: url }));
                                     }
+                                    setUploading(false);
                                   }}
                                   className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-zinc-900 file:text-white hover:file:bg-black"
                                 />
                                 {customer.receiptUrl && (
-                                  <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl p-2">
-                                    <div className="flex items-center gap-2">
-                                      <img src={customer.receiptUrl} alt="Comprobante" className="w-9 h-9 rounded-lg object-cover border" onError={e => { e.target.style.display = 'none'; }} />
-                                      <span className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
-                                        <Icon.Check className="w-3.5 h-3.5" /> Comprobante cargado correctamente
-                                      </span>
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl p-2">
+                                      <div className="flex items-center gap-2">
+                                        <img src={customer.receiptUrl} alt="Comprobante" className="w-9 h-9 rounded-lg object-cover border" onError={e => { e.target.style.display = 'none'; }} />
+                                        <span className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
+                                          <Icon.Check className="w-3.5 h-3.5" /> Comprobante cargado correctamente
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCustomer({ ...customer, receiptUrl: '', receiptQrData: null })}
+                                        className="text-[10px] text-red-500 font-bold hover:underline"
+                                      >
+                                        Cambiar
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setCustomer({ ...customer, receiptUrl: '' })}
-                                      className="text-[10px] text-red-500 font-bold hover:underline"
-                                    >
-                                      Cambiar
-                                    </button>
+
+                                    {/* Banner de Verificación Automática con Código QR */}
+                                    {customer.receiptQrData && (
+                                      <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 text-xs space-y-1.5 animate-in fade-in">
+                                        <div className="flex items-center gap-1.5 text-emerald-900 font-extrabold text-xs">
+                                          <Icon.Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                                          <span>✓ ¡Comprobante Verificado Automáticamente con QR!</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-1.5 text-[11px] text-emerald-950 bg-white/80 p-2 rounded-xl border border-emerald-200">
+                                          <div>
+                                            <span className="text-zinc-500 block text-[10px]">Emisor:</span>
+                                            <b className="truncate block">{customer.receiptQrData.senderName}</b>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-500 block text-[10px]">Monto Transferido:</span>
+                                            <b className="text-emerald-700 text-xs font-black">${customer.receiptQrData.amount.toFixed(2)}</b>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-500 block text-[10px]">Destinatario:</span>
+                                            <b className="truncate block">{customer.receiptQrData.receiverName} ({customer.receiptQrData.receiverAcc})</b>
+                                          </div>
+                                          <div>
+                                            <span className="text-zinc-500 block text-[10px]">Secuencial / Ref:</span>
+                                            <b className="font-mono text-zinc-800">{customer.receiptQrData.secuencial || customer.receiptQrData.uuid?.slice(0, 8)}</b>
+                                          </div>
+                                        </div>
+                                        {Math.abs(customer.receiptQrData.amount - total) < 0.05 ? (
+                                          <p className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                                            <span>✓ Monto exacto confirmado (${total.toFixed(2)}). Tu pedido será validado al instante.</span>
+                                          </p>
+                                        ) : (
+                                          <p className="text-[10px] text-amber-700 font-bold flex items-center gap-1">
+                                            <span>ℹ️ Monto transferido: ${customer.receiptQrData.amount.toFixed(2)} (Total de tu orden: ${total.toFixed(2)})</span>
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -11149,11 +11517,13 @@ ESTADO: ${status.toUpperCase()}
                               o.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200' :
                               o.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
                               o.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                              o.status === 'empacado' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                               o.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
                               {o.status === 'cancelado' ? '✕ Pedido Cancelado' :
                                o.status === 'entregado' ? '✓ Entregado' :
                                o.status === 'en_camino' ? '🚚 En Camino' :
+                               o.status === 'empacado' ? '📦 Empacado / Listo' :
                                o.status === 'verificado' ? '✓ Pago Verificado' : '⏳ En Verificación'}
                             </span>
                           </div>
@@ -11688,6 +12058,251 @@ ESTADO: ${status.toUpperCase()}
               </div>
             </div>
           )}
+
+          {/* =========================================================================
+              MODAL: VERIFICACIÓN INTELIGENTE DE COMPROBANTE & ESCÁNER QR (ADMIN)
+              ========================================================================= */}
+          {adminReceiptModal && (() => {
+            const ord = adminReceiptModal;
+            const existingVerified = ord.admin_notes && ord.admin_notes.includes('QR PICHINCHA VERIFICADO');
+
+            return (
+              <div
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[95] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                onClick={() => { setAdminReceiptModal(null); setAdminReceiptQrResult(null); }}
+              >
+                <div
+                  className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-zinc-200 text-xs relative max-h-[94vh] overflow-y-auto"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* Cabecera */}
+                  <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#FF007F] to-pink-500 text-white flex items-center justify-center shadow-md shrink-0">
+                        <Icon.Check className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-black text-[#FF007F]">
+                            #{ord.order_code}
+                          </span>
+                          <span className="text-[10px] uppercase font-bold text-zinc-500">
+                            {ord.payment_method}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-sm text-zinc-900 mt-0.5">
+                          Comprobante de {ord.customer_name} • Total: ${Number(ord.total).toFixed(2)}
+                        </h3>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setAdminReceiptModal(null); setAdminReceiptQrResult(null); }}
+                      className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-500 transition shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Imagen del Comprobante */}
+                  <div className="bg-zinc-900/5 rounded-2xl p-2 border border-zinc-200/80 flex justify-center items-center overflow-hidden max-h-80 relative group">
+                    <img
+                      src={ord.receipt_url}
+                      alt="Comprobante de pago"
+                      className="max-h-76 w-auto object-contain rounded-xl shadow-xs"
+                      onError={e => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://placehold.co/400x300?text=Comprobante+no+disponible';
+                      }}
+                    />
+                    <a
+                      href={ord.receipt_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="absolute bottom-3 right-3 bg-black/80 hover:bg-black text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-md flex items-center gap-1.5 backdrop-blur-xs transition"
+                    >
+                      <Icon.Copy className="w-3.5 h-3.5" /> Abrir en pantalla completa ↗
+                    </a>
+                  </div>
+
+                  {/* Botón de Escaneo QR o Estado del Escaneo */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] font-bold text-zinc-700 flex items-center gap-1">
+                        <span>🔍 Verificador QR Banco Pichincha / DeUna</span>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={adminReceiptScanning}
+                        onClick={async () => {
+                          setAdminReceiptScanning(true);
+                          try {
+                            const qrText = await scanQRCodeFromImage(ord.receipt_url);
+                            if (qrText) {
+                              const parsed = parsePichinchaReceiptQR(qrText);
+                              setAdminReceiptQrResult(parsed || { raw: qrText });
+                              if (parsed) {
+                                showToast(`✓ QR detectado: $${parsed.amount.toFixed(2)} por ${parsed.senderName}`, 'success');
+                              } else {
+                                showToast('QR detectado con texto: ' + qrText.slice(0, 40) + '...', 'info');
+                              }
+                            } else {
+                              setAdminReceiptQrResult({ error: 'No se detectó código QR en esta imagen. Asegúrate que la captura incluya el recuadro QR del voucher.' });
+                              showToast('No se encontró código QR visible en el comprobante.', 'info');
+                            }
+                          } catch (e) {
+                            setAdminReceiptQrResult({ error: 'Error al escanear: ' + e.message });
+                          } finally {
+                            setAdminReceiptScanning(false);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-[#FF007F] hover:bg-[#e0006f] text-white rounded-xl font-bold text-[11px] shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {adminReceiptScanning ? (
+                          <>
+                            <span className="animate-spin text-sm">⏳</span> Escaneando comprobante...
+                          </>
+                        ) : (
+                          <>
+                            <span>🔍 Escanear Código QR</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Resultado del Escaneo QR */}
+                    {adminReceiptQrResult && (
+                      <div className={`p-3.5 rounded-2xl border text-xs space-y-2 ${adminReceiptQrResult.error ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-300 text-emerald-950'}`}>
+                        {adminReceiptQrResult.error ? (
+                          <div className="space-y-1">
+                            <p className="font-bold flex items-center gap-1 text-amber-800">
+                              <span>⚠️ {adminReceiptQrResult.error}</span>
+                            </p>
+                            <p className="text-[11px] text-zinc-600">
+                              Puedes verificar visualmente la imagen o abrir la foto original en alta resolución.
+                            </p>
+                          </div>
+                        ) : adminReceiptQrResult.amount ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between border-b border-emerald-200/80 pb-2">
+                              <span className="font-extrabold text-emerald-900 flex items-center gap-1.5">
+                                <Icon.Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>¡QR Oficial Pichincha / DeUna Verificado!</span>
+                              </span>
+                              <span className="font-mono text-[10px] font-bold bg-white px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-800">
+                                Ref: {adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid?.slice(0, 8)}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-white/80 p-2.5 rounded-xl border border-emerald-200">
+                              <div>
+                                <span className="text-zinc-500 block text-[10px]">Emisor (Cliente):</span>
+                                <b className="truncate block text-zinc-900">{adminReceiptQrResult.senderName}</b>
+                                <span className="text-[10px] font-mono text-zinc-500">Cta: {adminReceiptQrResult.senderAcc}</span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500 block text-[10px]">Monto Transferido:</span>
+                                <b className="text-sm font-black text-emerald-700">${Number(adminReceiptQrResult.amount).toFixed(2)}</b>
+                                <span className="text-[10px] text-zinc-500 block">Total pedido: ${Number(ord.total).toFixed(2)}</span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500 block text-[10px]">Beneficiario:</span>
+                                <b className="truncate block text-zinc-900">{adminReceiptQrResult.receiverName}</b>
+                                <span className={`text-[10px] font-bold ${adminReceiptQrResult.receiverAcc.includes('7440') ? 'text-emerald-700' : 'text-zinc-600'}`}>
+                                  {adminReceiptQrResult.receiverAcc} {adminReceiptQrResult.receiverAcc.includes('7440') ? '✓ Cuenta Kaoj' : ''}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500 block text-[10px]">Canal & Fecha:</span>
+                                <b className="text-zinc-900 block">{adminReceiptQrResult.channel || adminReceiptQrResult.bank}</b>
+                                <span className="text-[10px] text-zinc-500">{adminReceiptQrResult.transferDate || adminReceiptQrResult.timestampRaw}</span>
+                              </div>
+                            </div>
+
+                            {/* Verificación de Duplicados */}
+                            {(() => {
+                              const sec = adminReceiptQrResult.secuencial;
+                              const duplicate = sec && orders.find(o => o.id !== ord.id && o.admin_notes && o.admin_notes.includes(sec));
+                              if (duplicate) {
+                                return (
+                                  <div className="bg-red-50 border border-red-200 text-red-800 p-2 rounded-xl text-[11px] font-bold">
+                                    ⚠️ ALERTA DE SEGURIDAD: El secuencial {sec} ya fue registrado en el pedido #{duplicate.order_code}.
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* Acciones de 1 Clic */}
+                            <div className="flex gap-2 pt-1 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
+                                  const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
+                                  await handleUpdateOrderStatus({ ...ord, admin_notes: newNotes }, 'verificado');
+                                  setAdminReceiptModal(null);
+                                }}
+                                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
+                              >
+                                ✓ Validar Pago ({ord.status === 'verificado' ? 'Ya Verificado' : 'Marcar Verificado'})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
+                                  const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
+                                  await handleUpdateOrderStatus({ ...ord, admin_notes: newNotes }, 'empacado');
+                                  setAdminReceiptModal(null);
+                                }}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
+                              >
+                                📦 Pasar a Empacado
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="font-bold text-zinc-800">Texto QR decodificado:</p>
+                            <p className="font-mono text-[10px] break-all bg-white p-2 rounded-lg border text-zinc-600">
+                              {adminReceiptQrResult.raw}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Si ya estaba verificado previamente */}
+                    {existingVerified && !adminReceiptQrResult && (
+                      <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3 rounded-2xl text-xs space-y-1">
+                        <span className="font-bold flex items-center gap-1.5 text-emerald-800">
+                          <Icon.Check className="w-4 h-4 text-emerald-600" />
+                          <span>Este comprobante ya fue verificado automáticamente con QR:</span>
+                        </span>
+                        <p className="text-[11px] text-emerald-800 font-mono pl-5">
+                          {ord.admin_notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex justify-between items-center border-t border-zinc-100 pt-3">
+                    <div className="text-[11px] text-zinc-500">
+                      Clienta: <b>{ord.customer_name}</b> ({ord.customer_phone})
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setAdminReceiptModal(null); setAdminReceiptQrResult(null); }}
+                      className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl font-bold transition"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* =========================================================================
               MODAL: NOTA DE VENTA ADMINISTRATIVA (ADMIN)

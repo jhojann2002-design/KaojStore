@@ -632,6 +632,25 @@ BEGIN
 END;
 $$;
 
+-- 9.8.1 Eliminar Pedido Cancelado Permanentemente (Solo Administrador Autorizado)
+CREATE OR REPLACE FUNCTION public.kaoj_admin_delete_order(admin_pin TEXT, target_order_id BIGINT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    DELETE FROM public.kaoj_orders
+    WHERE id = target_order_id;
+
+    RETURN true;
+END;
+$$;
+
 -- 9.9 Obtener Clientes VIP (Solo Administrador Autorizado)
 CREATE OR REPLACE FUNCTION public.kaoj_admin_get_customers(admin_pin TEXT)
 RETURNS SETOF public.kaoj_customers

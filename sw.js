@@ -1,6 +1,6 @@
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v24)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v25)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v24';
+const CACHE_NAME = 'kaoj-store-v25';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   './app.js',
   './manifest.json',
   './manifest-admin.json',
+  './tools/jsqr.min.js',
   './icons/favicon.png',
   './icons/apple-touch-icon.png',
   './icons/apple-touch-admin.png',
@@ -29,7 +30,8 @@ const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
   'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.min.js'
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.min.js',
+  'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
 ];
 
 // Instalación: cachear de forma no bloqueante con Promise.allSettled

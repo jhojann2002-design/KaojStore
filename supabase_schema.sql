@@ -265,9 +265,13 @@ DROP POLICY IF EXISTS "Creación pública de pedidos" ON public.kaoj_orders;
 DROP POLICY IF EXISTS "Lectura de pedidos para rastreo y admin" ON public.kaoj_orders;
 DROP POLICY IF EXISTS "Actualización de pedidos admin" ON public.kaoj_orders;
 DROP POLICY IF EXISTS "Clientes leen sus propios pedidos" ON public.kaoj_orders;
+DROP POLICY IF EXISTS "Eliminación de pedidos cancelados" ON public.kaoj_orders;
 CREATE POLICY "Creación pública de pedidos" ON public.kaoj_orders FOR INSERT WITH CHECK (true);
 CREATE POLICY "Clientes leen sus propios pedidos" ON public.kaoj_orders FOR SELECT USING (
     (auth.uid() IS NOT NULL AND user_id = auth.uid())
+);
+CREATE POLICY "Eliminación de pedidos cancelados" ON public.kaoj_orders FOR DELETE USING (
+    status = 'cancelado' OR status = 'eliminado'
 );
 
 -- 8.5 kaoj_carts: Los usuarios logueados gestionan su propio carrito
@@ -525,7 +529,10 @@ BEGIN
         RAISE EXCEPTION 'PIN de administrador no válido';
     END IF;
 
-    RETURN QUERY SELECT * FROM public.kaoj_orders ORDER BY created_at DESC;
+    RETURN QUERY 
+    SELECT * FROM public.kaoj_orders 
+    WHERE status != 'eliminado' AND status != 'cancelado_eliminado'
+    ORDER BY created_at DESC;
 END;
 $$;
 

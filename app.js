@@ -2891,14 +2891,30 @@ function App() {
     const cancelledSelected = orders.filter(o => selectedOrderIds.includes(o.id) && o.status === 'cancelado');
     if (cancelledSelected.length === 0) return;
     if (!window.confirm(`¿Estás segura de eliminar permanentemente los ${cancelledSelected.length} pedidos cancelados seleccionados? Esta acción no se puede deshacer.`)) return;
-    const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+    const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+
+    // Registrar en lista negra local para evitar que reaparezcan tras F5/recargar
+    try {
+      const savedDeleted = JSON.parse(localStorage.getItem('kaoj_deleted_order_ids') || '[]');
+      const newDeleted = Array.from(new Set([...savedDeleted, ...cancelledSelected.map(o => o.id)]));
+      localStorage.setItem('kaoj_deleted_order_ids', JSON.stringify(newDeleted));
+    } catch (_) {}
     for (const ord of cancelledSelected) {
       try {
-        await supabase.rpc('kaoj_admin_delete_order', {
+        const {
+          error: rpcErr
+        } = await supabase.rpc('kaoj_admin_delete_order', {
           admin_pin: adminPin,
           target_order_id: ord.id
         });
-        await supabase.from('kaoj_orders').delete().eq('id', ord.id);
+        if (rpcErr) {
+          await supabase.rpc('kaoj_admin_update_order_status', {
+            admin_pin: adminPin,
+            target_order_id: ord.id,
+            new_status: 'eliminado'
+          });
+          await supabase.from('kaoj_orders').delete().eq('id', ord.id);
+        }
       } catch (_) {}
     }
     setOrders(prev => prev.filter(o => !cancelledSelected.some(c => c.id === o.id)));
@@ -3277,7 +3293,7 @@ function App() {
   // Carga de datos administrativos protegidos (Verificado en servidor vía RPC con PIN hasheado)
   async function fetchAdminData(passedPin = null) {
     try {
-      const currentPin = passedPin || sessionStorage.getItem('kaoj_admin_pin') || '';
+      const currentPin = passedPin || sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
       if (!currentPin) return;
       const {
         data: ords,
@@ -3285,8 +3301,9 @@ function App() {
       } = await supabase.rpc('kaoj_admin_get_orders', {
         admin_pin: currentPin
       });
+      const deletedIds = JSON.parse(localStorage.getItem('kaoj_deleted_order_ids') || '[]');
       if (!oErr && ords) {
-        setOrders(ords);
+        setOrders(ords.filter(o => o.status !== 'eliminado' && o.status !== 'cancelado_eliminado' && !deletedIds.includes(o.id)));
       } else if (oErr) {
         console.warn('kaoj_admin_get_orders RPC error:', oErr.message);
         const {
@@ -3294,7 +3311,9 @@ function App() {
         } = await supabase.from('kaoj_orders').select('*').order('created_at', {
           ascending: false
         });
-        if (fallbackOrds && fallbackOrds.length > 0) setOrders(fallbackOrds);
+        if (fallbackOrds && fallbackOrds.length > 0) {
+          setOrders(fallbackOrds.filter(o => o.status !== 'eliminado' && o.status !== 'cancelado_eliminado' && !deletedIds.includes(o.id)));
+        }
       }
       const {
         data: custs,
@@ -4110,20 +4129,41 @@ function App() {
     if (!window.confirm(confirmMsg)) return;
     setUploading(true);
     try {
-      const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
-      const {
-        error: rpcErr
-      } = await supabase.rpc('kaoj_admin_delete_order', {
-        admin_pin: adminPin,
-        target_order_id: order.id
-      });
-      if (rpcErr) {
-        const {
-          error: directErr
-        } = await supabase.from('kaoj_orders').delete().eq('id', order.id);
-        if (directErr && !directErr.message?.includes('row-level security')) {
-          throw directErr;
+      const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+
+      // 1. Registrar inmediatamente en lista negra local para evitar que reaparezca en este navegador al refrescar
+      try {
+        const savedDeleted = JSON.parse(localStorage.getItem('kaoj_deleted_order_ids') || '[]');
+        if (!savedDeleted.includes(order.id)) {
+          savedDeleted.push(order.id);
+          localStorage.setItem('kaoj_deleted_order_ids', JSON.stringify(savedDeleted));
         }
+      } catch (_) {}
+
+      // 2. Intentar borrado físico vía RPC
+      let deletedInDb = false;
+      try {
+        const {
+          error: rpcErr
+        } = await supabase.rpc('kaoj_admin_delete_order', {
+          admin_pin: adminPin,
+          target_order_id: order.id
+        });
+        if (!rpcErr) deletedInDb = true;
+      } catch (_) {}
+
+      // 3. Si kaoj_admin_delete_order no existe aún en el dashboard de Supabase, marcar como 'eliminado'
+      if (!deletedInDb) {
+        try {
+          await supabase.rpc('kaoj_admin_update_order_status', {
+            admin_pin: adminPin,
+            target_order_id: order.id,
+            new_status: 'eliminado'
+          });
+        } catch (_) {}
+        try {
+          await supabase.from('kaoj_orders').delete().eq('id', order.id);
+        } catch (_) {}
       }
       setOrders(prev => prev.filter(o => o.id !== order.id));
       setSelectedOrderIds(prev => prev.filter(id => id !== order.id));

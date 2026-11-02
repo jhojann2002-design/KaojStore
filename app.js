@@ -3934,8 +3934,8 @@ function App() {
         upsert: true
       });
       if (uploadError) {
-        if (isVideo && uploadError.message?.toLowerCase().includes('policy')) {
-          throw new Error('Supabase Storage RLS no tiene habilitado video aún. Puedes pegar el enlace de YouTube o Shorts directamente.');
+        if (isVideo && (uploadError.message?.toLowerCase().includes('policy') || uploadError.message?.toLowerCase().includes('row-level') || uploadError.message?.toLowerCase().includes('security'))) {
+          throw new Error('Supabase Storage RLS aún no tiene habilitado video en la base de datos. Pega el enlace de YouTube/Shorts o corre el SQL en Supabase para habilitar archivos directos.');
         }
         throw uploadError;
       }
@@ -5879,9 +5879,18 @@ function App() {
         video: e.target.value.trim()
       }),
       className: "w-full text-xs outline-none bg-transparent"
-    }))), /*#__PURE__*/React.createElement("p", {
-      className: "text-[10px] text-zinc-400"
-    }, "Admite clips de prueba, swatches o reels (hasta 50 MB o enlace de YouTube).")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10px] text-zinc-500 pt-0.5"
+    }, /*#__PURE__*/React.createElement("span", null, "Admite MP4/MOV hasta 50MB o links de YouTube/Shorts."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        const sql = `DROP POLICY IF EXISTS "Permitir subida pública a kaoj-assets" ON storage.objects;\nCREATE POLICY "Permitir subida pública a kaoj-assets" ON storage.objects \nFOR INSERT WITH CHECK (\n    bucket_id = 'kaoj-assets'\n    AND (LOWER(storage.extension(name)) IN ('jpg', 'jpeg', 'png', 'webp', 'svg', 'pdf', 'mp4', 'webm', 'mov', 'ogg', 'm4v'))\n);`;
+        navigator.clipboard.writeText(sql);
+        showToast('¡SQL copiado! Pégalo en Supabase SQL Editor para habilitar subida de videos directos.', 'info');
+      },
+      className: "text-[#FF007F] font-bold hover:underline inline-flex items-center gap-1 cursor-pointer",
+      title: "Copiar código SQL para habilitar videos directos en Supabase"
+    }, /*#__PURE__*/React.createElement("span", null, "📋 Copiar SQL para Supabase")))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
       className: "font-semibold text-zinc-700 block mb-1"
     }, "Descripción"), /*#__PURE__*/React.createElement("textarea", {
       rows: "2",
@@ -8101,9 +8110,18 @@ function App() {
       video: e.target.value.trim()
     }),
     className: "w-full text-xs outline-none bg-transparent"
-  }))), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-zinc-400"
-  }, "Admite clips de prueba, swatches o reels (hasta 50 MB o enlace de YouTube).")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10px] text-zinc-500 pt-0.5"
+  }, /*#__PURE__*/React.createElement("span", null, "Admite MP4/MOV hasta 50MB o links de YouTube/Shorts."), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const sql = `DROP POLICY IF EXISTS "Permitir subida pública a kaoj-assets" ON storage.objects;\nCREATE POLICY "Permitir subida pública a kaoj-assets" ON storage.objects \nFOR INSERT WITH CHECK (\n    bucket_id = 'kaoj-assets'\n    AND (LOWER(storage.extension(name)) IN ('jpg', 'jpeg', 'png', 'webp', 'svg', 'pdf', 'mp4', 'webm', 'mov', 'ogg', 'm4v'))\n);`;
+      navigator.clipboard.writeText(sql);
+      showToast('¡SQL copiado! Pégalo en Supabase SQL Editor para habilitar subida de videos directos.', 'info');
+    },
+    className: "text-[#FF007F] font-bold hover:underline inline-flex items-center gap-1 cursor-pointer",
+    title: "Copiar código SQL para habilitar videos directos en Supabase"
+  }, /*#__PURE__*/React.createElement("span", null, "📋 Copiar SQL para Supabase")))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "font-semibold text-zinc-700 block mb-1"
   }, "Descripción"), /*#__PURE__*/React.createElement("textarea", {
     rows: "2",

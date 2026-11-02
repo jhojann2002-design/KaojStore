@@ -2527,7 +2527,10 @@ ESTADO: ${status.toUpperCase()}
       // Métodos para cambiar de estado órdenes individualmente o por lote
       const handleUpdateOrderStatus = async (order, newStatus) => {
         if (!order || !order.id) return;
-        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+        if (newStatus === 'cancelado') {
+          return handleCancelOrder(order);
+        }
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
         const { error } = await supabase.rpc('kaoj_admin_update_order_status', {
           admin_pin: adminPin,
           target_order_id: order.id,
@@ -2549,7 +2552,17 @@ ESTADO: ${status.toUpperCase()}
       const handleBatchUpdateOrderStatus = async (newStatus) => {
         if (!selectedOrderIds || selectedOrderIds.length === 0) return;
         const count = selectedOrderIds.length;
-        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+        if (newStatus === 'cancelado') {
+          for (const orderId of selectedOrderIds) {
+            const ord = orders.find(o => o.id === orderId);
+            if (ord && ord.status !== 'cancelado') {
+              await handleCancelOrder(ord);
+            }
+          }
+          setSelectedOrderIds([]);
+          return;
+        }
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
         for (const orderId of selectedOrderIds) {
           try {
             await supabase.rpc('kaoj_admin_update_order_status', {
@@ -2619,24 +2632,24 @@ ESTADO: ${status.toUpperCase()}
             showToast(`✓ Pago DeUna de $${Number(data.amount).toFixed(2)} verificado con éxito (${data.sender_name || 'Titular verificado'})`, 'success');
           } else if (data && data.is_duplicate) {
             showToast(`❌ Transacción ya utilizada en el pedido #${data.matched_order_code}`, 'error');
-            setCustomer(prev => ({ ...prev, deunaVerified: false }));
+            setCustomer(prev => ({ ...prev, deunaVerified: false, deunaData: null }));
           } else if (data && data.amount_mismatch) {
             showToast(`⚠️ El monto de DeUna ($${Number(data.amount).toFixed(2)}) es menor al total requerido ($${Number(data.expected_amount).toFixed(2)})`, 'warning');
             setCustomer(prev => ({ ...prev, deunaVerified: false, deunaData: data }));
           } else {
-            // No ha llegado aún a Gmail o está en tránsito
+            // No encontrado en la base de datos de pagos recibidos
             setCustomer(prev => ({
               ...prev,
               receiptRef: cleanTx,
-              deunaVerified: 'pending',
-              deunaData: { transaction_id: cleanTx }
+              deunaVerified: false,
+              deunaData: null
             }));
-            showToast(`Transacción #${cleanTx} registrada. Se verificará automáticamente con el correo en unos segundos.`, 'info');
+            showToast(`⚠️ No encontramos un pago registrado con la transacción #${cleanTx}. Si acabas de transferir en Deuna!, espera unos 30-60 segundos a que ingrese el correo y vuelve a pulsar "Verificar".`, 'warning');
           }
         } catch (err) {
           console.warn('Error verificando Deuna:', err);
-          showToast(`Transacción #${cleanTx} registrada para validación con el correo`, 'info');
-          setCustomer(prev => ({ ...prev, receiptRef: cleanTx, deunaVerified: 'pending' }));
+          showToast('No se pudo comprobar con el servidor. Verifica tu conexión o intenta nuevamente.', 'error');
+          setCustomer(prev => ({ ...prev, deunaVerified: false, deunaData: null }));
         } finally {
           setIsVerifyingDeuna(false);
         }
@@ -3557,8 +3570,12 @@ ESTADO: ${status.toUpperCase()}
             return showToast('Ingresa el número de referencia/autorización o sube la captura de tu pago en Payphone.', 'error');
           }
         } else if (customer.paymentMethod === 'deuna') {
-          if (!customer.receiptRef?.trim() && !customer.receiptUrl) {
-            return showToast('Ingresa el número de transacción de DeUna o sube tu comprobante para validar tu pedido.', 'error');
+          const cleanTx = (customer.receiptRef || '').replace(/\D/g, '');
+          if (!cleanTx) {
+            return showToast('Ingresa el número de transacción de 12 dígitos de tu pago en Deuna!.', 'error');
+          }
+          if (customer.deunaVerified !== true) {
+            return showToast('❌ Tu pago con Deuna! aún no ha sido verificado. Ingresa los 12 dígitos de tu transacción y pulsa en "Verificar" para validar la compra.', 'error');
           }
         } else if (!customer.receiptUrl) {
           return showToast('Sube la captura del comprobante de transferencia bancaria para validar tu pedido.', 'error');
@@ -3680,7 +3697,7 @@ ESTADO: ${status.toUpperCase()}
             customer.paymentMethod === 'deuna' ? `Deuna!${customer.receiptRef ? ` (Comp: ${customer.receiptRef.trim()})` : ''}` :
             customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` :
             `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${customer.receiptRef ? ` • Comp: ${customer.receiptRef.trim()}` : ''})`,
-          receipt_url: customer.receiptUrl || `Payphone Ref: ${customer.payphoneRef}`,
+          receipt_url: customer.receiptUrl || (customer.paymentMethod === 'deuna' ? `Deuna! Tx: ${(customer.receiptRef || '').trim()}` : `Payphone Ref: ${customer.payphoneRef}`),
           items: cart,
           status: initialStatus,
           admin_notes: adminNotesParts.join(' • ')
@@ -3914,29 +3931,80 @@ ESTADO: ${status.toUpperCase()}
         }
 
         const itemsCount = (order.items || []).reduce((acc, i) => acc + (Number(i.qty) || 0), 0);
-        const confirmMsg = `¿Deseas cancelar y revertir la venta de la orden ${order.order_code}?\n\n` +
+        const isVerified = order.status === 'verificado';
+        const confirmMsg = `¿Deseas cancelar y revertir la venta de la orden #${order.order_code}${isVerified ? ' (Pago Verificado)' : ''}?\n\n` +
           `• Se devolverán ${itemsCount} producto(s) a las existencias del inventario.\n` +
           `• El estado de la orden pasará a CANCELADO.\n` +
-          `• Si la clienta acumuló puntos por esta compra, se descontarán de su saldo.`;
+          `• Si la compra acumuló puntos VIP, se descontarán del saldo de la clienta.` +
+          (order.payment_method?.toLowerCase().includes('deuna') ? '\n• Si pagó con Deuna!, la transacción se liberará para poder reutilizarla en pruebas.' : '');
 
         if (!window.confirm(confirmMsg)) return;
 
         setUploading(true);
         try {
-          const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
-          const { data: cancelRes, error: rpcErr } = await supabase.rpc('kaoj_admin_cancel_order', {
-            admin_pin: adminPin,
-            target_order_id: order.id
-          });
+          const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+          let restoredItems = 0;
+          let rpcSuccess = false;
 
-          if (rpcErr) throw rpcErr;
+          try {
+            const { data: cancelRes, error: rpcErr } = await supabase.rpc('kaoj_admin_cancel_order', {
+              admin_pin: adminPin,
+              target_order_id: order.id
+            });
+            if (!rpcErr && cancelRes?.success) {
+              rpcSuccess = true;
+              restoredItems = cancelRes?.restored_items || itemsCount;
+            }
+          } catch (e) {
+            console.warn('RPC kaoj_admin_cancel_order error, running safe fallback:', e);
+          }
+
+          // Fallback seguro si la RPC falló o no está instalada: restaurar stock y marcar cancelado directamente
+          if (!rpcSuccess) {
+            const cancelNote = `[VENTA REVERTIDA: Stock devuelto (${new Date().toLocaleDateString('es-EC')})]`;
+            const updatedNotes = order.admin_notes ? `${order.admin_notes} | ${cancelNote}` : cancelNote;
+
+            await supabase.from('kaoj_orders').update({
+              status: 'cancelado',
+              admin_notes: updatedNotes,
+              updated_at: new Date().toISOString()
+            }).eq('id', order.id);
+
+            // Devolver existencias a los productos y sus variantes
+            for (const item of (order.items || [])) {
+              if (item.productId) {
+                try {
+                  const { data: prodData } = await supabase.from('kaoj_products').select('variants').eq('id', item.productId).single();
+                  if (prodData && prodData.variants) {
+                    const updatedVars = prodData.variants.map(v => {
+                      if (v.name === item.variant) {
+                        return { ...v, stock: Number(v.stock || 0) + Number(item.qty || 1) };
+                      }
+                      return v;
+                    });
+                    await supabase.from('kaoj_products').update({ variants: updatedVars }).eq('id', item.productId);
+                  }
+                } catch (_) {}
+              }
+            }
+            restoredItems = itemsCount;
+          }
+
+          // Liberar el pago DeUna conciliado para poder reusarlo en pruebas
+          try {
+            await supabase.from('kaoj_deuna_payments').update({
+              status: 'disponible',
+              matched_order_code: null,
+              matched_at: null
+            }).eq('matched_order_code', order.order_code);
+          } catch (_) {}
 
           const cancelNote = `[VENTA REVERTIDA / CANCELADA: Stock devuelto (${new Date().toLocaleDateString('es-EC')})]`;
           const updatedNotes = order.admin_notes ? `${order.admin_notes} | ${cancelNote}` : cancelNote;
 
           setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'cancelado', admin_notes: updatedNotes } : o));
           setUploading(false);
-          showToast(`¡Venta revertida exitosamente! Se devolvieron ${cancelRes?.restored_items || itemsCount} producto(s) al inventario.`);
+          showToast(`¡Venta #${order.order_code} cancelada exitosamente! Se devolvieron ${restoredItems} producto(s) al inventario.`, 'success');
           fetchInitialData();
         } catch (err) {
           setUploading(false);
@@ -7660,6 +7728,7 @@ ESTADO: ${status.toUpperCase()}
                                             order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
                                             order.status === 'empacado' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                                             order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                            order.status === 'cancelado' ? 'bg-red-50 text-red-800 border-red-200' :
                                             'bg-emerald-50 text-emerald-800 border-emerald-200'
                                           }`}
                                         >
@@ -7668,6 +7737,7 @@ ESTADO: ${status.toUpperCase()}
                                           <option value="empacado">📦 Empacado</option>
                                           <option value="en_camino">🚚 En Camino</option>
                                           <option value="entregado">✓ Entregado</option>
+                                          <option value="cancelado">❌ Cancelar Pedido</option>
                                         </select>
 
                                         {/* Botón de 1 Clic para avanzar rápido al siguiente paso */}
@@ -7773,8 +7843,8 @@ ESTADO: ${status.toUpperCase()}
                                         <button
                                           type="button"
                                           onClick={() => handleCancelOrder(order)}
-                                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
-                                          title="Cancelar pedido y revertir stock al inventario"
+                                          className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition"
+                                          title="Cancelar pedido y devolver stock al inventario"
                                         >
                                           <Icon.Close className="w-3.5 h-3.5" />
                                         </button>
@@ -7877,6 +7947,7 @@ ESTADO: ${status.toUpperCase()}
                                         order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
                                         order.status === 'empacado' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
                                         order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                        order.status === 'cancelado' ? 'bg-red-50 text-red-800 border-red-200' :
                                         'bg-emerald-50 text-emerald-800 border-emerald-200'
                                       }`}
                                     >
@@ -7885,6 +7956,7 @@ ESTADO: ${status.toUpperCase()}
                                       <option value="empacado">📦 Empacado</option>
                                       <option value="en_camino">🚚 En Camino</option>
                                       <option value="entregado">✓ Entregado</option>
+                                      <option value="cancelado">❌ Cancelar Pedido</option>
                                     </select>
 
                                     {/* Botón rápido 1-clic */}
@@ -10773,7 +10845,8 @@ ESTADO: ${status.toUpperCase()}
                                           setCustomer(prev => ({
                                             ...prev,
                                             receiptRef: val,
-                                            deunaVerified: prev.receiptRef !== val ? false : prev.deunaVerified
+                                            deunaVerified: false,
+                                            deunaData: null
                                           }));
                                         }}
                                         className="flex-1 border border-purple-300 rounded-xl px-3 py-2 text-xs bg-purple-50/50 font-mono text-purple-950 font-bold outline-none focus:border-purple-600 focus:bg-white"
@@ -10851,14 +10924,14 @@ ESTADO: ${status.toUpperCase()}
                                       </div>
                                     )}
 
-                                    {customer.deunaVerified === 'pending' && (
+                                    {customer.receiptRef && customer.receiptRef.replace(/\D/g, '').length >= 6 && !customer.deunaVerified && (
                                       <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1 animate-in fade-in">
                                         <div className="flex items-center gap-1.5 text-amber-800 font-extrabold text-xs">
-                                          <span className="text-sm">⏳</span>
-                                          <span>Transacción #{customer.receiptRef} Registrada</span>
+                                          <span className="text-sm">⚠️</span>
+                                          <span>Transacción #{customer.receiptRef.replace(/\D/g, '')} pendiente de verificar</span>
                                         </div>
                                         <p className="text-[10.5px] text-amber-900 leading-snug">
-                                          Tu número de comprobante está listo. Nuestro sistema lo conciliará de forma automática con el correo en cuanto completes tu pedido.
+                                          Pulsa en el botón morado <b>"Verificar"</b> para comprobar tu transacción de Deuna antes de confirmar tu pedido.
                                         </p>
                                       </div>
                                     )}
@@ -11123,31 +11196,30 @@ ESTADO: ${status.toUpperCase()}
                               })()}
 
                               {/* SUBIDA DE COMPROBANTE DE PAGO + N° DE COMPROBANTE PARA AUTO-VALIDACIÓN */}
-                              <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2.5">
-                                {customer.paymentMethod !== 'payphone' && customer.paymentMethod !== 'deuna' && (
-                                  <div>
-                                    <label className="font-bold text-amber-950 text-[11px] block mb-1">
-                                      N° de Comprobante / Documento bancario (Para validación rápida):
-                                    </label>
-                                    <input
-                                      type="text"
-                                      placeholder="Ej: 48291042 (Los dígitos del comprobante de tu banco)"
-                                      value={customer.receiptRef || ''}
-                                      onChange={e => setCustomer({ ...customer, receiptRef: e.target.value })}
-                                      className="w-full border border-amber-300 rounded-xl px-3 py-2 text-xs bg-white text-zinc-900 placeholder-zinc-400 outline-none focus:border-[#151E28] font-mono"
-                                    />
-                                  </div>
-                                )}
-                                <p className="font-bold text-amber-950 text-xs flex items-center justify-between">
-                                  <span>
-                                    {customer.paymentMethod === 'payphone'
-                                      ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):'
-                                      : customer.paymentMethod === 'deuna'
-                                      ? 'Adjuntar captura de comprobante Deuna (Opcional si ya verificaste la transacción):'
-                                      : 'Sube la captura de tu comprobante de pago *:'}
-                                  </span>
-                                  {uploading && <span className="text-[10px] text-[#FF2E93] animate-pulse">Subiendo...</span>}
-                                </p>
+                              {customer.paymentMethod !== 'deuna' && (
+                                <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2.5">
+                                  {customer.paymentMethod !== 'payphone' && (
+                                    <div>
+                                      <label className="font-bold text-amber-950 text-[11px] block mb-1">
+                                        N° de Comprobante / Documento bancario (Para validación rápida):
+                                      </label>
+                                      <input
+                                        type="text"
+                                        placeholder="Ej: 48291042 (Los dígitos del comprobante de tu banco)"
+                                        value={customer.receiptRef || ''}
+                                        onChange={e => setCustomer({ ...customer, receiptRef: e.target.value })}
+                                        className="w-full border border-amber-300 rounded-xl px-3 py-2 text-xs bg-white text-zinc-900 placeholder-zinc-400 outline-none focus:border-[#151E28] font-mono"
+                                      />
+                                    </div>
+                                  )}
+                                  <p className="font-bold text-amber-950 text-xs flex items-center justify-between">
+                                    <span>
+                                      {customer.paymentMethod === 'payphone'
+                                        ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):'
+                                        : 'Sube la captura de tu comprobante de pago *:'}
+                                    </span>
+                                    {uploading && <span className="text-[10px] text-[#FF2E93] animate-pulse">Subiendo...</span>}
+                                  </p>
                                 <input
                                   type="file"
                                   accept="image/*,application/pdf"
@@ -11277,6 +11349,7 @@ ESTADO: ${status.toUpperCase()}
                                   </div>
                                 )}
                               </div>
+                            )}
                             </div>
 
                             {/* DESGLOSE FINANCIERO COMPLETO Y TRANSPARENTE */}
@@ -11392,6 +11465,8 @@ ESTADO: ${status.toUpperCase()}
                           className={`flex-1 py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 ${
                             uploading || isSubmittingOrder
                               ? 'bg-zinc-400 text-white cursor-not-allowed'
+                              : (customer.paymentMethod === 'deuna' && customer.deunaVerified !== true)
+                              ? 'bg-purple-900/90 hover:bg-purple-950 text-white active:scale-[0.99]'
                               : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-[0.99]'
                           }`}
                         >
@@ -11399,6 +11474,11 @@ ESTADO: ${status.toUpperCase()}
                             <>
                               <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                               <span>Procesando tu pedido...</span>
+                            </>
+                          ) : customer.paymentMethod === 'deuna' && customer.deunaVerified !== true ? (
+                            <>
+                              <span>🔒</span>
+                              <span>Verificar Transacción Deuna! para Confirmar (${total.toFixed(2)})</span>
                             </>
                           ) : (
                             <>

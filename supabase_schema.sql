@@ -590,6 +590,12 @@ BEGIN
         RAISE EXCEPTION 'PIN de administrador no válido';
     END IF;
 
+    -- Si se cambia a cancelado, ejecutar reversión atómica de stock y puntos
+    IF new_status = 'cancelado' THEN
+        PERFORM public.kaoj_admin_cancel_order(admin_pin, target_order_id);
+        RETURN true;
+    END IF;
+
     UPDATE public.kaoj_orders
     SET status = new_status, updated_at = NOW()
     WHERE id = target_order_id;
@@ -669,7 +675,12 @@ BEGIN
         END IF;
     END IF;
 
-    -- 3. Marcar orden como cancelada
+    -- 3. Si tenía un pago DeUna conciliado, liberarlo para que vuelva a estar disponible
+    UPDATE public.kaoj_deuna_payments
+    SET status = 'disponible', matched_order_code = NULL, matched_at = NULL
+    WHERE matched_order_code = ord.order_code;
+
+    -- 4. Marcar orden como cancelada
     UPDATE public.kaoj_orders
     SET
         status = 'cancelado',

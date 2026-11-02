@@ -1,9 +1,10 @@
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v13)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v15)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v13';
+const CACHE_NAME = 'kaoj-store-v15';
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './app.js',
   './manifest.json',
   './icons/favicon.png',
   './icons/apple-touch-icon.png',

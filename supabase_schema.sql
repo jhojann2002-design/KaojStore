@@ -826,6 +826,107 @@ BEGIN
 END;
 $$;
 
+-- 9.17 Validación Automática de Pagos por Correo (Deuna / Transferencias Bancarias)
+CREATE OR REPLACE FUNCTION public.kaoj_auto_verify_payment_from_email(
+    admin_pin TEXT,
+    payment_amount NUMERIC,
+    payment_ref TEXT DEFAULT '',
+    bank_source TEXT DEFAULT 'Banco',
+    raw_details TEXT DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    clean_ref TEXT := TRIM(COALESCE(payment_ref, ''));
+    matched_order RECORD;
+    pending_count INT := 0;
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    -- Protección anti-fraude: evitar que un mismo N° de comprobante valide dos pedidos distintos
+    IF LENGTH(clean_ref) >= 4 THEN
+        IF EXISTS (
+            SELECT 1 FROM public.kaoj_orders
+            WHERE status IN ('verificado', 'enviado', 'entregado')
+              AND admin_notes ILIKE '%[AUTO-VALIDADO%' || clean_ref || '%]%'
+        ) THEN
+            RETURN jsonb_build_object(
+                'matched', false,
+                'reason', 'Comprobante ya utilizado previamente en otra orden verificada'
+            );
+        END IF;
+    END IF;
+
+    -- 1. Prioridad máxima: Coincidencia por N° de Comprobante / Referencia + Monto exacto
+    IF LENGTH(clean_ref) >= 4 THEN
+        SELECT * INTO matched_order
+        FROM public.kaoj_orders
+        WHERE status = 'pendiente'
+          AND ABS(total - payment_amount) <= 0.02
+          AND (
+              admin_notes ILIKE '%' || clean_ref || '%'
+              OR payment_method ILIKE '%' || clean_ref || '%'
+              OR order_code ILIKE '%' || clean_ref || '%'
+          )
+        ORDER BY created_at DESC
+        LIMIT 1;
+    END IF;
+
+    -- 2. Si la clienta no escribió el N° de comprobante, buscar orden pendiente reciente (últimas 48h)
+    --    con exactamente el mismo monto total (siempre que sea única para evitar ambigüedad)
+    IF matched_order IS NULL THEN
+        SELECT COUNT(*) INTO pending_count
+        FROM public.kaoj_orders
+        WHERE status = 'pendiente'
+          AND created_at >= NOW() - INTERVAL '48 hours'
+          AND ABS(total - payment_amount) <= 0.01;
+
+        IF pending_count = 1 THEN
+            SELECT * INTO matched_order
+            FROM public.kaoj_orders
+            WHERE status = 'pendiente'
+              AND created_at >= NOW() - INTERVAL '48 hours'
+              AND ABS(total - payment_amount) <= 0.01
+            LIMIT 1;
+        END IF;
+    END IF;
+
+    IF matched_order IS NULL THEN
+        RETURN jsonb_build_object(
+            'matched', false,
+            'reason', 'No se encontró una orden pendiente única que coincida con el monto/referencia',
+            'amount', payment_amount,
+            'ref', clean_ref
+        );
+    END IF;
+
+    -- 3. Marcar automáticamente el pedido como 'verificado' y dejar registro auditable
+    UPDATE public.kaoj_orders
+    SET
+        status = 'verificado',
+        admin_notes = COALESCE(NULLIF(admin_notes, '') || ' • ', '') ||
+                      '[AUTO-VALIDADO POR CORREO ' || COALESCE(bank_source, 'Banco') ||
+                      ' | Monto: $' || TO_CHAR(payment_amount, 'FM999990.00') ||
+                      CASE WHEN LENGTH(clean_ref) > 0 THEN ' | Comp: ' || clean_ref ELSE '' END ||
+                      ' | ' || TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI') || ']',
+        updated_at = NOW()
+    WHERE id = matched_order.id;
+
+    RETURN jsonb_build_object(
+        'matched', true,
+        'order_id', matched_order.id,
+        'order_code', matched_order.order_code,
+        'customer_name', matched_order.customer_name,
+        'total', matched_order.total
+    );
+END;
+$$;
+
 -- -------------------------------------------------------------------------
 -- 10. STORAGE BUCKET: kaoj-assets (Políticas Seguras de Archivos)
 -- -------------------------------------------------------------------------

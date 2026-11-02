@@ -755,6 +755,7 @@
 
       const [settings, setSettings] = useState({
         whatsapp_number: '0963073456',
+        email_contact: 'kaoj.store.ecu@gmail.com',
         deuna_link: 'https://deuna.app/',
         deuna_qr_url: '',
         deuna_name: 'Toledo Mendoza Alisson Kandy',
@@ -1143,9 +1144,12 @@
         const code = couponCodeInput.trim().toUpperCase();
         if (!code) return showToast('Ingresa un código de cupón', 'error');
 
-        const found = availableCoupons.find(c => c.code.toUpperCase() === code);
+        const found = availableCoupons.find(c => (c.code || '').toUpperCase() === code);
         if (!found) {
           return showToast(`El cupón "${code}" no es válido o ha expirado.`, 'error');
+        }
+        if (found.minSpend && subtotal < Number(found.minSpend)) {
+          return showToast(`El cupón "${found.code}" requiere una compra mínima de $${Number(found.minSpend).toFixed(2)}.`, 'error');
         }
 
         setAppliedCoupon(found);
@@ -1324,6 +1328,14 @@
                 const el = document.getElementById('quienes-somos');
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }, 120);
+            }
+            // Soporte para accesos directos (shortcuts) de PWA en manifest.json
+            const searchParams = new URLSearchParams(window.location.search || '');
+            if (searchParams.get('action') === 'tracking') {
+              setIsTrackingOpen(true);
+            } else if ((searchParams.get('cat') || '').toLowerCase() === 'ofertas') {
+              setSelectedSection('OFERTAS');
+              setSelectedSubcategory('TODOS');
             }
           }
         };
@@ -2174,7 +2186,7 @@
           rating: Number(newReview.rating) || 5,
           comment: newReview.comment.trim(),
           photo_url: newReview.photo_url || '',
-          is_verified_buyer: false,
+          is_verified_buyer: Boolean(newReview.order_code),
           is_approved: false
         };
 
@@ -2307,6 +2319,7 @@
           const surchargeVal = parseFloat(adminSettingsForm.payphone_surcharge_percent ?? 6.0);
           const payload = {
             whatsapp_number: cleanPhone,
+            email_contact: (adminSettingsForm.email_contact || 'kaoj.store.ecu@gmail.com').trim(),
             deuna_link: adminSettingsForm.deuna_link,
             deuna_qr_url: adminSettingsForm.deuna_qr_url,
             payphone_link: adminSettingsForm.payphone_link,
@@ -2689,7 +2702,7 @@
         const activeOrdersCount = validOrders.length;
         const cancelledCount = cancelledOrders.length;
         const criticalStockCount = products.filter(p =>
-          (p.variants || []).some(v => v.stock <= 2)
+          (p.variants || []).some(v => v.stock > 0 && v.stock <= 2)
         ).length;
 
         const secCounts = { MAQUILLAJES: 0, ACCESORIOS: 0, ROPA: 0 };
@@ -3298,7 +3311,7 @@
                     const cardImages = getProductImages(prod);
 
                     return (
-                      <div key={prod.id} className="flex flex-col group">
+                      <div key={prod.id} className="flex flex-col h-full min-w-0 group">
                         {/* PEDESTAL DE PRODUCTO ESTILO LIVELARQ (#F5F6F8) */}
                         <div
                           className="relative aspect-[4/5] bg-[#F5F6F8] rounded-[24px] overflow-hidden cursor-pointer flex items-center justify-center p-3 sm:p-5 transition-all duration-300 group-hover:bg-[#ECEEF2]"
@@ -3366,9 +3379,9 @@
                         </div>
 
                         {/* INFORMACIÓN EDITORIAL DEBAJO DEL PEDESTAL (ESTILO LIVELARQ) */}
-                        <div className="pt-3.5 px-1 flex-1 flex flex-col justify-between space-y-2.5">
-                          <div className="space-y-1.5">
-                            <div className="flex items-start justify-between gap-2">
+                        <div className="pt-3.5 px-1 flex-1 flex flex-col justify-between space-y-2.5 min-w-0">
+                          <div className="space-y-1.5 min-w-0">
+                            <div className="flex items-start justify-between gap-2 min-w-0">
                               <h4
                                 onClick={() => {
                                   setQuickViewProduct(prod);
@@ -3376,7 +3389,8 @@
                                   setQuickViewActiveImageIndex(0);
                                   window.location.hash = `#/producto/${prod.id}`;
                                 }}
-                                className="font-bold text-[#151E28] hover:text-[#FF2E93] transition line-clamp-1 text-xs sm:text-sm cursor-pointer"
+                                className="font-bold text-[#151E28] hover:text-[#FF2E93] transition line-clamp-1 text-xs sm:text-sm cursor-pointer truncate w-full"
+                                title={prod.name}
                               >
                                 {prod.name}
                               </h4>
@@ -3416,13 +3430,14 @@
                                             }
                                           });
                                         }}
-                                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
+                                        className={`max-w-full truncate px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
                                           isColActive
                                             ? 'border-[#151E28] bg-[#151E28] text-white'
                                             : colorStock <= 0
                                             ? 'border-zinc-200 bg-zinc-50 text-zinc-300 line-through cursor-not-allowed'
                                             : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400'
                                         }`}
+                                        title={c}
                                       >
                                         {c}
                                       </button>
@@ -3481,13 +3496,14 @@
                                         [prod.id]: { variantName: v.name, image: v.image || prod.image }
                                       });
                                     }}
-                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
+                                    className={`max-w-full truncate px-2 py-0.5 rounded-full text-[10px] font-semibold transition border ${
                                       currentVarName === v.name
                                         ? 'border-[#151E28] bg-[#151E28] text-white'
                                         : v.stock <= 0
                                         ? 'border-zinc-200 bg-zinc-50 text-zinc-300 line-through cursor-not-allowed'
                                         : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400'
                                     }`}
+                                    title={v.name}
                                   >
                                     {v.name}
                                   </button>
@@ -3496,29 +3512,30 @@
                             )}
                           </div>
 
-                          {/* PRECIO Y BOTÓN ESTILO LIVELARQ */}
-                          <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100">
-                            <div className="flex items-baseline gap-1.5">
+                          {/* PRECIO Y BOTÓN ESTILO LIVELARQ (Siempre alineado al fondo sin descuadrarse) */}
+                          <div className="mt-auto pt-2.5 flex items-center justify-between gap-2 border-t border-zinc-100">
+                            <div className="flex items-baseline gap-1.5 min-w-0 truncate">
                               {hasDiscount ? (
                                 <>
-                                  <span className="text-sm sm:text-base font-extrabold text-[#151E28]">${Number(prod.discount_price).toFixed(2)}</span>
-                                  <span className="text-[11px] line-through text-zinc-400">${Number(prod.price).toFixed(2)}</span>
+                                  <span className="text-sm sm:text-base font-extrabold text-[#151E28] shrink-0">${Number(prod.discount_price).toFixed(2)}</span>
+                                  <span className="text-[10px] sm:text-[11px] line-through text-zinc-400 truncate">${Number(prod.price).toFixed(2)}</span>
                                 </>
                               ) : (
-                                <span className="text-sm sm:text-base font-extrabold text-[#151E28]">${Number(prod.price).toFixed(2)}</span>
+                                <span className="text-sm sm:text-base font-extrabold text-[#151E28] shrink-0">${Number(prod.price).toFixed(2)}</span>
                               )}
                             </div>
 
                             <button
+                              type="button"
                               disabled={stock <= 0}
                               onClick={() => addToCart(prod, currentVarName, false)}
-                              className={`px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center gap-1.5 ${
+                              className={`shrink-0 whitespace-nowrap px-3 sm:px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center justify-center gap-1 ${
                                 stock <= 0
                                   ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
                                   : 'bg-[#151E28] hover:bg-[#FF2E93] text-white active:scale-95'
                               }`}
                             >
-                              <Icon.Plus className="w-3 h-3" />
+                              <Icon.Plus className="w-3 h-3 shrink-0" />
                               <span>{stock <= 0 ? 'Agotado' : 'Añadir'}</span>
                             </button>
                           </div>
@@ -5048,7 +5065,7 @@
                                       }
                                     }
                                     setOrders(orders.map(o => o.id === order.id ? { ...o, status: n } : o));
-                                    showToast();
+                                    showToast(`Estado del pedido ${order.order_code} actualizado a ${n.toUpperCase()}`);
                                   }}
                                   className="text-xs font-bold px-3 py-2 rounded-xl border bg-pink-50 text-[#FF2E93]"
                                 >
@@ -5084,12 +5101,20 @@
                             </div>
                           )}
 
+                          {order.admin_notes && order.admin_notes.includes('[AUTO-VALIDADO POR CORREO') && (
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3 py-2 text-[11px] font-bold flex items-center gap-2">
+                              <span>⚡</span>
+                              <span>Pago validado automáticamente por correo en <code>kaoj.store.ecu@gmail.com</code></span>
+                            </div>
+                          )}
+
                           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                             <span className="text-xs text-zinc-500 inline-flex items-center gap-1.5 flex-wrap">
                               <span>Pago:</span>
-                              {order.payment_method === 'deuna' && <img src={PAYMENT_ICONS.deuna} className="w-4 h-4 rounded object-contain inline-block" alt="Deuna" />}
-                              {order.payment_method === 'payphone' && <img src={PAYMENT_ICONS.payphone} className="w-4 h-4 rounded object-contain inline-block" alt="Payphone" />}
-                              {order.payment_method === 'transferencia' && <img src={PAYMENT_ICONS.guayaquil} className="w-4 h-4 rounded object-cover inline-block" alt="Transferencia" />}
+                              {(order.payment_method || '').toLowerCase().includes('deuna') && <img src={PAYMENT_ICONS.deuna} className="w-4 h-4 rounded object-contain inline-block" alt="Deuna" />}
+                              {(order.payment_method || '').toLowerCase().includes('payphone') && <img src={PAYMENT_ICONS.payphone} className="w-4 h-4 rounded object-contain inline-block" alt="Payphone" />}
+                              {(order.payment_method || '').toLowerCase().includes('pichincha') && <img src={PAYMENT_ICONS.pichincha} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Pichincha" />}
+                              {((order.payment_method || '').toLowerCase().includes('guayaquil') || ((order.payment_method || '').toLowerCase().includes('transferencia') && !(order.payment_method || '').toLowerCase().includes('pichincha'))) && <img src={PAYMENT_ICONS.guayaquil} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Guayaquil" />}
                               <b className="capitalize">{order.payment_method}</b>
                               {order.receipt_url && order.receipt_url.startsWith('http') && (
                                 <a href={order.receipt_url} target="_blank" rel="noreferrer" className="text-[#FF2E93] underline ml-2 font-bold">Ver Comprobante</a>
@@ -5289,7 +5314,7 @@
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4">
+                    <div className="grid md:grid-cols-3 gap-4">
                       <div>
                         <label className="font-semibold block mb-1">Monto Mínimo para Envío Gratis ($)</label>
                         <input
@@ -5298,6 +5323,16 @@
                           value={adminSettingsForm.free_shipping_threshold || 50}
                           onChange={e => setAdminSettingsForm({ ...adminSettingsForm, free_shipping_threshold: e.target.value })}
                           className="w-full border rounded-xl p-2.5 outline-none font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold block mb-1">Correo de Validación Bancaria</label>
+                        <input
+                          type="email"
+                          value={adminSettingsForm.email_contact || 'kaoj.store.ecu@gmail.com'}
+                          onChange={e => setAdminSettingsForm({ ...adminSettingsForm, email_contact: e.target.value })}
+                          placeholder="kaoj.store.ecu@gmail.com"
+                          className="w-full border rounded-xl p-2.5 outline-none font-mono font-bold text-zinc-900"
                         />
                       </div>
                       <div>
@@ -7921,7 +7956,7 @@
                         )}
                       </div>
 
-                      <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
+                      <div className="p-5 sm:p-6 md:w-1/2 flex flex-col justify-between space-y-4 min-w-0">
                         <div>
                           <span className="text-[10px] font-extrabold bg-zinc-100 text-zinc-800 px-2.5 py-0.5 rounded-full tracking-wider uppercase">
                             {quickViewProduct.section} • {quickViewProduct.category}
@@ -8125,22 +8160,29 @@
                           </button>
                         ) : (
                           <div className="space-y-2 pt-1">
-                            {/* BOTÓN 1: COMPRAR AHORA (Fucsia Oficial Kaoj Store) */}
+                            {/* BOTÓN 1: COMPRAR AHORA (Fucsia Oficial Kaoj Store - Altura fija sin descuadrarse con textos largos) */}
                             <button
+                              type="button"
                               onClick={() => addToCart(quickViewProduct, currentVarName, true)}
-                              className="w-full py-3.5 rounded-2xl font-bold text-sm bg-[#FF007F] hover:bg-[#E0006E] text-white shadow-lg shadow-pink-500/20 active:scale-98 transition flex items-center justify-center gap-2 tracking-wide"
+                              className="w-full h-12 px-4 rounded-2xl font-bold text-xs sm:text-sm bg-[#FF007F] hover:bg-[#E0006E] text-white shadow-lg shadow-pink-500/20 active:scale-98 transition flex items-center justify-center gap-2 tracking-wide overflow-hidden whitespace-nowrap"
+                              title={`Comprar Ahora (${currentVarName})`}
                             >
-                              <Icon.Bag className="w-4 h-4 text-white" />
-                              <span>Comprar Ahora ({currentVarName})</span>
+                              <Icon.Bag className="w-4 h-4 text-white shrink-0" />
+                              <span className="shrink-0">Comprar Ahora</span>
+                              {currentVarName && (
+                                <span className="truncate max-w-[125px] sm:max-w-[180px] text-pink-100 font-semibold text-xs">
+                                  • {currentVarName}
+                                </span>
+                              )}
                             </button>
 
                             {/* BOTÓN 2: AGREGAR AL CARRITO (Blanco Chic con borde Fucsia) */}
                             <button
                               type="button"
                               onClick={() => addToCart(quickViewProduct, currentVarName, false)}
-                              className="w-full py-2.5 rounded-2xl font-bold text-xs bg-pink-50/60 hover:bg-pink-100/70 text-[#FF007F] border border-pink-300 active:scale-98 transition flex items-center justify-center gap-1.5 shadow-2xs"
+                              className="w-full h-10 px-4 rounded-2xl font-bold text-xs bg-pink-50/60 hover:bg-pink-100/70 text-[#FF007F] border border-pink-300 active:scale-98 transition flex items-center justify-center gap-1.5 shadow-2xs whitespace-nowrap"
                             >
-                              <Icon.Plus className="w-3.5 h-3.5 text-[#FF007F]" />
+                              <Icon.Plus className="w-3.5 h-3.5 text-[#FF007F] shrink-0" />
                               <span>Agregar al carrito</span>
                             </button>
                           </div>

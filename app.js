@@ -2189,6 +2189,20 @@ function App() {
       localStorage.setItem('kaoj_favorites', JSON.stringify(favorites));
     } catch (e) {}
   }, [favorites]);
+
+  // Sincronizar galería de vista rápida al abrir un producto: foto principal (índice 0) por defecto
+  useEffect(() => {
+    if (quickViewProduct) {
+      const activeVar = activeVariants[quickViewProduct.id];
+      if (activeVar?.userSelected && activeVar.image) {
+        const allM = getProductMedia(quickViewProduct);
+        const targetIdx = allM.findIndex(m => m.url && m.url.trim() === activeVar.image.trim());
+        setQuickViewActiveImageIndex(targetIdx !== -1 ? targetIdx : 0);
+      } else {
+        setQuickViewActiveImageIndex(0);
+      }
+    }
+  }, [quickViewProduct?.id]);
   function toggleFavorite(productId, productName) {
     if (favorites.includes(productId)) {
       setFavorites(favorites.filter(id => id !== productId));
@@ -2860,13 +2874,15 @@ function App() {
         } catch (e) {}
         const initVars = {};
         prods.forEach(p => {
-          const firstAvail = (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
+          const matchingMainVar = (p.variants || []).find(v => v.image && p.image && v.image.trim() === p.image.trim() && v.stock > 0) || (p.variants || []).find(v => v.image && p.image && v.image.trim() === p.image.trim());
+          const firstAvail = matchingMainVar || (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
           if (firstAvail) {
             initVars[p.id] = {
               variantName: firstAvail.name,
               color: firstAvail.color,
               size: firstAvail.size,
-              image: firstAvail.image || p.image
+              image: p.image || firstAvail.image,
+              userSelected: false
             };
           }
         });
@@ -4706,7 +4722,10 @@ function App() {
     const hasColorAndSize = (prod.variants || []).some(v => v.color && v.size);
     const distinctColors = hasColorAndSize ? Array.from(new Set(prod.variants.map(v => v.color).filter(Boolean))) : [];
     const distinctSizes = hasColorAndSize ? Array.from(new Set(prod.variants.map(v => v.size).filter(Boolean))) : [];
-    const currentColor = hasColorAndSize ? activeVar.color || distinctColors.find(c => (prod.variants || []).some(v => v.color === c && v.stock > 0)) || distinctColors[0] : null;
+
+    // Color y variante por defecto: si la foto principal corresponde a un color específico, alinear con él
+    const matchingColorForMainImg = hasColorAndSize && prod.image ? (prod.variants || []).find(v => v.image && v.image.trim() === prod.image.trim())?.color : null;
+    const currentColor = hasColorAndSize ? activeVar.color || matchingColorForMainImg || distinctColors.find(c => (prod.variants || []).some(v => v.color === c && v.stock > 0)) || distinctColors[0] : null;
     const currentSize = hasColorAndSize ? activeVar.size || distinctSizes.find(s => (prod.variants || []).some(v => v.color === currentColor && v.size === s && v.stock > 0)) || distinctSizes[0] : null;
     const varObj = hasColorAndSize ? (prod.variants || []).find(v => v.color === currentColor && v.size === currentSize) || (prod.variants || []).find(v => v.color === currentColor) || prod.variants?.[0] : (prod.variants || []).find(v => v.name === (activeVar.variantName || prod.variants?.[0]?.name)) || prod.variants?.[0];
     const currentVarName = varObj ? varObj.name : prod.variants?.[0]?.name || 'Único';
@@ -4715,7 +4734,11 @@ function App() {
     const hasLowStockVariant = (prod.variants || []).some(v => v.stock > 0 && v.stock <= 2);
     const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
     const discountPercent = hasDiscount ? Math.round((prod.price - prod.discount_price) / prod.price * 100) : 0;
-    const displayImage = activeVar.image || prod.image || varObj?.image || (hasColorAndSize ? prod.variants?.find(v => v.color === currentColor && v.image)?.image : null) || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
+
+    // Foto de primera impresión en catálogo:
+    // SIEMPRE la foto principal del producto (prod.image). Solo si el cliente tocó manualmente un tono
+    // en esta tarjeta (activeVar.userSelected === true) se muestra la foto de esa variante.
+    const displayImage = activeVar.userSelected && activeVar.image ? activeVar.image : prod.image || activeVar.image || varObj?.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
     const cardImages = getProductImages(prod);
     return /*#__PURE__*/React.createElement("div", {
       key: prod.id,
@@ -4725,7 +4748,10 @@ function App() {
       onClick: () => {
         setQuickViewProduct(prod);
         setQuickViewSelectedVar(currentVarName);
-        setQuickViewActiveImageIndex(0);
+        const allM = getProductMedia(prod);
+        const targetVarImg = activeVar.userSelected ? activeVar.image : null;
+        const targetIdx = targetVarImg ? allM.findIndex(m => m.url && m.url.trim() === targetVarImg.trim()) : 0;
+        setQuickViewActiveImageIndex(targetIdx !== -1 ? targetIdx : 0);
         window.location.hash = `#/producto/${prod.id}`;
       }
     }, /*#__PURE__*/React.createElement("img", {
@@ -4774,7 +4800,10 @@ function App() {
       onClick: () => {
         setQuickViewProduct(prod);
         setQuickViewSelectedVar(currentVarName);
-        setQuickViewActiveImageIndex(0);
+        const allM = getProductMedia(prod);
+        const targetVarImg = activeVar.userSelected ? activeVar.image : null;
+        const targetIdx = targetVarImg ? allM.findIndex(m => m.url && m.url.trim() === targetVarImg.trim()) : 0;
+        setQuickViewActiveImageIndex(targetIdx !== -1 ? targetIdx : 0);
         window.location.hash = `#/producto/${prod.id}`;
       },
       className: "font-bold text-[#151E28] hover:text-[#FF2E93] transition line-clamp-1 text-xs sm:text-sm cursor-pointer truncate w-full",
@@ -4803,7 +4832,8 @@ function App() {
               color: c,
               size: nextSize,
               variantName: nextName,
-              image: matchedVar?.image || colorVar?.image || prod.image
+              image: matchedVar?.image || colorVar?.image || prod.image,
+              userSelected: true
             }
           });
         },
@@ -4828,7 +4858,8 @@ function App() {
               color: currentColor,
               size: s,
               variantName: varName,
-              image: combVar?.image || prod.image
+              image: combVar?.image || prod.image,
+              userSelected: true
             }
           });
         },
@@ -4844,7 +4875,8 @@ function App() {
           ...activeVariants,
           [prod.id]: {
             variantName: v.name,
-            image: v.image || prod.image
+            image: v.image || prod.image,
+            userSelected: true
           }
         });
       },
@@ -9534,7 +9566,8 @@ function App() {
     const distinctColors = hasColorAndSize ? Array.from(new Set(quickViewProduct.variants.map(v => v.color).filter(Boolean))) : [];
     const distinctSizes = hasColorAndSize ? Array.from(new Set(quickViewProduct.variants.map(v => v.size).filter(Boolean))) : [];
     const modalActive = activeVariants[quickViewProduct.id] || {};
-    const currentColor = hasColorAndSize ? modalActive.color || distinctColors.find(c => (quickViewProduct.variants || []).some(v => v.color === c && v.stock > 0)) || distinctColors[0] : null;
+    const matchingColorForMainImg = hasColorAndSize && quickViewProduct.image ? (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === quickViewProduct.image.trim())?.color : null;
+    const currentColor = hasColorAndSize ? modalActive.color || matchingColorForMainImg || distinctColors.find(c => (quickViewProduct.variants || []).some(v => v.color === c && v.stock > 0)) || distinctColors[0] : null;
     const currentSize = hasColorAndSize ? modalActive.size || distinctSizes.find(s => (quickViewProduct.variants || []).some(v => v.color === currentColor && v.size === s && v.stock > 0)) || distinctSizes[0] : null;
     const varObj = hasColorAndSize ? (quickViewProduct.variants || []).find(v => v.color === currentColor && v.size === currentSize) || (quickViewProduct.variants || []).find(v => v.color === currentColor) || quickViewProduct.variants?.[0] : (quickViewProduct.variants || []).find(v => v.name === (quickViewSelectedVar || modalActive.variantName || quickViewProduct.variants?.[0]?.name)) || quickViewProduct.variants?.[0];
     const currentVarName = varObj ? varObj.name : quickViewProduct.variants?.[0]?.name || 'Único';
@@ -9569,19 +9602,21 @@ function App() {
               color: newColor,
               size: nextSize,
               variantName: nextVarName,
-              image: matchingSizeVar.image || matchedVar.image
+              image: matchingSizeVar.image || matchedVar.image,
+              userSelected: true
             }
           }));
         }
       } else {
         const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
         if (matchedVar) {
-          setQuickViewSelectedVar(matchingVar.name);
+          setQuickViewSelectedVar(matchedVar.name);
           setActiveVariants(prev => ({
             ...prev,
             [quickViewProduct.id]: {
-              variantName: matchingVar.name,
-              image: matchingVar.image
+              variantName: matchedVar.name,
+              image: matchedVar.image,
+              userSelected: true
             }
           }));
         }
@@ -9711,9 +9746,9 @@ function App() {
           const nextSize = matchedVar ? matchedVar.size : currentSize;
           const nextVarName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
           setQuickViewSelectedVar(nextVarName);
-          const nextImg = matchedVar?.image || colorVar?.image;
+          const nextImg = (matchedVar?.image || colorVar?.image || '').trim();
           if (nextImg) {
-            const targetIdx = allMedia.findIndex(m => m.url === nextImg);
+            const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === nextImg);
             if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
           }
           setActiveVariants({
@@ -9722,7 +9757,8 @@ function App() {
               color: c,
               size: nextSize,
               variantName: nextVarName,
-              image: matchedVar?.image || colorVar?.image || quickViewProduct.image
+              image: matchedVar?.image || colorVar?.image || quickViewProduct.image,
+              userSelected: true
             }
           });
         },
@@ -9761,7 +9797,8 @@ function App() {
               color: currentColor,
               size: s,
               variantName: varName,
-              image: combVar?.image || quickViewProduct.image
+              image: combVar?.image || quickViewProduct.image,
+              userSelected: true
             }
           });
         },
@@ -9787,15 +9824,16 @@ function App() {
       disabled: v.stock <= 0,
       onClick: () => {
         setQuickViewSelectedVar(v.name);
-        if (v.image) {
-          const targetIdx = allMedia.findIndex(m => m.url === v.image);
+        if (v.image && v.image.trim()) {
+          const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === v.image.trim());
           if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
         }
         setActiveVariants({
           ...activeVariants,
           [quickViewProduct.id]: {
             variantName: v.name,
-            image: v.image || quickViewProduct.image
+            image: v.image || quickViewProduct.image,
+            userSelected: true
           }
         });
       },

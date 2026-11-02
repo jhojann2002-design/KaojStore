@@ -1,13 +1,13 @@
 {
-  "name": "KAOJ STORE | Maquillaje, Skincare & Moda",
+  "name": "KAOJ STORE | Alta Cosmética, Skincare & Moda Chic",
   "short_name": "Kaoj Store",
-  "description": "Tu boutique favorita de maquillaje, skincare dermatológico y moda con entregas en Portoviejo, Manta y envíos a todo el Ecuador.",
+  "description": "Tu boutique favorita de alta cosmética, skincare dermatológico y moda chic con entregas en Portoviejo, Manta y envíos a todo el Ecuador.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#FDFAFC",
-  "theme_color": "#FF2E93",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FF007F",
   "lang": "es-EC",
   "categories": ["shopping", "lifestyle", "beauty"],
   "icons": [

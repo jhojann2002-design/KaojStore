@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <defs>
-    <linearGradient id="favGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF2E93"/>
-      <stop offset="100%" stop-color="#940E4F"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="url(#favGrad)"/>
-  <text x="32" y="42" font-family="'Playfair Display', Georgia, serif" font-size="28" font-weight="900" fill="#FFFFFF" text-anchor="middle">K</text>
-  <circle cx="48" cy="18" r="3" fill="#FFFFFF"/>
+  <rect width="64" height="64" rx="16" fill="#FFFFFF"/>
+  <rect x="1" y="1" width="62" height="62" rx="15" fill="none" stroke="#E4E4E7" stroke-width="1.5"/>
+  <g fill="#FF007F">
+    <path transform="translate(11.50, 48.00) scale(0.04642, -0.04642)" d="M739 708V689Q705 680 663.5 656.0Q622 632 575 579L391 370L472 476L709 81Q722 60 735.0 46.0Q748 32 770 20V0Q728 2 680.5 2.5Q633 3 590 3Q567 3 533.0 2.5Q499 2 447 0V20Q494 22 501.5 31.0Q509 40 494 65L349 310Q339 328 331.0 337.0Q323 346 315.5 350.0Q308 354 296 355V376Q340 378 379.0 405.5Q418 433 473 495L507 533Q549 580 551.5 614.5Q554 649 530.5 668.5Q507 688 469 689V708Q497 707 521.5 706.5Q546 706 573.5 705.5Q601 705 638 705Q670 705 694.5 706.0Q719 707 739 708ZM373 708V688Q343 687 327.5 680.5Q312 674 307.0 656.5Q302 639 302 602V106Q302 70 307.5 52.0Q313 34 328.0 28.0Q343 22 373 20V0Q344 2 298.5 2.5Q253 3 206 3Q152 3 104.5 2.5Q57 2 28 0V20Q59 22 74.0 28.0Q89 34 94.0 52.0Q99 70 99 106V602Q99 639 94.0 656.5Q89 674 73.5 680.5Q58 687 28 688V708Q57 707 104.5 706.0Q152 705 206 705Q253 705 298.5 706.0Q344 707 373 708Z"/>
+    <circle cx="50.5" cy="14" r="3.2" fill="#FF007F"/>
+  </g>
 </svg>

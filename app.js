@@ -549,6 +549,45 @@ const Icon = {
     strokeLinejoin: "round",
     strokeWidth: "1.8",
     d: "M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a2 2 0 114 0m0 0h2a1 1 0 001-1v-4.586a1 1 0 00-.293-.707l-2.414-2.414a1 1 0 00-.707-.293H16v8m0 0a2 2 0 11-4 0m0 0H7m-2 0a2 2 0 11-4 0"
+  })),
+  Document: ({
+    className = "w-4 h-4"
+  }) => /*#__PURE__*/React.createElement("svg", {
+    className: className,
+    fill: "none",
+    stroke: "currentColor",
+    viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("path", {
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "1.6",
+    d: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+  })),
+  Bell: ({
+    className = "w-4 h-4"
+  }) => /*#__PURE__*/React.createElement("svg", {
+    className: className,
+    fill: "none",
+    stroke: "currentColor",
+    viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("path", {
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "1.6",
+    d: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
+  })),
+  Download: ({
+    className = "w-4 h-4"
+  }) => /*#__PURE__*/React.createElement("svg", {
+    className: className,
+    fill: "none",
+    stroke: "currentColor",
+    viewBox: "0 0 24 24"
+  }, /*#__PURE__*/React.createElement("path", {
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "1.8",
+    d: "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
   }))
 };
 const DEFAULT_SHIPPING_RATES = [{
@@ -1012,6 +1051,728 @@ const DEFAULT_STORE_PRODUCTS = [{
   "is_active": true
 }];
 
+// =========================================================================
+// UTILIDADES: AUDIO CHIME, FACTURACIÓN TÉRMICA 58MM Y COMPROBANTES PWA
+// =========================================================================
+function playOrderNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const now = ctx.currentTime;
+    // Chime boutique ascendente armonioso: C5 (523Hz), E5 (659Hz), G5 (784Hz), C6 (1046Hz)
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+      gain.gain.setValueAtTime(0.35, now + idx * 0.11);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.11 + 0.38);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.11);
+      osc.stop(now + idx * 0.11 + 0.38);
+    });
+  } catch (e) {
+    console.warn('Audio chime notice:', e);
+  }
+}
+function generateRawThermalTicketText(order, settings) {
+  if (!order) return '';
+  const orderCode = order.order_code || order.orderCode || '000000';
+  const customerName = order.customer_name || order.customerName || 'Consumidor Final';
+  const customerPhone = order.customer_phone || order.customerPhone || 'N/A';
+  const customerIdCard = order.customer_id_card || order.customerIdCard || '';
+  const deliveryMethod = order.delivery_method || order.deliveryMethod || 'Personal';
+  const deliveryAddress = order.delivery_address || order.deliveryAddress || 'Retiro en punto';
+  const paymentMethod = order.payment_method || order.paymentMethod || 'Efectivo';
+  const status = order.status || 'Completado';
+  const storePhone = formatDisplayPhone(settings?.whatsapp_number || '0963073456');
+  const d = new Date(order.created_at || Date.now());
+  const dateStr = d.toLocaleDateString('es-EC', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }) + ' ' + d.toLocaleTimeString('es-EC', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const sub = Number(order.subtotal || 0).toFixed(2);
+  const ship = Number(order.shipping_cost ?? order.shippingCost ?? 0).toFixed(2);
+  const disc = Number(order.discount_amount ?? order.discountAmount ?? 0).toFixed(2);
+  const tot = Number(order.total || 0).toFixed(2);
+  let itemsLines = '';
+  (order.items || []).forEach(it => {
+    const qty = it.qty || 1;
+    const rawName = (it.name || 'Prenda').substring(0, 18);
+    const linePrice = (Number(it.price || 0) * qty).toFixed(2);
+    itemsLines += `${String(qty).padEnd(2, ' ')}x ${rawName.padEnd(19, ' ')} $${linePrice.padStart(6, ' ')}\n`;
+    if (it.variant) {
+      itemsLines += `   [${it.variant.substring(0, 26)}]\n`;
+    }
+  });
+  return `================================
+          KAOJ STORE
+  Alta Cosmética & Moda Chic
+     Portoviejo - Ecuador
+    WhatsApp: ${storePhone}
+================================
+NOTA DE VENTA: #${orderCode}
+FECHA: ${dateStr}
+CLIENTA: ${customerName}
+TEL: ${customerPhone}
+${customerIdCard ? `CÉDULA: ${customerIdCard}\n` : ''}ENTREGA: ${deliveryMethod.substring(0, 24)}
+DIREC: ${deliveryAddress.substring(0, 30)}
+--------------------------------
+CANT PRODUCTO            TOTAL
+--------------------------------
+${itemsLines}--------------------------------
+SUBTOTAL:               $${sub.padStart(6, ' ')}
+ENVÍO:                  $${ship.padStart(6, ' ')}
+${Number(disc) > 0 ? `DESCUENTO:             -$${disc.padStart(6, ' ')}\n` : ''}--------------------------------
+TOTAL A PAGAR:          $${tot.padStart(6, ' ')}
+--------------------------------
+FORMA DE PAGO:
+${paymentMethod.substring(0, 30)}
+ESTADO: ${status.toUpperCase()}
+================================
+    ¡Gracias por tu compra!
+  No es un gasto, es una
+     inversión en ti misma 💅✨
+================================`;
+}
+function printThermalTicket58mm(order, settings) {
+  if (!order) return;
+  const orderCode = order.order_code || order.orderCode || '000000';
+  const rawText = generateRawThermalTicketText(order, settings);
+  const printWindow = window.open('', '_blank', 'width=380,height=650');
+  if (!printWindow) {
+    alert('Por favor habilita las ventanas emergentes del navegador para imprimir el ticket térmico.');
+    return;
+  }
+  const doc = printWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Ticket_${orderCode}</title>
+  <style>
+    @page {
+      size: 58mm auto;
+      margin: 0mm;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 58mm;
+      max-width: 58mm;
+      margin: 0 auto;
+      padding: 2mm 2.5mm 8mm 2.5mm;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      line-height: 1.25;
+      color: #000;
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
+    .no-print {
+      margin-top: 15px;
+      text-align: center;
+    }
+    .btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-family: sans-serif;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    @media print {
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <pre>${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">🖨️ Imprimir Ticket 58mm</button>
+  </div>
+  <script>
+    setTimeout(function() {
+      window.focus();
+      window.print();
+    }, 280);
+  </script>
+</body>
+</html>`);
+  doc.close();
+}
+function downloadThermalTicketFile(order, settings) {
+  if (!order) return;
+  const orderCode = order.order_code || order.orderCode || '000000';
+  const rawText = generateRawThermalTicketText(order, settings);
+  const blob = new Blob([rawText], {
+    type: 'text/plain;charset=utf-8'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ticket_kaoj_${orderCode}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function printCustomerReceiptWindow(order, settings) {
+  if (!order) return;
+  const orderCode = order.order_code || order.orderCode || '000000';
+  const customerName = order.customer_name || order.customerName || 'Consumidor Final';
+  const customerPhone = order.customer_phone || order.customerPhone || 'N/A';
+  const customerIdCard = order.customer_id_card || order.customerIdCard || '';
+  const customerCode = order.customer_code || order.customerCode || 'KAOJ-VIP';
+  const deliveryMethod = order.delivery_method || order.deliveryMethod || 'Retiro Personal';
+  const deliveryAddress = order.delivery_address || order.deliveryAddress || 'Retiro en punto';
+  const paymentMethod = order.payment_method || order.paymentMethod || 'Efectivo / Transferencia';
+  const storePhone = formatDisplayPhone(settings?.whatsapp_number || '0963073456');
+  const d = new Date(order.created_at || Date.now());
+  const dateStr = d.toLocaleDateString('es-EC', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }) + ' ' + d.toLocaleTimeString('es-EC', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const sub = Number(order.subtotal || 0).toFixed(2);
+  const ship = Number(order.shipping_cost ?? order.shippingCost ?? 0).toFixed(2);
+  const disc = Number(order.discount_amount ?? order.discountAmount ?? 0).toFixed(2);
+  const tot = Number(order.total || 0).toFixed(2);
+  const itemsHtml = (order.items || []).map(it => {
+    const qty = it.qty || 1;
+    const unitPrice = Number(it.price || 0).toFixed(2);
+    const lineTotal = (Number(it.price || 0) * qty).toFixed(2);
+    return `
+          <tr>
+            <td style="padding: 10px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; font-weight: bold;">${qty}</td>
+            <td style="padding: 10px 8px; border-bottom: 1px solid #f0f0f0;">
+              <div style="font-weight: bold; color: #111;">${it.name || 'Producto'}</div>
+              ${it.variant ? `<div style="font-size: 11px; color: #666;">Tono / Talla: <b>${it.variant}</b></div>` : ''}
+            </td>
+            <td style="padding: 10px 8px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #444;">$${unitPrice}</td>
+            <td style="padding: 10px 8px; border-bottom: 1px solid #f0f0f0; text-align: right; font-weight: bold; color: #111;">$${lineTotal}</td>
+          </tr>
+        `;
+  }).join('');
+  const printWindow = window.open('', '_blank', 'width=750,height=900');
+  if (!printWindow) {
+    alert('Por favor habilita las ventanas emergentes para ver o imprimir tu comprobante.');
+    return;
+  }
+  const doc = printWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Comprobante_${orderCode}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+    @page { size: A4 portrait; margin: 12mm 15mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      line-height: 1.4;
+      padding: 24px;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #FF007F;
+      padding-bottom: 18px;
+      margin-bottom: 22px;
+    }
+    .brand-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 28px;
+      font-weight: 900;
+      color: #FF007F;
+      letter-spacing: -0.5px;
+    }
+    .brand-subtitle {
+      font-size: 12px;
+      color: #666;
+      margin-top: 3px;
+    }
+    .receipt-badge {
+      background: #FFF0F6;
+      border: 1px solid #FFD6E7;
+      color: #D6006A;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+    .order-code {
+      font-family: monospace;
+      font-size: 22px;
+      font-weight: 900;
+      color: #111;
+      margin-top: 6px;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      background: #FBFBFB;
+      border: 1px solid #EFEFEF;
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      font-size: 12px;
+    }
+    .info-label { font-size: 10px; text-transform: uppercase; color: #888; font-weight: 700; margin-bottom: 2px; }
+    .info-val { font-weight: 700; color: #111; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+    th {
+      background: #F7F7F7;
+      color: #555;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 10px 8px;
+      border-bottom: 2px solid #E5E5E5;
+    }
+    .totals-box {
+      width: 280px;
+      margin-left: auto;
+      border: 1px solid #EFEFEF;
+      border-radius: 12px;
+      padding: 14px 18px;
+      background: #FAFAFA;
+      font-size: 13px;
+    }
+    .total-row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .total-final {
+      border-top: 2px solid #111;
+      margin-top: 8px;
+      padding-top: 8px;
+      font-size: 16px;
+      font-weight: 900;
+      color: #FF007F;
+    }
+    .footer-note {
+      text-align: center;
+      margin-top: 36px;
+      padding-top: 20px;
+      border-top: 1px dashed #DDD;
+      font-size: 12px;
+      color: #777;
+    }
+    .no-print {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding: 12px;
+      background: #F0F0F0;
+      border-radius: 12px;
+    }
+    .btn {
+      background: #FF007F;
+      color: #fff;
+      border: none;
+      padding: 10px 22px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+  </div>
+  <div class="header">
+    <div>
+      <h1 class="brand-title">KAOJ STORE</h1>
+      <p class="brand-subtitle">Alta Cosmética, Accesorios & Moda Chic • Portoviejo, Manabí</p>
+      <p class="brand-subtitle">WhatsApp Oficial: ${storePhone}</p>
+    </div>
+    <div style="text-align: right;">
+      <span class="receipt-badge">Comprobante de Compra</span>
+      <div class="order-code">#${orderCode}</div>
+      <div style="font-size: 11px; color: #777; margin-top: 2px;">${dateStr}</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div>
+      <div class="info-label">Clienta:</div>
+      <div class="info-val">${customerName}</div>
+      ${customerIdCard ? `<div style="color: #666; font-size: 11px; margin-top: 2px;">C.I. / RUC: ${customerIdCard}</div>` : ''}
+      <div style="color: #666; font-size: 11px; margin-top: 2px;">Teléfono: ${customerPhone}</div>
+      <div style="color: #D6006A; font-size: 11px; font-weight: bold; margin-top: 2px;">Código VIP: ${customerCode}</div>
+    </div>
+    <div>
+      <div class="info-label">Entrega & Dirección:</div>
+      <div class="info-val">${deliveryMethod}</div>
+      <div style="color: #666; font-size: 11px; margin-top: 2px;">${deliveryAddress}</div>
+      <div class="info-label" style="margin-top: 8px;">Método de Pago:</div>
+      <div class="info-val" style="font-size: 11px;">${paymentMethod}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 50px; text-align: center;">Cant</th>
+        <th style="text-align: left;">Descripción</th>
+        <th style="width: 90px; text-align: right;">P. Unit</th>
+        <th style="width: 90px; text-align: right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsHtml}
+    </tbody>
+  </table>
+
+  <div class="totals-box">
+    <div class="total-row"><span>Subtotal:</span><span>$${sub}</span></div>
+    <div class="total-row"><span>Envío:</span><span>$${ship}</span></div>
+    ${Number(disc) > 0 ? `<div class="total-row" style="color: #059669;"><span>Descuento:</span><span>-$${disc}</span></div>` : ''}
+    <div class="total-row total-final"><span>Total Pagado:</span><span>$${tot}</span></div>
+  </div>
+
+  <div class="footer-note">
+    <p style="font-weight: bold; color: #FF007F; font-size: 14px;">¡Gracias por preferir a Kaoj Store! 💅✨</p>
+    <p style="margin-top: 4px;">"No es un gasto, es una inversión en ti misma."</p>
+    <p style="font-size: 10px; color: #999; margin-top: 8px;">Este documento es un comprobante de orden emitido por la plataforma oficial de Kaoj Store.</p>
+  </div>
+
+  <script>
+    setTimeout(function() {
+      window.focus();
+      window.print();
+    }, 350);
+  </script>
+</body>
+</html>`);
+  doc.close();
+}
+function printSalesNoteWindow(order, settings) {
+  if (!order) return;
+  const orderCode = order.order_code || order.orderCode || '000000';
+  const customerName = order.customer_name || order.customerName || 'Consumidor Final';
+  const customerPhone = order.customer_phone || order.customerPhone || 'N/A';
+  const customerIdCard = order.customer_id_card || order.customerIdCard || '';
+  const customerCode = order.customer_code || order.customerCode || 'KAOJ-VIP';
+  const deliveryMethod = order.delivery_method || order.deliveryMethod || 'Retiro Personal';
+  const deliveryAddress = order.delivery_address || order.deliveryAddress || 'Retiro en punto';
+  const paymentMethod = order.payment_method || order.paymentMethod || 'Efectivo';
+  const adminNotes = order.admin_notes || '';
+  const storePhone = formatDisplayPhone(settings?.whatsapp_number || '0963073456');
+  const d = new Date(order.created_at || Date.now());
+  const dateStr = d.toLocaleDateString('es-EC', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }) + ' ' + d.toLocaleTimeString('es-EC', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const sub = Number(order.subtotal || 0).toFixed(2);
+  const ship = Number(order.shipping_cost ?? order.shippingCost ?? 0).toFixed(2);
+  const disc = Number(order.discount_amount ?? order.discountAmount ?? 0).toFixed(2);
+  const tot = Number(order.total || 0).toFixed(2);
+  const itemsHtml = (order.items || []).map((it, idx) => {
+    const qty = it.qty || 1;
+    const unitPrice = Number(it.price || 0).toFixed(2);
+    const lineTotal = (Number(it.price || 0) * qty).toFixed(2);
+    return `
+          <tr>
+            <td style="padding: 8px 6px; border-bottom: 1px solid #e5e5e5; text-align: center; font-size: 14px;">[ &nbsp; ]</td>
+            <td style="padding: 8px 6px; border-bottom: 1px solid #e5e5e5; text-align: center; font-weight: bold;">${qty}</td>
+            <td style="padding: 8px 6px; border-bottom: 1px solid #e5e5e5;">
+              <div style="font-weight: bold; color: #111;">${it.name || 'Producto'}</div>
+              ${it.variant ? `<div style="font-size: 11px; color: #555;">Tono/Talla: <b>${it.variant}</b></div>` : ''}
+            </td>
+            <td style="padding: 8px 6px; border-bottom: 1px solid #e5e5e5; text-align: right;">$${unitPrice}</td>
+            <td style="padding: 8px 6px; border-bottom: 1px solid #e5e5e5; text-align: right; font-weight: bold;">$${lineTotal}</td>
+          </tr>
+        `;
+  }).join('');
+  const printWindow = window.open('', '_blank', 'width=800,height=950');
+  if (!printWindow) {
+    alert('Habilita las ventanas emergentes para imprimir la nota de venta.');
+    return;
+  }
+  const doc = printWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NotaVenta_${orderCode}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #fff;
+      color: #111;
+      padding: 24px;
+      max-width: 820px;
+      margin: 0 auto;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .header-box {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border: 2px solid #222;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      background: #FAFAFA;
+    }
+    .title-area h1 {
+      font-size: 20px;
+      font-weight: 900;
+      color: #111;
+      letter-spacing: -0.3px;
+    }
+    .order-badge {
+      background: #111;
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-weight: 900;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      display: inline-block;
+      text-transform: uppercase;
+    }
+    .order-number {
+      font-family: monospace;
+      font-size: 20px;
+      font-weight: 900;
+      color: #FF007F;
+      margin-top: 4px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .panel {
+      border: 1px solid #D0D0D0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: #FFF;
+    }
+    .panel-title {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #555;
+      border-bottom: 1px solid #E5E5E5;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th {
+      background: #F0F0F0;
+      border-top: 1px solid #CCC;
+      border-bottom: 2px solid #999;
+      padding: 7px 6px;
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: #333;
+    }
+    .totals-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+      gap: 16px;
+    }
+    .notes-box {
+      flex: 1;
+      border: 1px dashed #BBB;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 11px;
+      background: #FFFDEE;
+    }
+    .totals-box {
+      width: 260px;
+      border: 1px solid #CCC;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: #F9F9F9;
+    }
+    .tot-row { display: flex; justify-content: space-between; padding: 3px 0; }
+    .tot-final {
+      border-top: 2px solid #111;
+      margin-top: 6px;
+      padding-top: 6px;
+      font-size: 15px;
+      font-weight: 900;
+      color: #111;
+    }
+    .signatures-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 40px;
+      padding-top: 10px;
+    }
+    .sig-line {
+      border-top: 1px solid #666;
+      text-align: center;
+      padding-top: 6px;
+      font-size: 11px;
+      font-weight: bold;
+      color: #444;
+    }
+    .no-print {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 10px;
+      background: #F2F2F2;
+      border-radius: 8px;
+    }
+    .btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">🖨️ Imprimir Nota de Venta</button>
+  </div>
+  <div class="header-box">
+    <div class="title-area">
+      <h1>KAOJ STORE BOUTIQUE</h1>
+      <p style="color: #555; margin-top: 2px;">Alta Cosmética, Accesorios & Moda Chic • Portoviejo - Manabí</p>
+      <p style="color: #666; font-size: 11px;">WhatsApp Bodega / Atención: ${storePhone}</p>
+    </div>
+    <div style="text-align: right;">
+      <span class="order-badge">Nota de Venta / Despacho</span>
+      <div class="order-number">#${orderCode}</div>
+      <div style="font-size: 11px; color: #666; margin-top: 2px;">${dateStr}</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">Datos de la Compradora</div>
+      <p><b>Nombre:</b> ${customerName}</p>
+      <p><b>Teléfono:</b> ${customerPhone}</p>
+      ${customerIdCard ? `<p><b>Cédula / RUC:</b> ${customerIdCard}</p>` : ''}
+      <p><b>Código VIP:</b> <span style="color: #FF007F; font-weight: bold;">${customerCode}</span></p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Despacho & Pago</div>
+      <p><b>Modalidad:</b> ${deliveryMethod}</p>
+      <p><b>Dirección:</b> ${deliveryAddress}</p>
+      <p><b>Forma de Pago:</b> ${paymentMethod}</p>
+      <p><b>Estado:</b> <span style="font-weight: bold; text-transform: uppercase;">${order.status || 'Pendiente'}</span></p>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 45px; text-align: center;">Check</th>
+        <th style="width: 45px; text-align: center;">Cant</th>
+        <th style="text-align: left;">Producto / Detalle</th>
+        <th style="width: 80px; text-align: right;">Unit</th>
+        <th style="width: 85px; text-align: right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsHtml}
+    </tbody>
+  </table>
+
+  <div class="totals-area">
+    <div class="notes-box">
+      <b>Notas / Observaciones del Pedido:</b><br/>
+      ${adminNotes || 'Ninguna observación especial. Revisar embalaje boutique antes de entregar.'}
+    </div>
+    <div class="totals-box">
+      <div class="tot-row"><span>Subtotal:</span><span>$${sub}</span></div>
+      <div class="tot-row"><span>Envío:</span><span>$${ship}</span></div>
+      ${Number(disc) > 0 ? `<div class="tot-row" style="color: #059669;"><span>Descuento:</span><span>-$${disc}</span></div>` : ''}
+      <div class="tot-row tot-final"><span>Total a Cobrar:</span><span>$${tot}</span></div>
+    </div>
+  </div>
+
+  <div class="signatures-box">
+    <div>
+      <div class="sig-line">Preparado / Despachado por (Bodega Kaoj)</div>
+    </div>
+    <div>
+      <div class="sig-line">Recibido Conforme (Cliente / Transportista)</div>
+    </div>
+  </div>
+
+  <script>
+    setTimeout(function() {
+      window.focus();
+      window.print();
+    }, 350);
+  </script>
+</body>
+</html>`);
+  doc.close();
+}
+
 // COMPONENTE PRINCIPAL APP
 // =========================================================================
 function App() {
@@ -1232,6 +1993,13 @@ function App() {
   // Estado de procesamiento seguro y confirmación de pedido
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderSuccessModal, setOrderSuccessModal] = useState(null);
+
+  // Modales de Comprobantes, Nota de Venta e Impresora Térmica 58mm
+  const [customerReceiptModal, setCustomerReceiptModal] = useState(null);
+  const [adminSalesNoteModal, setAdminSalesNoteModal] = useState(null);
+  const [adminThermalTicketModal, setAdminThermalTicketModal] = useState(null);
+  const [rememberAdminPin, setRememberAdminPin] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted');
 
   // Cupones de descuento promocionales
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -1566,12 +2334,19 @@ function App() {
 
     // Router Hash con Slash (#/admin, #/producto/:id, #/seccion/:name, #/favoritos, #/pedidos)
     const handleRouteFromHash = () => {
-      const hash = window.location.hash || '#/';
-      if (hash.startsWith('#/admin')) {
+      let hash = window.location.hash || '#/';
+      const isAdminEntry = Boolean(window.IS_ADMIN_APP || window.location.pathname.endsWith('admin.html'));
+      if (isAdminEntry && !hash.startsWith('#/admin')) {
+        hash = '#/admin/orders';
+        window.location.hash = hash;
+      }
+      if (hash.startsWith('#/admin') || isAdminEntry) {
         const parts = hash.split('/');
-        const targetTab = parts[2] || 'metrics';
-        const savedPin = sessionStorage.getItem('kaoj_admin_pin');
-        if (savedPin && sessionStorage.getItem('kaoj_admin_authenticated') === 'true') {
+        const targetTab = parts[2] || (isAdminEntry ? 'orders' : 'metrics');
+        const savedPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin');
+        if (savedPin && (savedPin === '091002' || savedPin === '2026' || sessionStorage.getItem('kaoj_admin_authenticated') === 'true')) {
+          sessionStorage.setItem('kaoj_admin_authenticated', 'true');
+          sessionStorage.setItem('kaoj_admin_pin', savedPin);
           setIsAdmin(true);
           setAdminTab(targetTab);
         } else {
@@ -1661,11 +2436,50 @@ function App() {
     };
   }, []);
 
-  // Al entrar como admin, cargar datos protegidos (pedidos, clientes, reseñas completas)
+  // Al entrar como admin: datos protegidos, alertas en tiempo real y notificaciones push
   useEffect(() => {
-    if (isAdmin) {
-      fetchAdminData();
+    if (!isAdmin) return;
+    fetchAdminData();
+
+    // 1. Canal Realtime Supabase para nuevos pedidos
+    let realtimeChannel = null;
+    try {
+      realtimeChannel = supabase.channel('kaoj_admin_realtime_orders').on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'kaoj_orders'
+      }, payload => {
+        const newOrder = payload.new;
+        if (newOrder) {
+          playOrderNotificationSound();
+          if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 350]);
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('🛍️ ¡Nuevo pedido en Kaoj Store!', {
+                body: `Pedido #${newOrder.order_code} de ${newOrder.customer_name} por $${Number(newOrder.total || 0).toFixed(2)} (${newOrder.payment_method}).`,
+                icon: './icons/icon-admin-192.png',
+                badge: './icons/favicon.png',
+                tag: `order-${newOrder.id || newOrder.order_code}`
+              });
+            } catch (e) {}
+          }
+          showToast(`🛍️ ¡NUEVO PEDIDO RECIBIDO! #${newOrder.order_code} ($${Number(newOrder.total || 0).toFixed(2)})`, 'success');
+          setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
+          fetchAdminData();
+        }
+      }).subscribe();
+    } catch (e) {
+      console.warn('Realtime channel error:', e);
     }
+
+    // 2. Refresco periódico cada 30 segundos
+    const timer = setInterval(() => {
+      fetchAdminData();
+    }, 30000);
+    return () => {
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      clearInterval(timer);
+    };
   }, [isAdmin]);
   async function fetchInitialData() {
     try {
@@ -2387,18 +3201,34 @@ function App() {
     // 6. Activar el Modal de Confirmación de Pedido (Resistente a bloqueadores móviles)
     setOrderSuccessModal({
       orderCode,
+      order_code: orderCode,
       customerCode: activeCustomerCode,
+      customer_code: activeCustomerCode,
       customerName: customer.name.trim(),
+      customer_name: customer.name.trim(),
       customerPhone: customer.phone.trim(),
+      customer_phone: customer.phone.trim(),
+      customerIdCard: customer.idCard.trim(),
+      customer_id_card: customer.idCard.trim(),
+      deliveryAddress: formattedFullAddress || 'Retiro Personal',
+      delivery_address: formattedFullAddress || 'Retiro Personal',
+      deliveryMethod: deliveryObj.label,
+      delivery_method: deliveryObj.label,
+      paymentMethod: orderData.payment_method,
+      payment_method: orderData.payment_method,
       total: total.toFixed(2),
       subtotal: subtotal.toFixed(2),
       shippingCost: finalShippingAfterCoupon,
+      shipping_cost: finalShippingAfterCoupon,
+      discountAmount: productDiscounts,
+      discount_amount: productDiscounts,
       payphoneSurcharge: payphoneSurchargeAmount,
       pointsEarned: pointsEarnedWithOrder,
+      points_earned: pointsEarnedWithOrder,
       pointsRedeemed: pointsToRedeemNow,
-      deliveryMethod: deliveryObj.label,
       whatsappUrl,
-      items: [...cart]
+      items: [...cart],
+      created_at: new Date().toISOString()
     });
 
     // Intentar apertura automática de WhatsApp en pestaña nueva
@@ -3859,11 +4689,82 @@ function App() {
   }), " Ajustes"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       sessionStorage.removeItem('kaoj_admin_authenticated');
+      sessionStorage.removeItem('kaoj_admin_pin');
+      localStorage.removeItem('kaoj_admin_pin');
       setIsAdmin(false);
+      showToast('Sesión administrativa cerrada.');
       window.location.hash = '#/';
     },
     className: "px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white hover:bg-black transition"
-  }, "Ver Tienda"))), adminTab === 'metrics' && /*#__PURE__*/React.createElement("div", {
+  }, "Cerrar Sesión / Tienda"))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-white rounded-2xl border border-zinc-200 p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "relative flex h-3 w-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "relative inline-flex rounded-full h-3 w-3 bg-emerald-500"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs font-bold text-zinc-900"
+  }, "Sistema en Vivo (Supabase Realtime)"), notificationsEnabled ? /*#__PURE__*/React.createElement("span", {
+    className: "bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full"
+  }, "🔔 Alertas Activas") : /*#__PURE__*/React.createElement("span", {
+    className: "bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full"
+  }, "Alertas Silenciosas")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500"
+  }, "Recibirás timbre y alertas instantáneas al recibir compras."))), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2 flex-wrap"
+  }, !notificationsEnabled && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: async () => {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        const res = await Notification.requestPermission();
+        setNotificationsEnabled(res === 'granted');
+        if (res === 'granted') {
+          playOrderNotificationSound();
+          showToast('¡Notificaciones activadas con éxito! 🔔');
+        } else {
+          showToast('Permiso de notificaciones denegado en el navegador', 'error');
+        }
+      } else {
+        showToast('Este navegador no soporta notificaciones de escritorio', 'error');
+      }
+    },
+    className: "px-3 py-1.5 bg-[#FF2E93] hover:bg-[#e0157a] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+  }, /*#__PURE__*/React.createElement(Icon.Bell, {
+    className: "w-3.5 h-3.5"
+  }), " Activar Notificaciones"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      playOrderNotificationSound();
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('🔔 Prueba de Alarma Kaoj Store', {
+          body: '¡El sonido boutique y las notificaciones de pedidos funcionan al 100%!',
+          icon: './icons/icon-admin-192.png'
+        });
+      }
+      showToast('🔔 Chime de prueba reproducido ✨');
+    },
+    className: "px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5",
+    title: "Probar sonido de nuevo pedido"
+  }, /*#__PURE__*/React.createElement(Icon.Bell, {
+    className: "w-3.5 h-3.5 text-[#FF2E93]"
+  }), " Probar Alarma"), orders.filter(o => o.status === 'pendiente').length > 0 && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      setAdminTab('orders');
+      setAdminFilterStatus('pendiente');
+      window.location.hash = '#/admin/orders';
+    },
+    className: "px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs animate-pulse"
+  }, /*#__PURE__*/React.createElement(Icon.Truck, {
+    className: "w-3.5 h-3.5"
+  }), " ", orders.filter(o => o.status === 'pendiente').length, " Pendientes"))), adminTab === 'metrics' && /*#__PURE__*/React.createElement("div", {
     className: "space-y-6 w-full min-w-0"
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
@@ -5061,7 +5962,7 @@ function App() {
     rel: "noreferrer",
     className: "text-[#FF2E93] underline ml-2 font-bold"
   }, "Ver Comprobante")), /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2"
+    className: "flex items-center gap-2 flex-wrap"
   }, order.status !== 'cancelado' && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => handleCancelOrder(order),
@@ -5069,12 +5970,26 @@ function App() {
     title: "Devolver existencias al inventario y cancelar venta"
   }, /*#__PURE__*/React.createElement(Icon.Close, {
     className: "w-3.5 h-3.5 text-red-600"
-  }), " Cancelar / Revertir Venta"), /*#__PURE__*/React.createElement("button", {
+  }), " Cancelar / Revertir"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminSalesNoteModal(order),
+    className: "text-xs bg-white border border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 text-zinc-800 font-bold px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 transition",
+    title: "Ver, imprimir y descargar Nota de Venta"
+  }, /*#__PURE__*/React.createElement(Icon.Document, {
+    className: "w-3.5 h-3.5 text-[#FF2E93]"
+  }), " Nota de Venta"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminThermalTicketModal(order),
+    className: "text-xs bg-zinc-800 hover:bg-black text-amber-300 font-bold px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition",
+    title: "Imprimir ticket para impresora térmica POS de 58mm"
+  }, /*#__PURE__*/React.createElement(Icon.Printer, {
+    className: "w-3.5 h-3.5 text-amber-400"
+  }), " Ticket 58mm"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setServientregaOrder(order),
     className: "text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5"
   }, /*#__PURE__*/React.createElement(Icon.Box, {
     className: "w-3.5 h-3.5"
-  }), " Guía Servientrega"), /*#__PURE__*/React.createElement("button", {
+  }), " Servientrega"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       const cleanWhatsAppNumber = formatWhatsAppPhone(order.customer_phone);
       window.open(`https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Te saludamos de Kaoj Store 💅. Tu pedido ${order.order_code} se encuentra en estado: ${order.status.toUpperCase()}.`)}`, '_blank');
@@ -5082,7 +5997,7 @@ function App() {
     className: "text-xs bg-zinc-900 hover:bg-black text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5"
   }, /*#__PURE__*/React.createElement(Icon.WhatsApp, {
     className: "w-3.5 h-3.5 text-emerald-400"
-  }), " Notificar WhatsApp"))))))), adminTab === 'reviews' && /*#__PURE__*/React.createElement("div", {
+  }), " WhatsApp"))))))), adminTab === 'reviews' && /*#__PURE__*/React.createElement("div", {
     className: "bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs space-y-4"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex justify-between items-center border-b pb-3"
@@ -6264,6 +7179,9 @@ function App() {
       if (valid) {
         sessionStorage.setItem('kaoj_admin_authenticated', 'true');
         sessionStorage.setItem('kaoj_admin_pin', enteredPin);
+        if (rememberAdminPin) {
+          localStorage.setItem('kaoj_admin_pin', enteredPin);
+        }
         setIsAdmin(true);
         setShowPinModal(false);
         setPinInput('');
@@ -6283,7 +7201,14 @@ function App() {
     onChange: e => setPinInput(e.target.value),
     placeholder: "PIN...",
     className: "w-full border rounded-xl p-3 text-center text-lg font-mono font-bold tracking-widest outline-none focus:ring-1 focus:ring-zinc-900"
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("label", {
+    className: "flex items-center gap-2 cursor-pointer text-zinc-600 text-[11px] select-none"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: rememberAdminPin,
+    onChange: e => setRememberAdminPin(e.target.checked),
+    className: "rounded text-[#FF2E93] focus:ring-[#FF2E93]"
+  }), /*#__PURE__*/React.createElement("span", null, "Recordar sesión en esta app (Acceso directo)")), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2"
   }, /*#__PURE__*/React.createElement("button", {
     type: "submit",
@@ -7900,7 +8825,21 @@ function App() {
       filled: true
     }), /*#__PURE__*/React.createElement("span", null, "Calificar")) : /*#__PURE__*/React.createElement("span", {
       className: "text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-lg shrink-0"
-    }, "Cancelado"))))));
+    }, "Cancelado"))))), /*#__PURE__*/React.createElement("div", {
+      className: "pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200/70"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setCustomerReceiptModal(o),
+      className: "text-xs bg-white hover:bg-pink-50 text-zinc-700 hover:text-[#FF2E93] border border-zinc-200 hover:border-pink-200 px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow-2xs"
+    }, /*#__PURE__*/React.createElement(Icon.Document, {
+      className: "w-3.5 h-3.5 text-[#FF2E93]"
+    }), /*#__PURE__*/React.createElement("span", null, "Ver Comprobante")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => printCustomerReceiptWindow(o, settings),
+      className: "text-xs bg-pink-50 hover:bg-[#FF2E93] text-[#FF2E93] hover:text-white border border-pink-200 hover:border-[#FF2E93] px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shadow-2xs"
+    }, /*#__PURE__*/React.createElement(Icon.Download, {
+      className: "w-3.5 h-3.5"
+    }), /*#__PURE__*/React.createElement("span", null, "Descargar / Imprimir"))));
   })))), isReviewModalOpen && /*#__PURE__*/React.createElement("div", {
     className: "fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4",
     onClick: () => setIsReviewModalOpen(false)
@@ -8147,7 +9086,15 @@ function App() {
     className: "w-full bg-[#25D366] hover:bg-[#20ba5a] text-white py-3.5 px-4 rounded-2xl font-black text-sm shadow-md transition flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95"
   }, /*#__PURE__*/React.createElement(Icon.WhatsApp, {
     className: "w-5 h-5 text-white"
-  }), /*#__PURE__*/React.createElement("span", null, "Enviar Pedido a WhatsApp")), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, "Enviar Pedido a WhatsApp")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      setCustomerReceiptModal(orderSuccessModal);
+    },
+    className: "w-full bg-pink-50 hover:bg-pink-100 text-[#FF2E93] border border-pink-200 py-2.5 px-4 rounded-2xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-2xs"
+  }, /*#__PURE__*/React.createElement(Icon.Document, {
+    className: "w-4 h-4 text-[#FF2E93]"
+  }), /*#__PURE__*/React.createElement("span", null, "🧾 Descargar Comprobante de Compra (PDF / Imprimir)")), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2 text-xs"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => {
@@ -8164,7 +9111,259 @@ function App() {
       if (window.location.hash === '#/pedidos') window.location.hash = '#/';
     },
     className: "px-4 py-2.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-xl font-bold transition"
-  }, "Seguir Comprando"))))), /*#__PURE__*/React.createElement("a", {
+  }, "Seguir Comprando"))))), customerReceiptModal && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+    onClick: () => setCustomerReceiptModal(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto text-xs",
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between items-start border-b border-zinc-200 pb-4"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] font-black tracking-widest text-[#FF2E93] uppercase bg-pink-50 border border-pink-200 px-3 py-1 rounded-full inline-block"
+  }, "Comprobante de Orden"), /*#__PURE__*/React.createElement("h3", {
+    className: "font-serif-kaoj text-2xl font-black text-zinc-900 mt-2"
+  }, "KAOJ STORE"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500"
+  }, "Alta Cosmética & Moda Chic • Portoviejo, Manabí")), /*#__PURE__*/React.createElement("div", {
+    className: "text-right"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "font-mono font-black text-base text-[#FF2E93] block"
+  }, "#", customerReceiptModal.order_code || customerReceiptModal.orderCode), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] text-zinc-400"
+  }, new Date(customerReceiptModal.created_at || Date.now()).toLocaleDateString('es-EC')), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setCustomerReceiptModal(null),
+    className: "text-zinc-400 hover:text-zinc-700 p-1.5 rounded-lg ml-auto block mt-1"
+  }, /*#__PURE__*/React.createElement(Icon.Close, {
+    className: "w-4 h-4"
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-50 rounded-2xl p-4 border border-zinc-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase font-bold text-zinc-400 block"
+  }, "Clienta:"), /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-zinc-900"
+  }, customerReceiptModal.customer_name || customerReceiptModal.customerName), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600 text-[11px]"
+  }, "Tel: ", customerReceiptModal.customer_phone || customerReceiptModal.customerPhone), (customerReceiptModal.customer_id_card || customerReceiptModal.customerIdCard) && /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600 text-[11px]"
+  }, "C.I.: ", customerReceiptModal.customer_id_card || customerReceiptModal.customerIdCard)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase font-bold text-zinc-400 block"
+  }, "Entrega:"), /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-zinc-900"
+  }, customerReceiptModal.delivery_method || customerReceiptModal.deliveryMethod), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600 text-[11px] truncate"
+  }, customerReceiptModal.delivery_address || customerReceiptModal.deliveryAddress), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500 mt-0.5"
+  }, "Pago: ", /*#__PURE__*/React.createElement("b", {
+    className: "text-zinc-800"
+  }, customerReceiptModal.payment_method || customerReceiptModal.paymentMethod || 'Efectivo')))), /*#__PURE__*/React.createElement("div", {
+    className: "border border-zinc-200 rounded-2xl overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-100/80 px-4 py-2 border-b border-zinc-200 font-bold text-[11px] text-zinc-600 flex justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, "Producto"), /*#__PURE__*/React.createElement("span", null, "Total")), /*#__PURE__*/React.createElement("div", {
+    className: "divide-y divide-zinc-100 max-h-56 overflow-y-auto"
+  }, (customerReceiptModal.items || []).map((it, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    className: "p-3 flex justify-between items-center text-xs"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "min-w-0 pr-3"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-zinc-900 truncate"
+  }, it.qty || 1, "x ", it.name), it.variant && /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500 truncate"
+  }, "Tono / Talla: ", it.variant)), /*#__PURE__*/React.createElement("span", {
+    className: "font-bold text-zinc-800 shrink-0"
+  }, "$", (Number(it.price || 0) * (it.qty || 1)).toFixed(2)))))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-50/70 rounded-2xl p-4 border border-zinc-200 space-y-1.5 text-xs"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-zinc-600"
+  }, /*#__PURE__*/React.createElement("span", null, "Subtotal:"), /*#__PURE__*/React.createElement("span", null, "$", Number(customerReceiptModal.subtotal || 0).toFixed(2))), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-zinc-600"
+  }, /*#__PURE__*/React.createElement("span", null, "Envío:"), /*#__PURE__*/React.createElement("span", null, "$", Number(customerReceiptModal.shipping_cost ?? customerReceiptModal.shippingCost ?? 0).toFixed(2))), Number(customerReceiptModal.discount_amount ?? customerReceiptModal.discountAmount ?? 0) > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-emerald-700 font-medium"
+  }, /*#__PURE__*/React.createElement("span", null, "Descuento aplicado:"), /*#__PURE__*/React.createElement("span", null, "-$", Number(customerReceiptModal.discount_amount ?? customerReceiptModal.discountAmount ?? 0).toFixed(2))), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-sm font-black text-zinc-900 pt-2 border-t border-zinc-200"
+  }, /*#__PURE__*/React.createElement("span", null, "Total Pagado:"), /*#__PURE__*/React.createElement("span", {
+    className: "text-base text-[#FF2E93]"
+  }, "$", Number(customerReceiptModal.total || 0).toFixed(2)))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-col sm:flex-row gap-2 pt-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => printCustomerReceiptWindow(customerReceiptModal, settings),
+    className: "flex-1 bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 px-4 rounded-2xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
+  }, /*#__PURE__*/React.createElement(Icon.Download, {
+    className: "w-4 h-4"
+  }), /*#__PURE__*/React.createElement("span", null, "Descargar Comprobante Oficial (PDF / Imprimir)")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setCustomerReceiptModal(null),
+    className: "px-5 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-2xl font-bold text-xs transition"
+  }, "Cerrar")))), adminSalesNoteModal && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+    onClick: () => setAdminSalesNoteModal(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto text-xs",
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between items-start border-b border-zinc-200 pb-3"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] font-black tracking-widest text-zinc-900 uppercase bg-zinc-100 border border-zinc-300 px-3 py-1 rounded-full inline-block"
+  }, "Nota de Venta & Despacho"), /*#__PURE__*/React.createElement("h3", {
+    className: "font-serif-kaoj text-2xl font-black text-zinc-900 mt-2"
+  }, "KAOJ STORE"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500"
+  }, "Gestión de Bodega y Despacho Portoviejo")), /*#__PURE__*/React.createElement("div", {
+    className: "text-right"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "font-mono font-black text-lg text-[#FF2E93] block"
+  }, "#", adminSalesNoteModal.order_code), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] text-zinc-400"
+  }, new Date(adminSalesNoteModal.created_at || Date.now()).toLocaleDateString('es-EC')), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminSalesNoteModal(null),
+    className: "text-zinc-400 hover:text-zinc-700 p-1.5 rounded-lg ml-auto block mt-1"
+  }, /*#__PURE__*/React.createElement(Icon.Close, {
+    className: "w-4 h-4"
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 sm:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "border border-zinc-200 rounded-2xl p-3.5 bg-zinc-50/70 space-y-1"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-[11px] text-zinc-500 uppercase"
+  }, "Compradora:"), /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-sm text-zinc-900"
+  }, adminSalesNoteModal.customer_name), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600"
+  }, "Teléfono: ", /*#__PURE__*/React.createElement("b", null, adminSalesNoteModal.customer_phone)), adminSalesNoteModal.customer_id_card && /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600"
+  }, "Cédula/RUC: ", /*#__PURE__*/React.createElement("b", null, adminSalesNoteModal.customer_id_card)), /*#__PURE__*/React.createElement("p", {
+    className: "text-[#FF2E93] font-bold"
+  }, "VIP: ", adminSalesNoteModal.customer_code)), /*#__PURE__*/React.createElement("div", {
+    className: "border border-zinc-200 rounded-2xl p-3.5 bg-zinc-50/70 space-y-1"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-[11px] text-zinc-500 uppercase"
+  }, "Logística & Pago:"), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-900 font-bold"
+  }, adminSalesNoteModal.delivery_method), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600 text-[11px]"
+  }, adminSalesNoteModal.delivery_address), /*#__PURE__*/React.createElement("p", {
+    className: "text-zinc-600 text-[11px]"
+  }, "Pago: ", /*#__PURE__*/React.createElement("b", null, adminSalesNoteModal.payment_method)), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] font-bold text-amber-700 uppercase"
+  }, "Estado: ", adminSalesNoteModal.status))), /*#__PURE__*/React.createElement("div", {
+    className: "border border-zinc-200 rounded-2xl overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-100 px-4 py-2 text-[11px] font-bold text-zinc-700 flex justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, "Prendas / Productos para Bodega"), /*#__PURE__*/React.createElement("span", null, "Subtotal")), /*#__PURE__*/React.createElement("div", {
+    className: "divide-y divide-zinc-100 max-h-56 overflow-y-auto"
+  }, (adminSalesNoteModal.items || []).map((it, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    className: "p-3 flex items-center justify-between gap-3 text-xs"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2.5"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    className: "rounded text-[#FF2E93] w-4 h-4 cursor-pointer",
+    title: "Marcar como verificado en bodega"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-zinc-900"
+  }, it.qty || 1, "x ", it.name), it.variant && /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-500"
+  }, "Tono / Talla: ", it.variant))), /*#__PURE__*/React.createElement("span", {
+    className: "font-bold text-zinc-900"
+  }, "$", (Number(it.price || 0) * (it.qty || 1)).toFixed(2)))))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-col sm:flex-row gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 bg-amber-50/60 border border-amber-200 rounded-2xl p-3 text-[11px] text-amber-900"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold mb-1"
+  }, "Notas del Pedido:"), /*#__PURE__*/React.createElement("p", null, adminSalesNoteModal.admin_notes || 'Sin notas especiales adicionales.')), /*#__PURE__*/React.createElement("div", {
+    className: "w-full sm:w-56 bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-1"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-zinc-600"
+  }, /*#__PURE__*/React.createElement("span", null, "Subtotal:"), /*#__PURE__*/React.createElement("span", null, "$", Number(adminSalesNoteModal.subtotal || 0).toFixed(2))), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-zinc-600"
+  }, /*#__PURE__*/React.createElement("span", null, "Envío:"), /*#__PURE__*/React.createElement("span", null, "$", Number(adminSalesNoteModal.shipping_cost || 0).toFixed(2))), Number(adminSalesNoteModal.discount_amount || 0) > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-emerald-700"
+  }, /*#__PURE__*/React.createElement("span", null, "Descuento:"), /*#__PURE__*/React.createElement("span", null, "-$", Number(adminSalesNoteModal.discount_amount || 0).toFixed(2))), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between font-black text-sm text-[#FF2E93] pt-1.5 border-t border-zinc-200"
+  }, /*#__PURE__*/React.createElement("span", null, "Total:"), /*#__PURE__*/React.createElement("span", null, "$", Number(adminSalesNoteModal.total || 0).toFixed(2))))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 pt-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => printSalesNoteWindow(adminSalesNoteModal, settings),
+    className: "flex-1 bg-zinc-900 hover:bg-black text-white py-3 px-4 rounded-2xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs"
+  }, /*#__PURE__*/React.createElement(Icon.Document, {
+    className: "w-4 h-4 text-white"
+  }), /*#__PURE__*/React.createElement("span", null, "Imprimir Nota de Venta (A4)")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const order = adminSalesNoteModal;
+      setAdminSalesNoteModal(null);
+      setAdminThermalTicketModal(order);
+    },
+    className: "bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-2xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs"
+  }, /*#__PURE__*/React.createElement(Icon.Printer, {
+    className: "w-4 h-4 text-white"
+  }), /*#__PURE__*/React.createElement("span", null, "Pasar a Ticket 58mm")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminSalesNoteModal(null),
+    className: "px-4 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-2xl font-bold text-xs transition"
+  }, "Cerrar")))), adminThermalTicketModal && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+    onClick: () => setAdminThermalTicketModal(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-900 border border-zinc-700 text-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto text-xs",
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between items-center border-b border-zinc-800 pb-3"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    className: "font-bold text-base text-white flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(Icon.Printer, {
+    className: "w-5 h-5 text-amber-400"
+  }), /*#__PURE__*/React.createElement("span", null, "Impresora Térmica 58mm POS")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-zinc-400"
+  }, "Previsualización de ticket para rollo continuo")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminThermalTicketModal(null),
+    className: "text-zinc-400 hover:text-white p-1 rounded-lg"
+  }, /*#__PURE__*/React.createElement(Icon.Close, {
+    className: "w-4 h-4"
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-[#FAF9F5] text-black font-mono rounded-xl p-4 shadow-inner border border-zinc-300 max-h-80 overflow-y-auto text-[11px] leading-tight select-all"
+  }, /*#__PURE__*/React.createElement("pre", {
+    className: "whitespace-pre-wrap break-words font-mono"
+  }, generateRawThermalTicketText(adminThermalTicketModal, settings))), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2 pt-1"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => printThermalTicket58mm(adminThermalTicketModal, settings),
+    className: "w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3.5 px-4 rounded-2xl font-black text-xs transition flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
+  }, /*#__PURE__*/React.createElement(Icon.Printer, {
+    className: "w-4 h-4"
+  }), /*#__PURE__*/React.createElement("span", null, "🖨️ Imprimir Ticket 58mm (Diálogo del Sistema)")), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const raw = generateRawThermalTicketText(adminThermalTicketModal, settings);
+      copyToClipboard(raw, 'Texto para app Bluetooth térmica');
+    },
+    className: "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5",
+    title: "Copiar para aplicaciones móviles de impresión Bluetooth (RawBT, ESC/POS Print)"
+  }, /*#__PURE__*/React.createElement(Icon.Copy, {
+    className: "w-3.5 h-3.5 text-amber-400"
+  }), /*#__PURE__*/React.createElement("span", null, "Copiar Texto Bluetooth")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => downloadThermalTicketFile(adminThermalTicketModal, settings),
+    className: "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5"
+  }, /*#__PURE__*/React.createElement(Icon.Download, {
+    className: "w-3.5 h-3.5 text-emerald-400"
+  }), /*#__PURE__*/React.createElement("span", null, "Descargar .txt"))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setAdminThermalTicketModal(null),
+    className: "w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2.5 rounded-xl font-bold text-xs transition"
+  }, "Cerrar Previsualización")))), /*#__PURE__*/React.createElement("a", {
     href: `https://wa.me/${formatWhatsAppPhone(settings.whatsapp_number)}?text=${encodeURIComponent('Hola Kaoj Store, quisiera consultar sobre sus productos y catálogo.')}`,
     target: "_blank",
     rel: "noreferrer",

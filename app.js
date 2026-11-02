@@ -1957,6 +1957,47 @@ function parsePichinchaReceiptQR(text) {
     hash
   };
 }
+
+// =========================================================================
+// PARSEADOR INTELIGENTE DE NOTIFICACIONES DE CORREO DEUNA! (notificaciones@deunaapp.com)
+// =========================================================================
+function parseDeunaNotificationEmail(rawText) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const text = rawText.trim();
+
+  // 1. Número de transacción DeUna (10 a 18 dígitos numéricos)
+  const txMatch = text.match(/(?:n[uú]mero\s+de\s+transacci[oó]n|transacci[oó]n|nro\s+tx)\s*[:\t ]*([0-9]{8,18})/i) || text.match(/\b([0-9]{12})\b/);
+
+  // 2. Monto en USD (soporta $35,00 y $35.00)
+  const amountMatch = text.match(/(?:monto\s*[:\t ]*|recibiste\s*)\$?([0-9]+(?:[.,][0-9]{2})?)/i);
+
+  // 3. Nombre del ordenante / Emisor
+  let senderMatch = text.match(/nombre\s+del\s+ordenante\s*[:\t ]*([^\n\r]+)/i);
+  if (!senderMatch) {
+    senderMatch = text.match(/recibiste\s+\$?[0-9.,]+\s+de\s*\n?\s*([^\n\r]+?)(?:\s+con\s+deuna|\n|$)/i);
+  }
+
+  // 4. Cuentas y fecha
+  const destMatch = text.match(/cuenta\s+de\s+destino\s*[:\t ]*([^\n\r]+)/i);
+  const origMatch = text.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
+  const dateMatch = text.match(/fecha\s*[:\t ]*([^\n\r]+)/i);
+  const transactionId = txMatch ? txMatch[1].trim() : '';
+  const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : 0;
+  const senderName = senderMatch ? senderMatch[1].trim() : '';
+  const destAccount = destMatch ? destMatch[1].trim() : '';
+  const origAccount = origMatch ? origMatch[1].trim() : '';
+  const paymentDate = dateMatch ? dateMatch[1].trim() : '';
+  if (!transactionId && !amount) return null;
+  return {
+    transactionId,
+    amount,
+    senderName,
+    destAccount,
+    origAccount,
+    paymentDate,
+    raw: text
+  };
+}
 function scanQRCodeFromImage(imageSource) {
   return new Promise(resolve => {
     try {
@@ -2199,7 +2240,9 @@ function App() {
       receiptUrl: '',
       receiptRef: '',
       receiptQrData: null,
-      payphoneRef: ''
+      payphoneRef: '',
+      deunaVerified: false,
+      deunaData: null
     };
     try {
       const savedDraft = localStorage.getItem('kaoj_customer_draft');
@@ -2211,7 +2254,9 @@ function App() {
           receiptUrl: '',
           receiptRef: '',
           receiptQrData: null,
-          payphoneRef: ''
+          payphoneRef: '',
+          deunaVerified: false,
+          deunaData: null
         };
       }
     } catch (e) {}
@@ -2224,6 +2269,8 @@ function App() {
         receiptRef,
         receiptQrData,
         payphoneRef,
+        deunaVerified,
+        deunaData,
         ...draftToSave
       } = customer;
       localStorage.setItem('kaoj_customer_draft', JSON.stringify(draftToSave));
@@ -2324,6 +2371,13 @@ function App() {
   const [adminSalesNoteModal, setAdminSalesNoteModal] = useState(null);
   const [adminThermalTicketModal, setAdminThermalTicketModal] = useState(null);
   const [showDeunaQrModal, setShowDeunaQrModal] = useState(false);
+  const [showDeunaReconcileModal, setShowDeunaReconcileModal] = useState(false);
+  const [isVerifyingDeuna, setIsVerifyingDeuna] = useState(false);
+  const [showDeunaPasteBox, setShowDeunaPasteBox] = useState(false);
+  const [deunaPasteInput, setDeunaPasteInput] = useState('');
+  const [adminDeunaPayments, setAdminDeunaPayments] = useState([]);
+  const [adminDeunaLoading, setAdminDeunaLoading] = useState(false);
+  const [adminDeunaManualText, setAdminDeunaManualText] = useState('');
   const [rememberAdminPin, setRememberAdminPin] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted');
 
@@ -2920,6 +2974,154 @@ function App() {
     setOrders(prev => prev.filter(o => !cancelledSelected.some(c => c.id === o.id)));
     setSelectedOrderIds(prev => prev.filter(id => !cancelledSelected.some(c => c.id === id)));
     showToast(`Se eliminaron definitivamente ${cancelledSelected.length} pedidos cancelados.`, 'success');
+  };
+
+  // =========================================================================
+  // VERIFICACIÓN Y CONCILIACIÓN DEUNA! (GMAIL: notificaciones@deunaapp.com)
+  // =========================================================================
+  const handleVerifyDeunaTx = async txIdToVerify => {
+    const cleanTx = (txIdToVerify || customer.receiptRef || '').replace(/\D/g, '');
+    if (cleanTx.length < 6) {
+      showToast('Ingresa los 12 dígitos de tu transacción DeUna', 'error');
+      return;
+    }
+    setIsVerifyingDeuna(true);
+    try {
+      const {
+        data,
+        error
+      } = await supabase.rpc('kaoj_verify_deuna_payment', {
+        p_tx_id: cleanTx,
+        p_expected_amount: total
+      });
+      if (error) throw error;
+      if (data && data.valid) {
+        setCustomer(prev => ({
+          ...prev,
+          receiptRef: cleanTx,
+          deunaVerified: true,
+          deunaData: data
+        }));
+        showToast(`✓ Pago DeUna de $${Number(data.amount).toFixed(2)} verificado con éxito (${data.sender_name || 'Titular verificado'})`, 'success');
+      } else if (data && data.is_duplicate) {
+        showToast(`❌ Transacción ya utilizada en el pedido #${data.matched_order_code}`, 'error');
+        setCustomer(prev => ({
+          ...prev,
+          deunaVerified: false
+        }));
+      } else if (data && data.amount_mismatch) {
+        showToast(`⚠️ El monto de DeUna ($${Number(data.amount).toFixed(2)}) es menor al total requerido ($${Number(data.expected_amount).toFixed(2)})`, 'warning');
+        setCustomer(prev => ({
+          ...prev,
+          deunaVerified: false,
+          deunaData: data
+        }));
+      } else {
+        // No ha llegado aún a Gmail o está en tránsito
+        setCustomer(prev => ({
+          ...prev,
+          receiptRef: cleanTx,
+          deunaVerified: 'pending',
+          deunaData: {
+            transaction_id: cleanTx
+          }
+        }));
+        showToast(`Transacción #${cleanTx} registrada. Se verificará automáticamente con el correo en unos segundos.`, 'info');
+      }
+    } catch (err) {
+      console.warn('Error verificando Deuna:', err);
+      showToast(`Transacción #${cleanTx} registrada para validación con el correo`, 'info');
+      setCustomer(prev => ({
+        ...prev,
+        receiptRef: cleanTx,
+        deunaVerified: 'pending'
+      }));
+    } finally {
+      setIsVerifyingDeuna(false);
+    }
+  };
+  const handleFetchAdminDeunaPayments = async () => {
+    setAdminDeunaLoading(true);
+    const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+    try {
+      const {
+        data,
+        error
+      } = await supabase.rpc('kaoj_admin_get_deuna_payments', {
+        admin_pin: adminPin,
+        p_limit: 50
+      });
+      if (!error && data) {
+        setAdminDeunaPayments(data);
+      } else {
+        const {
+          data: directData
+        } = await supabase.from('kaoj_deuna_payments').select('*').order('created_at', {
+          ascending: false
+        }).limit(50);
+        if (directData) setAdminDeunaPayments(directData);
+      }
+    } catch (err) {
+      console.warn('Error cargando pagos DeUna:', err);
+    } finally {
+      setAdminDeunaLoading(false);
+    }
+  };
+  const handleAdminReconcileDeuna = async (paymentId, orderCode) => {
+    if (!paymentId || !orderCode) return;
+    const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+    try {
+      const {
+        data,
+        error
+      } = await supabase.rpc('kaoj_admin_reconcile_deuna_payment', {
+        admin_pin: adminPin,
+        p_payment_id: paymentId,
+        p_order_code: orderCode
+      });
+      if (error) throw error;
+      showToast(`✓ Pago DeUna vinculado con éxito al pedido #${orderCode}`, 'success');
+      handleFetchAdminDeunaPayments();
+      fetchInitialData();
+    } catch (err) {
+      showToast('Error vinculando pago: ' + (err.message || err), 'error');
+    }
+  };
+  const handleAdminProcessDeunaRaw = async () => {
+    if (!adminDeunaManualText || !adminDeunaManualText.trim()) {
+      showToast('Pega el texto del correo o notificación de DeUna', 'warning');
+      return;
+    }
+    const parsed = parseDeunaNotificationEmail(adminDeunaManualText);
+    if (!parsed || !parsed.transactionId || parsed.amount <= 0) {
+      showToast('No se detectó un número de transacción o monto válido en el texto', 'error');
+      return;
+    }
+    try {
+      const {
+        data,
+        error
+      } = await supabase.rpc('kaoj_register_deuna_payment', {
+        p_tx_id: parsed.transactionId,
+        p_amount: parsed.amount,
+        p_sender: parsed.senderName || '',
+        p_orig_acc: parsed.origAccount || '',
+        p_dest_acc: parsed.destAccount || '',
+        p_payment_date: parsed.paymentDate || '',
+        p_raw_email: parsed.raw.substring(0, 500)
+      });
+      if (error) throw error;
+      if (data && data.matched_order_code) {
+        showToast(`✓ ¡Transacción #${parsed.transactionId} registrada y vinculada automáticamente con el pedido #${data.matched_order_code}!`, 'success');
+      } else {
+        showToast(`✓ Transacción #${parsed.transactionId} de $${parsed.amount.toFixed(2)} registrada exitosamente en espera de orden`, 'success');
+      }
+      setAdminDeunaManualText('');
+      handleFetchAdminDeunaPayments();
+      fetchInitialData();
+    } catch (err) {
+      showToast('Error registrando notificación: ' + (err.message || err), 'error');
+    }
   };
   const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
   const [adminInventorySection, setAdminInventorySection] = useState('TODOS');
@@ -3772,8 +3974,12 @@ function App() {
       if (!customer.payphoneRef.trim() && !customer.receiptUrl) {
         return showToast('Ingresa el número de referencia/autorización o sube la captura de tu pago en Payphone.', 'error');
       }
+    } else if (customer.paymentMethod === 'deuna') {
+      if (!customer.receiptRef?.trim() && !customer.receiptUrl) {
+        return showToast('Ingresa el número de transacción de DeUna o sube tu comprobante para validar tu pedido.', 'error');
+      }
     } else if (!customer.receiptUrl) {
-      return showToast('Sube la captura del comprobante de transferencia o Deuna para validar tu pedido.', 'error');
+      return showToast('Sube la captura del comprobante de transferencia bancaria para validar tu pedido.', 'error');
     }
     setIsSubmittingOrder(true);
 
@@ -3846,6 +4052,16 @@ function App() {
         initialStatus = 'verificado';
       }
     }
+
+    // Verificación de DeUna! automática al confirmar
+    if (customer.paymentMethod === 'deuna') {
+      if (customer.deunaVerified === true && customer.deunaData) {
+        initialStatus = 'verificado';
+        adminNotesParts.push(`[DEUNA AUTO-VERIFICADO: $${Number(customer.deunaData.amount || total).toFixed(2)} | Tx: ${customer.receiptRef || customer.deunaData.transaction_id} | Emisor: ${customer.deunaData.sender_name || 'Confirmado'}]`);
+      } else if (customer.receiptRef) {
+        adminNotesParts.push(`[Tx DeUna: ${customer.receiptRef.trim()}]`);
+      }
+    }
     const orderData = {
       order_code: orderCode,
       customer_code: activeCustomerCode,
@@ -3883,6 +4099,19 @@ function App() {
       await supabase.rpc('kaoj_decrement_order_stock', {
         order_items: cart
       });
+
+      // Si pagó con DeUna y tiene N° de transacción, conciliar en kaoj_deuna_payments
+      if (customer.paymentMethod === 'deuna' && customer.receiptRef) {
+        try {
+          await supabase.rpc('kaoj_verify_deuna_payment', {
+            p_tx_id: customer.receiptRef.replace(/\D/g, ''),
+            p_expected_amount: total,
+            p_order_code: orderCode
+          });
+        } catch (errDeuna) {
+          console.warn('Conciliación diferida DeUna:', errDeuna);
+        }
+      }
 
       // 4. Actualizar puntos del cliente en kaoj_customers de forma atómica y sin colisiones
       const {
@@ -6956,7 +7185,19 @@ function App() {
     title: "Vista de tarjetas detalladas"
   }, /*#__PURE__*/React.createElement(Icon.Grid, {
     className: "w-3.5 h-3.5"
-  }), /*#__PURE__*/React.createElement("span", null, "Tarjetas")))), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, "Tarjetas"))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      setShowDeunaReconcileModal(true);
+      handleFetchAdminDeunaPayments();
+    },
+    className: "px-3.5 py-2.5 bg-gradient-to-r from-purple-800 to-indigo-900 hover:from-purple-900 hover:to-indigo-950 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition shrink-0",
+    title: "Ver notificaciones de pagos DeUna y conciliar pedidos"
+  }, /*#__PURE__*/React.createElement("img", {
+    src: PAYMENT_ICONS.deuna,
+    alt: "Deuna",
+    className: "w-4 h-4 rounded-md object-contain shrink-0"
+  }), /*#__PURE__*/React.createElement("span", null, "Conciliación DeUna"))), /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-zinc-100"
   }, /*#__PURE__*/React.createElement("span", {
     className: "text-[11px] font-bold text-zinc-400 shrink-0 mr-1"
@@ -9895,20 +10136,96 @@ function App() {
   }), /*#__PURE__*/React.createElement("span", null, "Abrir App Deuna! y pagar $", total.toFixed(2))), /*#__PURE__*/React.createElement("p", {
     className: "text-[10px] text-purple-800"
   }, "Titular: ", /*#__PURE__*/React.createElement("b", null, settings.deuna_name || 'Toledo Mendoza Alisson Kandy'), " • Pichincha: ", /*#__PURE__*/React.createElement("b", null, settings.bank_pichincha_acc))), /*#__PURE__*/React.createElement("div", {
-    className: "bg-white border border-purple-200 rounded-xl p-2.5 text-left space-y-1.5 shadow-2xs"
+    className: "bg-white border-2 border-purple-300 rounded-2xl p-3.5 text-left space-y-2.5 shadow-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] font-extrabold text-purple-950 flex items-center gap-1"
-  }, /*#__PURE__*/React.createElement("span", null, "⚡"), /*#__PURE__*/React.createElement("span", null, "¿Pagarás desde tu app bancaria? Pon este correo al notificar:")), /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between bg-purple-50/90 border border-purple-200/80 rounded-lg px-2.5 py-1.5 gap-2"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "font-mono font-black text-[11px] text-purple-950 truncate select-all"
-  }, settings.email_contact || 'kaoj.store.ecu@gmail.com'), /*#__PURE__*/React.createElement("button", {
+    className: "text-xs font-black text-purple-950 flex items-center gap-1.5"
+  }, /*#__PURE__*/React.createElement("span", null, "⚡"), /*#__PURE__*/React.createElement("span", null, "Verificación Inmediata de tu Pago:")), /*#__PURE__*/React.createElement("span", {
+    className: "text-[9.5px] bg-purple-100 text-purple-900 font-extrabold px-2 py-0.5 rounded-full"
+  }, "Automático")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[10.5px] text-purple-900 leading-snug"
+  }, "Tu app Deuna genera un ", /*#__PURE__*/React.createElement("b", null, "Número de Transacción"), " de 12 dígitos al transferir (también llega a nuestro correo). Ingrésalo aquí para validar tu compra al instante:"), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1.5"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    placeholder: "Ej: 680273944450 (12 dígitos)",
+    value: customer.receiptRef || '',
+    onChange: e => {
+      const val = e.target.value;
+      setCustomer(prev => ({
+        ...prev,
+        receiptRef: val,
+        deunaVerified: prev.receiptRef !== val ? false : prev.deunaVerified
+      }));
+    },
+    className: "flex-1 border border-purple-300 rounded-xl px-3 py-2 text-xs bg-purple-50/50 font-mono text-purple-950 font-bold outline-none focus:border-purple-600 focus:bg-white"
+  }), /*#__PURE__*/React.createElement("button", {
     type: "button",
-    onClick: () => copyToClipboard(settings.email_contact || 'kaoj.store.ecu@gmail.com', 'Correo para validación automática'),
-    className: "shrink-0 px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md font-bold text-[10px] flex items-center gap-1 transition"
-  }, /*#__PURE__*/React.createElement(Icon.Copy, {
-    className: "w-3 h-3"
-  }), " Copiar correo")))), customer.paymentMethod === 'transferencia' && /*#__PURE__*/React.createElement("div", {
+    onClick: () => handleVerifyDeunaTx(customer.receiptRef),
+    disabled: isVerifyingDeuna || !customer.receiptRef?.trim(),
+    className: "px-3.5 py-2 bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-xs transition shrink-0"
+  }, isVerifyingDeuna ? /*#__PURE__*/React.createElement("span", {
+    className: "animate-pulse"
+  }, "Verificando...") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Icon.Check, {
+    className: "w-3.5 h-3.5"
+  }), /*#__PURE__*/React.createElement("span", null, "Verificar")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setShowDeunaPasteBox(!showDeunaPasteBox),
+    className: "text-[10.5px] text-purple-700 hover:text-purple-950 font-bold underline flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("span", null, "📋"), /*#__PURE__*/React.createElement("span", null, showDeunaPasteBox ? 'Ocultar caja de texto ▲' : '¿Prefieres pegar el texto del correo de Deuna? Haz clic aquí ▼')), showDeunaPasteBox && /*#__PURE__*/React.createElement("div", {
+    className: "mt-2 space-y-1.5 bg-purple-50 p-2.5 rounded-xl border border-purple-200"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-[10px] text-purple-900 font-semibold"
+  }, "Copia el texto del correo que te envió ", /*#__PURE__*/React.createElement("b", null, "notificaciones@deunaapp.com"), " o la app de Deuna y pégalo aquí:"), /*#__PURE__*/React.createElement("textarea", {
+    rows: 2,
+    placeholder: "Pega aquí el texto completo del correo de Deuna...",
+    value: deunaPasteInput,
+    onChange: e => setDeunaPasteInput(e.target.value),
+    className: "w-full bg-white border border-purple-300 rounded-lg p-2 text-[11px] font-mono outline-none text-zinc-800"
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const parsed = parseDeunaNotificationEmail(deunaPasteInput);
+      if (parsed && parsed.transactionId) {
+        setCustomer(prev => ({
+          ...prev,
+          receiptRef: parsed.transactionId
+        }));
+        handleVerifyDeunaTx(parsed.transactionId);
+        setShowDeunaPasteBox(false);
+      } else {
+        showToast('No se encontró número de transacción en el texto pegado', 'warning');
+      }
+    },
+    className: "w-full py-1.5 bg-purple-800 hover:bg-purple-900 text-white rounded-lg font-bold text-[10.5px] transition"
+  }, "Procesar y Extraer Transacción"))), customer.deunaVerified === true && customer.deunaData && /*#__PURE__*/React.createElement("div", {
+    className: "bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 space-y-1 animate-in fade-in"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-1.5 text-emerald-800 font-extrabold text-xs"
+  }, /*#__PURE__*/React.createElement(Icon.Check, {
+    className: "w-4 h-4 text-emerald-600 shrink-0"
+  }), /*#__PURE__*/React.createElement("span", null, "✓ ¡Pago DeUna de $", Number(customer.deunaData.amount || total).toFixed(2), " Verificado!")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[10.5px] text-emerald-900 leading-snug"
+  }, "Emisor: ", /*#__PURE__*/React.createElement("b", null, customer.deunaData.sender_name || 'Confirmado'), " • Tx: ", /*#__PURE__*/React.createElement("b", {
+    className: "font-mono"
+  }, customer.receiptRef), ". Tu pedido se procesará como ", /*#__PURE__*/React.createElement("b", null, "Verificado"), " inmediatamente.")), customer.deunaVerified === 'pending' && /*#__PURE__*/React.createElement("div", {
+    className: "bg-amber-50 border border-amber-300 rounded-xl p-2.5 space-y-1 animate-in fade-in"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-1.5 text-amber-800 font-extrabold text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-sm"
+  }, "⏳"), /*#__PURE__*/React.createElement("span", null, "Transacción #", customer.receiptRef, " Registrada")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[10.5px] text-amber-900 leading-snug"
+  }, "Tu número de comprobante está listo. Nuestro sistema lo conciliará de forma automática con el correo en cuanto completes tu pedido.")), /*#__PURE__*/React.createElement("div", {
+    className: "pt-1 border-t border-purple-100 flex items-center justify-between text-[10px] text-purple-900"
+  }, /*#__PURE__*/React.createElement("span", null, "Correo de notificación Deuna:"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => copyToClipboard('alisson.kandy2002@gmail.com', 'Correo de notificación Deuna'),
+    className: "font-mono font-bold text-purple-950 hover:underline flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("span", null, "alisson.kandy2002@gmail.com"), /*#__PURE__*/React.createElement(Icon.Copy, {
+    className: "w-2.5 h-2.5"
+  }))))), customer.paymentMethod === 'transferencia' && /*#__PURE__*/React.createElement("div", {
     className: "bg-[#F5F6F8] border border-zinc-200/80 rounded-2xl p-3.5 space-y-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center justify-between"
@@ -10141,11 +10458,11 @@ function App() {
     }, "💡 Tras completar el pago en Payphone, escribe el código de autorización arriba o adjunta la captura abajo.")));
   })(), /*#__PURE__*/React.createElement("div", {
     className: "bg-amber-50/90 border border-amber-200 rounded-2xl p-3 space-y-2.5"
-  }, customer.paymentMethod !== 'payphone' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, customer.paymentMethod !== 'payphone' && customer.paymentMethod !== 'deuna' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "font-bold text-amber-950 text-[11px] block mb-1"
   }, "N° de Comprobante / Documento bancario (Para validación rápida):"), /*#__PURE__*/React.createElement("input", {
     type: "text",
-    placeholder: "Ej: 48291042 (Los dígitos del comprobante de tu banco o Deuna)",
+    placeholder: "Ej: 48291042 (Los dígitos del comprobante de tu banco)",
     value: customer.receiptRef || '',
     onChange: e => setCustomer({
       ...customer,
@@ -10154,7 +10471,7 @@ function App() {
     className: "w-full border border-amber-300 rounded-xl px-3 py-2 text-xs bg-white text-zinc-900 placeholder-zinc-400 outline-none focus:border-[#151E28] font-mono"
   })), /*#__PURE__*/React.createElement("p", {
     className: "font-bold text-amber-950 text-xs flex items-center justify-between"
-  }, /*#__PURE__*/React.createElement("span", null, customer.paymentMethod === 'payphone' ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):' : 'Sube la captura de tu comprobante de pago *:'), uploading && /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("span", null, customer.paymentMethod === 'payphone' ? 'Adjuntar captura de pago Payphone (Opcional si pusiste referencia):' : customer.paymentMethod === 'deuna' ? 'Adjuntar captura de comprobante Deuna (Opcional si ya verificaste la transacción):' : 'Sube la captura de tu comprobante de pago *:'), uploading && /*#__PURE__*/React.createElement("span", {
     className: "text-[10px] text-[#FF2E93] animate-pulse"
   }, "Subiendo...")), /*#__PURE__*/React.createElement("input", {
     type: "file",
@@ -11830,7 +12147,175 @@ function App() {
     target: "_blank",
     rel: "noreferrer",
     className: "py-2.5 px-3 bg-zinc-900 hover:bg-black text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
-  }, /*#__PURE__*/React.createElement("span", null, "📲"), " Abrir Deuna")))), /*#__PURE__*/React.createElement("footer", {
+  }, /*#__PURE__*/React.createElement("span", null, "📲"), " Abrir Deuna")))), showDeunaReconcileModal && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 animate-fadeIn",
+    onClick: () => setShowDeunaReconcileModal(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-purple-200 relative overflow-hidden",
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "p-4 sm:p-5 bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-950 text-white flex items-center justify-between shrink-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement("img", {
+    src: PAYMENT_ICONS.deuna,
+    alt: "Deuna",
+    className: "w-10 h-10 rounded-2xl bg-white p-1 object-contain shadow-md"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    className: "font-extrabold text-sm sm:text-base leading-tight"
+  }, "Conciliación de Pagos DeUna!"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-purple-200"
+  }, "Sincronizado con alisson.kandy2002@gmail.com"))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setShowDeunaReconcileModal(false),
+    className: "w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white font-bold text-sm flex items-center justify-center transition"
+  }, "✕")), /*#__PURE__*/React.createElement("div", {
+    className: "p-4 sm:p-6 overflow-y-auto space-y-5 text-xs"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-purple-50/70 border border-purple-200 rounded-2xl p-4 space-y-2.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-base"
+  }, "📋"), /*#__PURE__*/React.createElement("span", {
+    className: "font-extrabold text-purple-950 text-xs"
+  }, "Pegar Correo / Notificación de DeUna")), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] text-purple-700 font-bold bg-purple-100 px-2 py-0.5 rounded-full"
+  }, "Procesamiento Instantáneo")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-purple-900/80 leading-relaxed"
+  }, "Si recibiste un correo de ", /*#__PURE__*/React.createElement("b", null, "notificaciones@deunaapp.com"), " o la clienta te envió el texto de su pago por WhatsApp, pégalo aquí y el sistema extraerá los 12 dígitos, el monto y validará la orden de inmediato:"), /*#__PURE__*/React.createElement("textarea", {
+    rows: 3,
+    placeholder: "Pega aquí el correo recibido de DeUna... (Ej: Hola Alisson, Recibiste $35,00 de Jhojann Demera... Número de transacción 680273944450)",
+    value: adminDeunaManualText,
+    onChange: e => setAdminDeunaManualText(e.target.value),
+    className: "w-full bg-white border border-purple-300 rounded-xl p-2.5 text-xs font-mono text-zinc-900 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-400"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-end gap-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: handleAdminProcessDeunaRaw,
+    className: "px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition"
+  }, /*#__PURE__*/React.createElement("span", null, "⚡"), /*#__PURE__*/React.createElement("span", null, "Registrar y Conciliar Pedido")))), /*#__PURE__*/React.createElement("div", {
+    className: "bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 space-y-2.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-base"
+  }, "🤖"), /*#__PURE__*/React.createElement("span", {
+    className: "font-extrabold text-indigo-950 text-xs"
+  }, "Automatización 100% Automática con Gmail")), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full"
+  }, "Sin Servidores • 0 Costo")), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px] text-indigo-900/80 leading-relaxed"
+  }, "Con Google Apps Script en la cuenta ", /*#__PURE__*/React.createElement("b", null, "alisson.kandy2002@gmail.com"), ", cada correo entrante de DeUna se lee cada 60 segundos y se valida automáticamente."), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      const scriptUrl = 'google_apps_script_deuna.js';
+      fetch(scriptUrl).then(r => r.text()).then(code => {
+        navigator.clipboard.writeText(code);
+        showToast('✓ Código de Google Apps Script copiado al portapapeles');
+      }).catch(() => {
+        showToast('Revisa el archivo google_apps_script_deuna.js en el proyecto', 'info');
+      });
+    },
+    className: "px-3.5 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-2xs transition"
+  }, /*#__PURE__*/React.createElement(Icon.Copy, {
+    className: "w-3.5 h-3.5"
+  }), " Copiar Código de Google Apps Script"), /*#__PURE__*/React.createElement("a", {
+    href: "https://script.google.com",
+    target: "_blank",
+    rel: "noreferrer",
+    className: "px-3 py-1.5 bg-white border border-indigo-300 text-indigo-900 hover:bg-indigo-100 rounded-xl font-bold text-[11px] flex items-center gap-1 transition"
+  }, "Abrir script.google.com ↗"))), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "font-extrabold text-zinc-900 text-xs"
+  }, "Historial de Notificaciones DeUna"), /*#__PURE__*/React.createElement("span", {
+    className: "bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full"
+  }, adminDeunaPayments.length, " registrados")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: handleFetchAdminDeunaPayments,
+    disabled: adminDeunaLoading,
+    className: "text-[11px] text-purple-700 font-bold hover:underline flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("span", null, "🔄"), /*#__PURE__*/React.createElement("span", null, adminDeunaLoading ? 'Actualizando...' : 'Actualizar'))), adminDeunaLoading && /*#__PURE__*/React.createElement("div", {
+    className: "py-6 text-center text-zinc-400 font-bold text-xs animate-pulse"
+  }, "Cargando pagos de DeUna..."), !adminDeunaLoading && adminDeunaPayments.length === 0 && /*#__PURE__*/React.createElement("div", {
+    className: "bg-zinc-50 border border-zinc-200 rounded-2xl p-6 text-center text-zinc-500 space-y-1"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-bold text-xs"
+  }, "No hay notificaciones de DeUna registradas todavía"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[11px]"
+  }, "Pega un correo de DeUna arriba o ejecuta el script en Gmail para comenzar.")), !adminDeunaLoading && adminDeunaPayments.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2"
+  }, adminDeunaPayments.map(p => {
+    const isMatched = p.status === 'conciliado';
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: `p-3 rounded-2xl border transition text-xs space-y-2 ${isMatched ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' : 'bg-white border-zinc-200 hover:border-purple-300'}`
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-2 flex-wrap"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "font-black text-sm text-purple-950"
+    }, "$", Number(p.amount).toFixed(2), " USD"), /*#__PURE__*/React.createElement("span", {
+      className: `text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${isMatched ? 'bg-emerald-200/80 text-emerald-900' : 'bg-purple-100 text-purple-900'}`
+    }, isMatched ? `✓ Conciliado #${p.matched_order_code}` : '🟢 Disponible')), /*#__PURE__*/React.createElement("span", {
+      className: "font-mono text-[10.5px] text-zinc-500"
+    }, "Tx: ", /*#__PURE__*/React.createElement("b", null, p.transaction_id))), /*#__PURE__*/React.createElement("div", {
+      className: "grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-zinc-600"
+    }, /*#__PURE__*/React.createElement("p", null, "👤 Emisor: ", /*#__PURE__*/React.createElement("b", {
+      className: "text-zinc-900"
+    }, p.sender_name || 'No especificado')), /*#__PURE__*/React.createElement("p", null, "📅 Fecha: ", /*#__PURE__*/React.createElement("b", {
+      className: "text-zinc-900"
+    }, p.payment_date || new Date(p.created_at).toLocaleDateString())), p.origin_account && /*#__PURE__*/React.createElement("p", null, "Origen: ", /*#__PURE__*/React.createElement("b", {
+      className: "font-mono"
+    }, p.origin_account)), p.destination_account && /*#__PURE__*/React.createElement("p", null, "Destino: ", /*#__PURE__*/React.createElement("b", {
+      className: "font-mono"
+    }, p.destination_account))), !isMatched && /*#__PURE__*/React.createElement("div", {
+      className: "pt-2 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "text-[10px] text-zinc-500 font-bold"
+    }, "Vincular a pedido pendiente:"), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("select", {
+      id: `reconcile-select-${p.id}`,
+      className: "bg-zinc-50 border border-zinc-300 rounded-xl px-2.5 py-1 text-[11px] text-zinc-900 outline-none font-bold",
+      defaultValue: ""
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Selecciona pedido..."), orders.filter(o => o.status === 'pendiente').map(o => /*#__PURE__*/React.createElement("option", {
+      key: o.id,
+      value: o.order_code
+    }, "#", o.order_code, " - $", Number(o.total).toFixed(2), " (", o.customer_name, ")"))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        const sel = document.getElementById(`reconcile-select-${p.id}`);
+        if (sel && sel.value) {
+          handleAdminReconcileDeuna(p.id, sel.value);
+        } else {
+          showToast('Selecciona un pedido de la lista', 'warning');
+        }
+      },
+      className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10.5px] transition"
+    }, "Vincular"))));
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: "p-3 bg-zinc-50 border-t border-zinc-200 flex justify-end shrink-0"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setShowDeunaReconcileModal(false),
+    className: "px-4 py-2 bg-zinc-900 hover:bg-black text-white rounded-xl font-bold text-xs transition"
+  }, "Cerrar")))), /*#__PURE__*/React.createElement("footer", {
     className: "bg-white border-t border-zinc-200/80 mt-16 text-xs text-zinc-500 py-10"
   }, /*#__PURE__*/React.createElement("div", {
     className: "max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 md:grid-cols-3 gap-8"

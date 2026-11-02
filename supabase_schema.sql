@@ -183,6 +183,29 @@ CREATE INDEX IF NOT EXISTS idx_kaoj_orders_status ON public.kaoj_orders(status);
 CREATE INDEX IF NOT EXISTS idx_kaoj_orders_user ON public.kaoj_orders(user_id);
 
 -- -------------------------------------------------------------------------
+-- 5.1 TABLA: kaoj_deuna_payments (Notificaciones de Pagos Deuna! Recibidos)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.kaoj_deuna_payments (
+    id BIGSERIAL PRIMARY KEY,
+    transaction_id TEXT UNIQUE NOT NULL,      -- N° de transacción (12 dígitos, ej. 680273944450)
+    amount NUMERIC(10, 2) NOT NULL,           -- Monto recibido en USD (ej. 35.00)
+    sender_name TEXT DEFAULT '',              -- Nombre del ordenante (ej. Jhojann Alberto Demera Garcia)
+    origin_account TEXT DEFAULT '',           -- Cuenta de origen (ej. ******9710)
+    destination_account TEXT DEFAULT '',      -- Cuenta de destino (ej. ******0164)
+    payment_date TEXT DEFAULT '',             -- Fecha de la notificación (ej. 01 nov 2026 - 21h38)
+    status TEXT NOT NULL DEFAULT 'disponible' CHECK (status IN ('disponible', 'conciliado', 'anulado')),
+    matched_order_code TEXT DEFAULT NULL,     -- Código del pedido (#KAOJ-XXXX)
+    matched_at TIMESTAMPTZ DEFAULT NULL,      -- Fecha y hora de conciliación
+    raw_email TEXT DEFAULT '',                -- Texto sin procesar del correo/notificación
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kaoj_deuna_tx_id ON public.kaoj_deuna_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_status ON public.kaoj_deuna_payments(status);
+CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_matched_order ON public.kaoj_deuna_payments(matched_order_code);
+CREATE INDEX IF NOT EXISTS idx_kaoj_deuna_created_at ON public.kaoj_deuna_payments(created_at DESC);
+
+-- -------------------------------------------------------------------------
 -- 6. TABLA: kaoj_carts (Carritos Persistentes de Google)
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.kaoj_carts (
@@ -244,6 +267,7 @@ ALTER TABLE public.kaoj_carts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_waitlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.kaoj_deuna_payments ENABLE ROW LEVEL SECURITY;
 
 -- 8.1 kaoj_admin_auth: Denegar todo acceso directo
 DROP POLICY IF EXISTS "Deny all on admin auth" ON public.kaoj_admin_auth;
@@ -309,6 +333,14 @@ DROP POLICY IF EXISTS "Actualización de waitlist" ON public.kaoj_waitlist;
 CREATE POLICY "Actualización de waitlist" ON public.kaoj_waitlist FOR UPDATE USING (true);
 DROP POLICY IF EXISTS "Eliminación de waitlist" ON public.kaoj_waitlist;
 CREATE POLICY "Eliminación de waitlist" ON public.kaoj_waitlist FOR DELETE USING (true);
+
+-- 8.9 kaoj_deuna_payments: Registro automático de pagos Deuna! y verificación
+DROP POLICY IF EXISTS "Inserción de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Inserción de pagos deuna" ON public.kaoj_deuna_payments FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Lectura de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Lectura de pagos deuna" ON public.kaoj_deuna_payments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Actualización de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Actualización de pagos deuna" ON public.kaoj_deuna_payments FOR UPDATE USING (true);
 
 -- -------------------------------------------------------------------------
 -- 9. FUNCIONES DE SEGURIDAD Y CONTROL ADMINISTRATIVO (SECURITY DEFINER)
@@ -1032,6 +1064,381 @@ BEGIN
         'order_code', matched_order.order_code,
         'customer_name', matched_order.customer_name,
         'total', matched_order.total
+    );
+END;
+$$;
+
+-- -------------------------------------------------------------------------
+-- 9.18 AUTOMATIZACIÓN DEUNA!: INGESTA, VERIFICACIÓN Y CONCILIACIÓN
+-- -------------------------------------------------------------------------
+
+-- 9.18.1 Registrar Pago DeUna Recibido (Desde Webhook / Google Apps Script de Gmail)
+CREATE OR REPLACE FUNCTION public.kaoj_register_deuna_payment(
+    p_tx_id TEXT,
+    p_amount NUMERIC,
+    p_sender TEXT DEFAULT '',
+    p_orig_acc TEXT DEFAULT '',
+    p_dest_acc TEXT DEFAULT '',
+    p_payment_date TEXT DEFAULT '',
+    p_raw_email TEXT DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    clean_tx TEXT := REGEXP_REPLACE(COALESCE(p_tx_id, ''), '[^0-9]', '', 'g');
+    clean_amount NUMERIC := COALESCE(p_amount, 0);
+    existing_row RECORD;
+    target_order RECORD;
+    payment_record RECORD;
+BEGIN
+    IF LENGTH(clean_tx) < 6 OR clean_amount <= 0 THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', 'Datos de transacción DeUna no válidos'
+        );
+    END IF;
+
+    -- 1. Si la transacción ya existe
+    SELECT * INTO existing_row
+    FROM public.kaoj_deuna_payments
+    WHERE transaction_id = clean_tx;
+
+    IF existing_row.id IS NOT NULL THEN
+        -- Si está disponible, intentar conciliar con orden pendiente
+        IF existing_row.status = 'disponible' THEN
+            SELECT * INTO target_order
+            FROM public.kaoj_orders
+            WHERE status = 'pendiente'
+              AND (
+                  payment_method LIKE '%' || clean_tx || '%'
+                  OR admin_notes LIKE '%' || clean_tx || '%'
+                  OR order_code LIKE '%' || clean_tx || '%'
+              )
+            ORDER BY id DESC
+            LIMIT 1;
+
+            IF target_order.id IS NULL THEN
+                SELECT * INTO target_order
+                FROM public.kaoj_orders
+                WHERE status = 'pendiente'
+                  AND payment_method ILIKE '%deuna%'
+                  AND created_at >= NOW() - INTERVAL '6 hours'
+                  AND ABS(total - clean_amount) <= 0.05
+                ORDER BY id DESC
+                LIMIT 1;
+            END IF;
+
+            IF target_order.id IS NOT NULL THEN
+                UPDATE public.kaoj_orders
+                SET status = 'verificado',
+                    admin_notes = COALESCE(NULLIF(admin_notes, '') || ' • ', '') ||
+                                  '[AUTO-VERIFICADO DEUNA: $' || TO_CHAR(clean_amount, 'FM999990.00') ||
+                                  ' | Tx: ' || clean_tx ||
+                                  CASE WHEN LENGTH(COALESCE(p_sender, '')) > 0 THEN ' | Emisor: ' || p_sender ELSE '' END ||
+                                  ' | ' || TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI') || ']',
+                    updated_at = NOW()
+                WHERE id = target_order.id;
+
+                UPDATE public.kaoj_deuna_payments
+                SET status = 'conciliado',
+                    matched_order_code = target_order.order_code,
+                    matched_at = NOW()
+                WHERE id = existing_row.id;
+
+                RETURN jsonb_build_object(
+                    'success', true,
+                    'is_new', false,
+                    'transaction_id', clean_tx,
+                    'status', 'conciliado',
+                    'matched_order_code', target_order.order_code,
+                    'message', 'Transacción conciliada con pedido #' || target_order.order_code
+                );
+            END IF;
+        END IF;
+
+        RETURN jsonb_build_object(
+            'success', true,
+            'is_new', false,
+            'transaction_id', clean_tx,
+            'status', existing_row.status,
+            'matched_order_code', existing_row.matched_order_code,
+            'message', 'Transacción ya registrada previamente'
+        );
+    END IF;
+
+    -- 2. Insertar nueva notificación DeUna
+    INSERT INTO public.kaoj_deuna_payments (
+        transaction_id,
+        amount,
+        sender_name,
+        origin_account,
+        destination_account,
+        payment_date,
+        raw_email,
+        status
+    ) VALUES (
+        clean_tx,
+        clean_amount,
+        TRIM(COALESCE(p_sender, '')),
+        TRIM(COALESCE(p_orig_acc, '')),
+        TRIM(COALESCE(p_dest_acc, '')),
+        TRIM(COALESCE(p_payment_date, '')),
+        TRIM(COALESCE(p_raw_email, '')),
+        'disponible'
+    )
+    RETURNING * INTO payment_record;
+
+    -- 3. Buscar orden pendiente para auto-conciliación inmediata
+    -- Prioridad A: Pedido que contiene el número de transacción
+    SELECT * INTO target_order
+    FROM public.kaoj_orders
+    WHERE status = 'pendiente'
+      AND (
+          payment_method LIKE '%' || clean_tx || '%'
+          OR admin_notes LIKE '%' || clean_tx || '%'
+          OR order_code LIKE '%' || clean_tx || '%'
+      )
+    ORDER BY id DESC
+    LIMIT 1;
+
+    -- Prioridad B: Si no tiene el número, orden pendiente reciente con mismo monto exacto
+    IF target_order.id IS NULL THEN
+        IF (
+            SELECT COUNT(*)
+            FROM public.kaoj_orders
+            WHERE status = 'pendiente'
+              AND payment_method ILIKE '%deuna%'
+              AND created_at >= NOW() - INTERVAL '6 hours'
+              AND ABS(total - clean_amount) <= 0.05
+        ) = 1 THEN
+            SELECT * INTO target_order
+            FROM public.kaoj_orders
+            WHERE status = 'pendiente'
+              AND payment_method ILIKE '%deuna%'
+              AND created_at >= NOW() - INTERVAL '6 hours'
+              AND ABS(total - clean_amount) <= 0.05
+            ORDER BY id DESC
+            LIMIT 1;
+        END IF;
+    END IF;
+
+    -- 4. Si encontramos orden que coincide, validarla de inmediato
+    IF target_order.id IS NOT NULL THEN
+        UPDATE public.kaoj_orders
+        SET status = 'verificado',
+            admin_notes = COALESCE(NULLIF(admin_notes, '') || ' • ', '') ||
+                          '[AUTO-VERIFICADO DEUNA: $' || TO_CHAR(clean_amount, 'FM999990.00') ||
+                          ' | Tx: ' || clean_tx ||
+                          CASE WHEN LENGTH(COALESCE(p_sender, '')) > 0 THEN ' | Emisor: ' || p_sender ELSE '' END ||
+                          ' | ' || TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI') || ']',
+            updated_at = NOW()
+        WHERE id = target_order.id;
+
+        UPDATE public.kaoj_deuna_payments
+        SET status = 'conciliado',
+            matched_order_code = target_order.order_code,
+            matched_at = NOW()
+        WHERE id = payment_record.id;
+
+        RETURN jsonb_build_object(
+            'success', true,
+            'is_new', true,
+            'transaction_id', clean_tx,
+            'amount', clean_amount,
+            'status', 'conciliado',
+            'matched_order_code', target_order.order_code,
+            'message', 'Pago registrado y conciliado automáticamente con el pedido #' || target_order.order_code
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'is_new', true,
+        'transaction_id', clean_tx,
+        'amount', clean_amount,
+        'status', 'disponible',
+        'matched_order_code', NULL,
+        'message', 'Pago DeUna registrado con éxito'
+    );
+END;
+$$;
+
+-- 9.18.2 Verificar Pago DeUna en Tiempo Real (Checkout de Clientes o Administración)
+CREATE OR REPLACE FUNCTION public.kaoj_verify_deuna_payment(
+    p_tx_id TEXT,
+    p_expected_amount NUMERIC DEFAULT 0,
+    p_order_code TEXT DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    clean_tx TEXT := REGEXP_REPLACE(COALESCE(p_tx_id, ''), '[^0-9]', '', 'g');
+    clean_code TEXT := TRIM(COALESCE(p_order_code, ''));
+    pay_row RECORD;
+BEGIN
+    IF LENGTH(clean_tx) < 6 THEN
+        RETURN jsonb_build_object(
+            'found', false,
+            'valid', false,
+            'message', 'Ingresa los dígitos del número de transacción de DeUna'
+        );
+    END IF;
+
+    SELECT * INTO pay_row
+    FROM public.kaoj_deuna_payments
+    WHERE transaction_id = clean_tx;
+
+    IF pay_row.id IS NULL THEN
+        RETURN jsonb_build_object(
+            'found', false,
+            'valid', false,
+            'transaction_id', clean_tx,
+            'message', 'La transacción #' || clean_tx || ' aún no figura en el correo notificaciones@deunaapp.com. Puedes continuar con tu compra y se validará apenas se sincronice.'
+        );
+    END IF;
+
+    -- Si ya fue conciliada previamente con otra orden
+    IF pay_row.status = 'conciliado' AND pay_row.matched_order_code IS NOT NULL AND pay_row.matched_order_code != clean_code THEN
+        RETURN jsonb_build_object(
+            'found', true,
+            'valid', false,
+            'is_duplicate', true,
+            'transaction_id', clean_tx,
+            'matched_order_code', pay_row.matched_order_code,
+            'message', 'Este comprobante ya fue utilizado en la orden #' || pay_row.matched_order_code || '. Cada pedido requiere un pago independiente.'
+        );
+    END IF;
+
+    -- Validar monto si se especificó
+    IF p_expected_amount > 0 AND pay_row.amount < (p_expected_amount - 0.05) THEN
+        RETURN jsonb_build_object(
+            'found', true,
+            'valid', false,
+            'amount_mismatch', true,
+            'transaction_id', clean_tx,
+            'amount', pay_row.amount,
+            'expected_amount', p_expected_amount,
+            'sender_name', pay_row.sender_name,
+            'message', 'El monto transferido ($' || pay_row.amount || ') es menor al total requerido ($' || p_expected_amount || ')'
+        );
+    END IF;
+
+    -- Si se pasó un código de orden y el pago está disponible, conciliarlo ahora
+    IF LENGTH(clean_code) > 0 AND pay_row.status = 'disponible' THEN
+        UPDATE public.kaoj_deuna_payments
+        SET status = 'conciliado',
+            matched_order_code = clean_code,
+            matched_at = NOW()
+        WHERE id = pay_row.id;
+
+        UPDATE public.kaoj_orders
+        SET status = 'verificado',
+            admin_notes = COALESCE(NULLIF(admin_notes, '') || ' • ', '') ||
+                          '[AUTO-VERIFICADO DEUNA: $' || TO_CHAR(pay_row.amount, 'FM999990.00') ||
+                          ' | Tx: ' || clean_tx ||
+                          CASE WHEN LENGTH(COALESCE(pay_row.sender_name, '')) > 0 THEN ' | Emisor: ' || pay_row.sender_name ELSE '' END ||
+                          ' | ' || TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI') || ']',
+            updated_at = NOW()
+        WHERE order_code = clean_code;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'found', true,
+        'valid', true,
+        'transaction_id', clean_tx,
+        'amount', pay_row.amount,
+        'sender_name', pay_row.sender_name,
+        'origin_account', pay_row.origin_account,
+        'destination_account', pay_row.destination_account,
+        'payment_date', pay_row.payment_date,
+        'status', 'conciliado',
+        'message', '¡Pago DeUna verificado con éxito!'
+    );
+END;
+$$;
+
+-- 9.18.3 Obtener Notificaciones DeUna para Panel de Administración
+CREATE OR REPLACE FUNCTION public.kaoj_admin_get_deuna_payments(
+    admin_pin TEXT,
+    p_limit INT DEFAULT 50
+)
+RETURNS SETOF public.kaoj_deuna_payments
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+    FROM public.kaoj_deuna_payments
+    ORDER BY created_at DESC
+    LIMIT LEAST(p_limit, 200);
+END;
+$$;
+
+-- 9.18.4 Vincular / Conciliar Manualmente un Pago DeUna con un Pedido (Solo Admin)
+CREATE OR REPLACE FUNCTION public.kaoj_admin_reconcile_deuna_payment(
+    admin_pin TEXT,
+    p_payment_id BIGINT,
+    p_order_code TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    pay_row RECORD;
+    ord_row RECORD;
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    SELECT * INTO pay_row FROM public.kaoj_deuna_payments WHERE id = p_payment_id;
+    IF pay_row.id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Pago DeUna no encontrado');
+    END IF;
+
+    SELECT * INTO ord_row FROM public.kaoj_orders WHERE order_code = p_order_code;
+    IF ord_row.id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Pedido no encontrado');
+    END IF;
+
+    -- Actualizar pago
+    UPDATE public.kaoj_deuna_payments
+    SET status = 'conciliado',
+        matched_order_code = ord_row.order_code,
+        matched_at = NOW()
+    WHERE id = pay_row.id;
+
+    -- Actualizar pedido
+    UPDATE public.kaoj_orders
+    SET status = 'verificado',
+        admin_notes = COALESCE(NULLIF(admin_notes, '') || ' • ', '') ||
+                      '[CONCILIADO DEUNA POR ADMIN: $' || TO_CHAR(pay_row.amount, 'FM999990.00') ||
+                      ' | Tx: ' || pay_row.transaction_id ||
+                      CASE WHEN LENGTH(COALESCE(pay_row.sender_name, '')) > 0 THEN ' | Emisor: ' || pay_row.sender_name ELSE '' END ||
+                      ' | ' || TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI') || ']',
+        updated_at = NOW()
+    WHERE id = ord_row.id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'order_code', ord_row.order_code,
+        'transaction_id', pay_row.transaction_id,
+        'amount', pay_row.amount,
+        'message', 'Pago conciliado exitosamente con el pedido #' || ord_row.order_code
     );
 END;
 $$;

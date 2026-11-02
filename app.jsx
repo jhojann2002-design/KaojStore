@@ -785,6 +785,70 @@
       }
     }
 
+    // Disparador Universal de Notificaciones Push (Android Chrome WebAPK + iOS 16.4+ PWA + Desktop)
+    async function triggerPushNotification(title, body, extraOptions = {}) {
+      try {
+        if (typeof window === 'undefined' || !('Notification' in window)) {
+          return { success: false, reason: 'unsupported' };
+        }
+
+        let permission = Notification.permission;
+        if (permission !== 'granted') {
+          try {
+            permission = await Notification.requestPermission();
+          } catch (pErr) {
+            permission = await new Promise(resolve => Notification.requestPermission(resolve));
+          }
+        }
+
+        if (permission !== 'granted') {
+          return { success: false, reason: 'denied' };
+        }
+
+        const notifOptions = {
+          body: body || 'Alerta de Kaoj Store',
+          icon: './icons/icon-admin-192.png',
+          badge: './icons/favicon.png',
+          vibrate: [250, 100, 250, 100, 350],
+          tag: extraOptions.tag || ('kaoj-alert-' + Date.now()),
+          renotify: true,
+          requireInteraction: true,
+          data: { url: './admin.html#/admin/orders' },
+          ...extraOptions
+        };
+
+        // 1. Service Worker showNotification: OBLIGATORIO en Android y en iOS PWA (Apple Home Screen)
+        if ('serviceWorker' in navigator) {
+          try {
+            const reg = await navigator.serviceWorker.ready;
+            if (reg && typeof reg.showNotification === 'function') {
+              await reg.showNotification(title, notifOptions);
+              return { success: true, method: 'serviceworker' };
+            }
+          } catch (swErr) {
+            console.warn('SW notification fallback:', swErr);
+          }
+        }
+
+        // 2. Fallback para macOS Safari / Desktop Chrome (new Notification)
+        try {
+          const notif = new Notification(title, notifOptions);
+          if (notif) {
+            notif.onclick = () => {
+              window.focus();
+              window.location.hash = '#/admin/orders';
+            };
+          }
+          return { success: true, method: 'direct' };
+        } catch (directErr) {
+          console.warn('Direct notification failed:', directErr);
+        }
+      } catch (err) {
+        console.error('Error enviando notificación push:', err);
+      }
+      return { success: false, reason: 'failed' };
+    }
+
     function generateRawThermalTicketText(order, settings) {
       if (!order) return '';
       const orderCode = order.order_code || order.orderCode || '000000';
@@ -1512,7 +1576,7 @@ ESTADO: ${status.toUpperCase()}
         whatsapp_number: '0963073456',
         email_contact: 'kaoj.store.ecu@gmail.com',
         deuna_link: 'https://deuna.app/',
-        deuna_qr_url: '',
+        deuna_qr_url: 'icons/qr-deuna.jpg',
         deuna_name: 'Toledo Mendoza Alisson Kandy',
         payphone_link: 'https://payphone.app/',
         payphone_token: '',
@@ -1636,36 +1700,44 @@ ESTADO: ${status.toUpperCase()}
       const [showInstallBanner, setShowInstallBanner] = useState(false);
       const [isIosDevice, setIsIosDevice] = useState(false);
       const [showIosGuide, setShowIosGuide] = useState(false);
+      const [showAdminInstallGuide, setShowAdminInstallGuide] = useState(false);
 
       useEffect(() => {
         try {
-          const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+          const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
           if (isStandalone) return;
 
-          const dismissedTime = localStorage.getItem('kaoj_pwa_dismissed');
-          if (dismissedTime && Date.now() - Number(dismissedTime) < 5 * 24 * 60 * 60 * 1000) {
-            return;
-          }
-
-          const userAgent = window.navigator.userAgent.toLowerCase();
-          const isIos = /iphone|ipad|ipod/.test(userAgent) && !window.MSStream;
+          const userAgent = (typeof window !== 'undefined' && window.navigator.userAgent) ? window.navigator.userAgent.toLowerCase() : '';
+          const isIos = /iphone|ipad|ipod/.test(userAgent) && !(typeof window !== 'undefined' && window.MSStream);
           if (isIos) {
             setIsIosDevice(true);
-            const timer = setTimeout(() => setShowInstallBanner(true), 3500);
-            return () => clearTimeout(timer);
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+            const dismissedTime = localStorage.getItem(dismissedKey);
+            if (!dismissedTime || Date.now() - Number(dismissedTime) > 3 * 24 * 60 * 60 * 1000) {
+              const timer = setTimeout(() => setShowInstallBanner(true), 3500);
+              return () => clearTimeout(timer);
+            }
+            return;
           }
 
           const promptHandler = (e) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            setShowInstallBanner(true);
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+            const dismissedTime = localStorage.getItem(dismissedKey);
+            if (!dismissedTime || Date.now() - Number(dismissedTime) > 2 * 24 * 60 * 60 * 1000) {
+              setShowInstallBanner(true);
+            }
           };
           window.addEventListener('beforeinstallprompt', promptHandler);
 
           const installedHandler = () => {
             setShowInstallBanner(false);
             setDeferredPrompt(null);
-            showToast('¡Kaoj Store se ha instalado correctamente! 🎉');
+            const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+            showToast(isAppAdmin ? '¡Kaoj Admin se ha instalado correctamente! 📲✨' : '¡Kaoj Store se ha instalado correctamente! 🎉');
           };
           window.addEventListener('appinstalled', installedHandler);
 
@@ -1677,11 +1749,19 @@ ESTADO: ${status.toUpperCase()}
       }, []);
 
       const handleInstallApp = async () => {
+        const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
         if (isIosDevice) {
           setShowIosGuide(true);
           return;
         }
-        if (!deferredPrompt) return;
+        if (!deferredPrompt) {
+          if (isAppAdmin) {
+            setShowAdminInstallGuide(true);
+          } else {
+            showToast('Toca los 3 puntos (⋮) en tu navegador y pulsa "Instalar aplicación"', 'info');
+          }
+          return;
+        }
         try {
           deferredPrompt.prompt();
           const choice = await deferredPrompt.userChoice;
@@ -1689,14 +1769,18 @@ ESTADO: ${status.toUpperCase()}
             setShowInstallBanner(false);
             setDeferredPrompt(null);
           }
-        } catch (e) {}
+        } catch (e) {
+          if (isAppAdmin) setShowAdminInstallGuide(true);
+        }
       };
 
       const handleDismissInstall = () => {
         setShowInstallBanner(false);
         setShowIosGuide(false);
         try {
-          localStorage.setItem('kaoj_pwa_dismissed', Date.now().toString());
+          const isAppAdmin = Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')));
+          const dismissedKey = isAppAdmin ? 'kaoj_admin_pwa_dismissed' : 'kaoj_pwa_dismissed';
+          localStorage.setItem(dismissedKey, Date.now().toString());
         } catch (e) {}
       };
 
@@ -1708,6 +1792,7 @@ ESTADO: ${status.toUpperCase()}
       const [customerReceiptModal, setCustomerReceiptModal] = useState(null);
       const [adminSalesNoteModal, setAdminSalesNoteModal] = useState(null);
       const [adminThermalTicketModal, setAdminThermalTicketModal] = useState(null);
+      const [showDeunaQrModal, setShowDeunaQrModal] = useState(false);
       const [rememberAdminPin, setRememberAdminPin] = useState(true);
       const [notificationsEnabled, setNotificationsEnabled] = useState(() => (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted'));
 
@@ -2260,16 +2345,14 @@ ESTADO: ${status.toUpperCase()}
                   playOrderNotificationSound();
                   if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 350]);
 
-                  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                    try {
-                      new Notification('🛍️ ¡Nuevo pedido en Kaoj Store!', {
-                        body: `Pedido #${newOrder.order_code} de ${newOrder.customer_name} por $${Number(newOrder.total || 0).toFixed(2)} (${newOrder.payment_method}).`,
-                        icon: './icons/icon-admin-192.png',
-                        badge: './icons/favicon.png',
-                        tag: `order-${newOrder.id || newOrder.order_code}`
-                      });
-                    } catch (e) {}
-                  }
+                  triggerPushNotification(
+                    '🛍️ ¡Nuevo pedido en Kaoj Store!',
+                    `Pedido #${newOrder.order_code} de ${newOrder.customer_name} por $${Number(newOrder.total || 0).toFixed(2)} (${newOrder.payment_method}).`,
+                    {
+                      tag: `order-${newOrder.id || newOrder.order_code}`,
+                      data: { url: './admin.html#/admin/orders' }
+                    }
+                  );
 
                   showToast(`🛍️ ¡NUEVO PEDIDO RECIBIDO! #${newOrder.order_code} ($${Number(newOrder.total || 0).toFixed(2)})`, 'success');
                   setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
@@ -2355,6 +2438,7 @@ ESTADO: ${status.toUpperCase()}
             if (!loadedShipping) loadedShipping = DEFAULT_SHIPPING_RATES;
 
             let loadedDeunaName = cfg.deuna_name || cfg.sections_config?.__deuna_name || 'Toledo Mendoza Alisson Kandy';
+            let loadedDeunaQr = cfg.deuna_qr_url || cfg.sections_config?.__deuna_qr_url || 'icons/qr-deuna.jpg';
             let loadedSurcharge = cfg.payphone_surcharge_percent ?? cfg.sections_config?.__payphone_surcharge_percent ?? null;
             if (loadedSurcharge === null || loadedSurcharge === undefined) {
               try {
@@ -2371,7 +2455,8 @@ ESTADO: ${status.toUpperCase()}
               about_us: loadedAboutUs,
               shipping_rates: loadedShipping,
               payphone_surcharge_percent: loadedSurcharge,
-              deuna_name: loadedDeunaName
+              deuna_name: loadedDeunaName,
+              deuna_qr_url: loadedDeunaQr
             }));
 
             setAdminSettingsForm({
@@ -2381,7 +2466,8 @@ ESTADO: ${status.toUpperCase()}
               about_us: loadedAboutUs,
               shipping_rates: loadedShipping,
               payphone_surcharge_percent: loadedSurcharge,
-              deuna_name: loadedDeunaName
+              deuna_name: loadedDeunaName,
+              deuna_qr_url: loadedDeunaQr
             });
 
             if (cfg.sections_config && Object.keys(cfg.sections_config).length > 0) {
@@ -2389,7 +2475,8 @@ ESTADO: ${status.toUpperCase()}
               delete cleanSections.__about_us;
               delete cleanSections.__shipping_rates;
               delete cleanSections.__payphone_surcharge_percent;
-            delete cleanSections.__deuna_name;
+              delete cleanSections.__deuna_name;
+              delete cleanSections.__deuna_qr_url;
               setSectionsConfig(cleanSections);
             }
           }
@@ -3258,7 +3345,7 @@ ESTADO: ${status.toUpperCase()}
             whatsapp_number: cleanPhone,
             email_contact: (adminSettingsForm.email_contact || 'kaoj.store.ecu@gmail.com').trim(),
             deuna_link: adminSettingsForm.deuna_link,
-            deuna_qr_url: adminSettingsForm.deuna_qr_url,
+            deuna_qr_url: adminSettingsForm.deuna_qr_url || 'icons/qr-deuna.jpg',
             payphone_link: adminSettingsForm.payphone_link,
             payphone_token: adminSettingsForm.payphone_token,
             bank_guayaquil_acc: adminSettingsForm.bank_guayaquil_acc,
@@ -3274,7 +3361,8 @@ ESTADO: ${status.toUpperCase()}
             sections_config: {
               ...sectionsConfig,
               __payphone_surcharge_percent: isNaN(surchargeVal) ? 6.0 : surchargeVal,
-              __deuna_name: adminSettingsForm.deuna_name || 'Toledo Mendoza Alisson Kandy'
+              __deuna_name: adminSettingsForm.deuna_name || 'Toledo Mendoza Alisson Kandy',
+              __deuna_qr_url: adminSettingsForm.deuna_qr_url || 'icons/qr-deuna.jpg'
             }
           };
 
@@ -4670,6 +4758,14 @@ ESTADO: ${status.toUpperCase()}
                   <button onClick={() => { setAdminTab('settings'); window.location.hash = '#/admin/settings'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Settings className="w-4 h-4" /> Ajustes
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleInstallApp}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF007F] via-[#FF2E93] to-pink-500 text-white hover:brightness-110 shadow-xs transition flex items-center gap-1.5 shrink-0"
+                    title="Instalar Kaoj Admin como aplicación independiente en tu teléfono"
+                  >
+                    <span>📲</span> Instalar App
+                  </button>
                   <button onClick={() => {
                     sessionStorage.removeItem('kaoj_admin_authenticated');
                     sessionStorage.removeItem('kaoj_admin_pin');
@@ -4708,15 +4804,28 @@ ESTADO: ${status.toUpperCase()}
                     <button
                       type="button"
                       onClick={async () => {
-                        if (typeof window !== 'undefined' && 'Notification' in window) {
-                          const res = await Notification.requestPermission();
-                          setNotificationsEnabled(res === 'granted');
-                          if (res === 'granted') {
-                            playOrderNotificationSound();
-                            showToast('¡Notificaciones activadas con éxito! 🔔');
-                          } else {
-                            showToast('Permiso de notificaciones denegado en el navegador', 'error');
-                          }
+                        const userAgent = (typeof window !== 'undefined' && window.navigator.userAgent) ? window.navigator.userAgent.toLowerCase() : '';
+                        const isIos = /iphone|ipad|ipod/.test(userAgent) && !(typeof window !== 'undefined' && window.MSStream);
+                        const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+
+                        if (isIos && !isStandalone) {
+                          showToast('🍎 En iPhone debes agregar la app al Inicio para activar notificaciones', 'info');
+                          setShowIosGuide(true);
+                          return;
+                        }
+
+                        const result = await triggerPushNotification(
+                          '🔔 Notificaciones Activadas - Kaoj Admin',
+                          '¡Excelente! Recibirás timbre boutique y alertas automáticas de cada venta.',
+                          { tag: 'welcome-kaoj' }
+                        );
+
+                        if (result.success) {
+                          setNotificationsEnabled(true);
+                          playOrderNotificationSound();
+                          showToast('¡Notificaciones Push activadas con éxito! 🔔✨');
+                        } else if (result.reason === 'denied') {
+                          showToast('Permiso de notificaciones denegado en el navegador', 'error');
                         } else {
                           showToast('Este navegador no soporta notificaciones de escritorio', 'error');
                         }
@@ -4728,19 +4837,43 @@ ESTADO: ${status.toUpperCase()}
                   )}
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={handleInstallApp}
+                    className="px-3 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    title="Instalar Kaoj Admin en tu pantalla de inicio"
+                  >
+                    <span>📲</span> Instalar App
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
                       playOrderNotificationSound();
-                      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                        new Notification('🔔 Prueba de Alarma Kaoj Store', {
-                          body: '¡El sonido boutique y las notificaciones de pedidos funcionan al 100%!',
-                          icon: './icons/icon-admin-192.png'
-                        });
+                      if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 350]);
+
+                      const userAgent = (typeof window !== 'undefined' && window.navigator.userAgent) ? window.navigator.userAgent.toLowerCase() : '';
+                      const isIos = /iphone|ipad|ipod/.test(userAgent) && !(typeof window !== 'undefined' && window.MSStream);
+                      const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+
+                      const result = await triggerPushNotification(
+                        '🔔 Prueba de Alarma Kaoj Store',
+                        '¡El sonido boutique y las notificaciones push en tu celular funcionan al 100%!',
+                        { tag: 'test-alarm-' + Date.now() }
+                      );
+
+                      if (result.success) {
+                        setNotificationsEnabled(true);
+                        showToast('🔔 ¡Alarma y Notificación Push enviadas con éxito! ✨');
+                      } else {
+                        if (isIos && !isStandalone) {
+                          showToast('🍎 En iPhone debes agregar la app al Inicio para recibir notificaciones en pantalla bloqueada', 'info');
+                        } else if (result.reason === 'denied') {
+                          showToast('⚠️ Permiso bloqueado. Permite notificaciones en el navegador.', 'error');
+                        } else {
+                          showToast('🔔 Chime de prueba reproducido correctamente ✨');
+                        }
                       }
-                      showToast('🔔 Chime de prueba reproducido ✨');
                     }}
                     className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                    title="Probar sonido de nuevo pedido"
+                    title="Probar sonido y notificación de nuevo pedido"
                   >
                     <Icon.Bell className="w-3.5 h-3.5 text-[#FF2E93]" /> Probar Alarma
                   </button>
@@ -6926,6 +7059,21 @@ ESTADO: ${status.toUpperCase()}
                         />
                       </div>
                       <div>
+                        <label className="font-semibold block mb-1 flex items-center justify-between">
+                          <span>Imagen Código QR Deuna!</span>
+                          <span className="text-[10px] text-purple-700 font-bold">Activo: icons/qr-deuna.jpg</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <img src={adminSettingsForm.deuna_qr_url || 'icons/qr-deuna.jpg'} alt="QR" className="w-9 h-9 rounded-lg border border-purple-300 object-contain bg-purple-50 p-0.5 shrink-0" />
+                          <input
+                            value={adminSettingsForm.deuna_qr_url || 'icons/qr-deuna.jpg'}
+                            onChange={e => setAdminSettingsForm({ ...adminSettingsForm, deuna_qr_url: e.target.value })}
+                            className="w-full border rounded-xl p-2 outline-none font-mono text-[11px]"
+                            placeholder="icons/qr-deuna.jpg"
+                          />
+                        </div>
+                      </div>
+                      <div>
                         <label className="font-semibold block mb-1">Enlace de Pago Payphone Ecuador</label>
                         <input
                           value={adminSettingsForm.payphone_link || ''}
@@ -8920,29 +9068,69 @@ ESTADO: ${status.toUpperCase()}
 
                               {/* INSTRUCCIONES Y ACCIONES SEGÚN EL MÉTODO DE PAGO */}
                               {customer.paymentMethod === 'deuna' && (
-                                <div className="bg-purple-50/80 border border-purple-200 rounded-2xl p-3.5 space-y-2.5 text-center">
+                                <div className="bg-purple-50/80 border border-purple-200 rounded-3xl p-4 space-y-3.5 text-center">
                                   <div className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
-                                      <img src={PAYMENT_ICONS.deuna} alt="Deuna" className="w-6 h-6 rounded-lg object-contain shadow-2xs" />
-                                      <span className="font-bold text-purple-950">Pago directo con Deuna! (Banco Pichincha)</span>
+                                      <img src={PAYMENT_ICONS.deuna} alt="Deuna" className="w-7 h-7 rounded-lg object-contain shadow-2xs" />
+                                      <div className="text-left">
+                                        <span className="font-extrabold text-purple-950 block leading-tight">Pago con Deuna!</span>
+                                        <span className="text-[10px] text-purple-700">Banco Pichincha</span>
+                                      </div>
                                     </div>
-                                    <span className="font-black text-purple-900">${total.toFixed(2)} USD</span>
+                                    <span className="font-black text-purple-900 text-sm">${total.toFixed(2)} USD</span>
                                   </div>
-                                  {settings.deuna_qr_url && (
-                                    <img src={settings.deuna_qr_url} alt="QR Deuna" className="w-36 h-36 mx-auto rounded-xl border border-purple-200 object-contain bg-white p-1.5" />
-                                  )}
-                                  <a
-                                    href={settings.deuna_link}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center justify-center gap-2 w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-bold text-xs shadow-xs transition"
-                                  >
-                                    <img src={PAYMENT_ICONS.deuna} alt="Deuna" className="w-4 h-4 rounded-md object-contain" />
-                                    <span>Abrir App Deuna! y pagar ${total.toFixed(2)}</span>
-                                  </a>
-                                  <p className="text-[10px] text-purple-800">
-                                    Titular: <b>{settings.deuna_name || 'Toledo Mendoza Alisson Kandy'}</b> • Cuenta vinculada: <b>{settings.bank_pichincha_acc}</b>
-                                  </p>
+
+                                  {/* CÓDIGO QR OFICIAL DEUNA! */}
+                                  <div className="bg-white p-3 rounded-2xl border-2 border-purple-200 shadow-sm max-w-xs mx-auto space-y-2">
+                                    <div className="relative group cursor-pointer" onClick={() => setShowDeunaQrModal(true)}>
+                                      <img
+                                        src={settings.deuna_qr_url || 'icons/qr-deuna.jpg'}
+                                        alt="Código QR Deuna! - Escanear para pagar"
+                                        className="w-44 h-44 mx-auto rounded-xl object-contain transition-transform group-hover:scale-102"
+                                      />
+                                      <span className="absolute bottom-1 right-1 bg-purple-900/85 text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-xs flex items-center gap-1 shadow">
+                                        🔍 Toca para ampliar
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-purple-950">
+                                      Escanea este código con tu app Deuna! o Banco Pichincha
+                                    </p>
+
+                                    {/* BOTONES DE ACCIÓN PARA EL QR */}
+                                    <div className="grid grid-cols-2 gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowDeunaQrModal(true)}
+                                        className="py-1.5 px-2 bg-purple-100 hover:bg-purple-200 text-purple-900 text-[10.5px] font-bold rounded-xl transition flex items-center justify-center gap-1"
+                                      >
+                                        🔍 Ver en grande
+                                      </button>
+                                      <a
+                                        href={settings.deuna_qr_url || 'icons/qr-deuna.jpg'}
+                                        download="QR-Deuna-KaojStore.jpg"
+                                        className="py-1.5 px-2 bg-purple-700 hover:bg-purple-800 text-white text-[10.5px] font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-2xs"
+                                        title="Descarga la imagen para escanearla desde la galería en tu app Deuna"
+                                      >
+                                        ⬇️ Guardar QR
+                                      </a>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5">
+                                    <a
+                                      href={settings.deuna_link || 'https://deuna.app/'}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="flex items-center justify-center gap-2 w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-xl font-black text-xs shadow-md transition"
+                                    >
+                                      <img src={PAYMENT_ICONS.deuna} alt="Deuna" className="w-4 h-4 rounded-md object-contain" />
+                                      <span>Abrir App Deuna! y pagar ${total.toFixed(2)}</span>
+                                    </a>
+                                    <p className="text-[10px] text-purple-800">
+                                      Titular: <b>{settings.deuna_name || 'Toledo Mendoza Alisson Kandy'}</b> • Pichincha: <b>{settings.bank_pichincha_acc}</b>
+                                    </p>
+                                  </div>
+
                                   {/* AVISO DE CORREO PARA VALIDACIÓN AUTOMÁTICA */}
                                   <div className="bg-white border border-purple-200 rounded-xl p-2.5 text-left space-y-1.5 shadow-2xs">
                                     <p className="text-[10px] font-extrabold text-purple-950 flex items-center gap-1">
@@ -10745,17 +10933,21 @@ ESTADO: ${status.toUpperCase()}
             <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40">
               <div className="bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 text-white p-3.5 rounded-3xl border border-pink-500/30 shadow-2xl flex items-center justify-between gap-3">
                 <img
-                  src="icons/icon-192.png"
-                  alt="Kaoj Store"
+                  src={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "icons/icon-admin-192.png" : "icons/icon-192.png"}
+                  alt={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Kaoj Admin" : "Kaoj Store"}
                   className="w-11 h-11 rounded-2xl shadow-md border border-white/10 shrink-0 object-cover"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-extrabold text-xs text-white">Kaoj Store App</span>
+                    <span className="font-extrabold text-xs text-white">
+                      {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Kaoj Admin" : "Kaoj Store App"}
+                    </span>
                     <span className="text-[9px] bg-[#FF2E93] text-white px-1.5 py-0.2 rounded-full font-black">PWA</span>
                   </div>
                   <p className="text-[11px] text-zinc-300 truncate">
-                    {isIosDevice ? 'Agrega la app a tu pantalla de inicio' : 'Instala la app para comprar más rápido'}
+                    {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')))
+                      ? (isIosDevice ? 'Agrega el panel a tu pantalla de inicio' : 'App de administración con alertas y pedidos')
+                      : (isIosDevice ? 'Agrega la app a tu pantalla de inicio' : 'Instala la app para comprar más rápido')}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -10764,7 +10956,7 @@ ESTADO: ${status.toUpperCase()}
                     onClick={handleInstallApp}
                     className="bg-[#FF2E93] hover:bg-[#e0157a] text-white text-xs font-black px-3.5 py-2 rounded-xl shadow-md transition active:scale-95"
                   >
-                    Instalar
+                    {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Instalar Admin" : "Instalar"}
                   </button>
                   <button
                     type="button"
@@ -10793,6 +10985,120 @@ ESTADO: ${status.toUpperCase()}
                   </ol>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* MODAL GUÍA DE INSTALACIÓN ADMIN INDEPENDIENTE */}
+          {showAdminInstallGuide && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-zinc-200 space-y-4">
+                <div className="flex items-center gap-3">
+                  <img src="icons/icon-admin-192.png" alt="Kaoj Admin" className="w-12 h-12 rounded-2xl shadow-md border border-zinc-200 object-cover" />
+                  <div>
+                    <h3 className="font-extrabold text-base text-zinc-900 leading-tight">Instalar App Kaoj Admin</h3>
+                    <p className="text-xs text-zinc-500">App independiente de la tienda de clientes</p>
+                  </div>
+                </div>
+
+                <div className="bg-pink-50 border border-pink-200/80 rounded-2xl p-3.5 space-y-2 text-xs text-zinc-800">
+                  <p className="font-bold text-[#FF007F] flex items-center gap-1.5">
+                    <span>💡</span> ¿Por qué salía que ya estaba instalada?
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-zinc-600">
+                    Tu teléfono ya tiene instalada la <b>Tienda Kaoj</b> de clientes. Ahora hemos configurado el <b>Panel Admin</b> con su propia identidad exclusiva (<code className="font-mono bg-white px-1 rounded border border-pink-200">kaoj-admin-app</code>) para que funcione como una aplicación totalmente separada en tu pantalla.
+                  </p>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <p className="font-bold text-zinc-800">Pasos para instalarla en tu Android / Chrome:</p>
+                  <ol className="list-decimal list-inside space-y-2 text-zinc-700 text-[11.5px] leading-relaxed bg-zinc-50 p-3.5 rounded-2xl border border-zinc-200">
+                    <li>Abre esta página (<code className="bg-white px-1.5 py-0.5 rounded border border-zinc-300 font-mono text-[10px]">admin.html</code>) en <b>Google Chrome</b>.</li>
+                    <li>Toca los <b>3 puntos (⋮)</b> arriba a la derecha de Chrome.</li>
+                    <li>Selecciona <b>"Instalar aplicación"</b> o <b>"Agregar a la pantalla principal"</b>.</li>
+                    <li>¡Y listo! Se creará el acceso directo independiente con el icono negro y dorado de <b>Kaoj Admin</b>.</li>
+                  </ol>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAdminInstallGuide(false)}
+                  className="w-full py-3 bg-zinc-900 hover:bg-black text-white text-xs font-bold rounded-2xl shadow-md transition"
+                >
+                  Entendido, ¡Listo! ✨
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              MODAL: CÓDIGO QR OFICIAL DEUNA! (ESCANEAR O DESCARGAR)
+              ========================================================================= */}
+          {showDeunaQrModal && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={() => setShowDeunaQrModal(false)}>
+              <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-purple-200 relative text-center" onClick={e => e.stopPropagation()}>
+                
+                <div className="flex justify-between items-center pb-2 border-b border-purple-100">
+                  <div className="flex items-center gap-2">
+                    <img src={PAYMENT_ICONS.deuna} alt="Deuna" className="w-8 h-8 rounded-xl object-contain shadow-2xs" />
+                    <div className="text-left">
+                      <h3 className="font-extrabold text-sm text-purple-950">Escanear QR Deuna!</h3>
+                      <p className="text-[10px] text-purple-700 font-semibold">Banco Pichincha Ecuador</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeunaQrModal(false)}
+                    className="w-7 h-7 rounded-full bg-purple-50 text-purple-900 hover:bg-purple-100 font-bold text-xs flex items-center justify-center transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* IMAGEN QR AMPLIA */}
+                <div className="bg-gradient-to-b from-purple-50 to-white p-3 rounded-2xl border-2 border-purple-300 shadow-inner">
+                  <img
+                    src={settings.deuna_qr_url || 'icons/qr-deuna.jpg'}
+                    alt="Código QR Deuna! Oficial"
+                    className="w-60 h-60 mx-auto rounded-xl object-contain bg-white p-2 shadow-xs"
+                  />
+                  <div className="mt-2 text-center">
+                    <span className="inline-block bg-purple-900 text-white font-mono font-black text-sm px-3.5 py-1 rounded-xl shadow-xs">
+                      Total a pagar: ${total.toFixed(2)} USD
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-purple-950 space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200/70 text-left">
+                  <p>👤 Titular: <b>{settings.deuna_name || 'Toledo Mendoza Alisson Kandy'}</b></p>
+                  <p>🏦 Pichincha Ahorros: <b>{settings.bank_pichincha_acc}</b></p>
+                </div>
+
+                <div className="text-[10.5px] text-zinc-600 space-y-1 text-left leading-tight">
+                  <p className="font-bold text-purple-950">💡 ¿Cómo pagar con este código?</p>
+                  <p>• <b>Desde otro celular / PC:</b> Abre Deuna en tu teléfono y escanea este código directamente en la pantalla.</p>
+                  <p>• <b>En este mismo celular:</b> Toca <b>"Guardar en Fotos"</b>, entra a tu app Deuna, pulsa <b>"Escanear QR"</b> y elige <b>"Galería"</b>.</p>
+                </div>
+
+                {/* BOTONES DE ACCIÓN */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <a
+                    href={settings.deuna_qr_url || 'icons/qr-deuna.jpg'}
+                    download="QR-Deuna-KaojStore.jpg"
+                    className="py-2.5 px-3 bg-purple-700 hover:bg-purple-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+                  >
+                    <span>⬇️</span> Guardar en Fotos
+                  </a>
+                  <a
+                    href={settings.deuna_link || 'https://deuna.app/'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2.5 px-3 bg-zinc-900 hover:bg-black text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+                  >
+                    <span>📲</span> Abrir Deuna
+                  </a>
+                </div>
+
+              </div>
             </div>
           )}
 

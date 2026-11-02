@@ -109,6 +109,22 @@
     .animate-pulse-glow {
       animation: pulse-glow 2s infinite ease-in-out;
     }
+    @keyframes marquee-pasarela {
+      0% {
+        transform: translateX(0%);
+      }
+      100% {
+        transform: translateX(-50%);
+      }
+    }
+    .animate-marquee-pasarela {
+      display: inline-flex;
+      white-space: nowrap;
+      animation: marquee-pasarela 24s linear infinite;
+    }
+    .animate-marquee-pasarela:hover {
+      animation-play-state: paused;
+    }
     @media print {
       body {
         visibility: hidden !important;
@@ -211,6 +227,11 @@
       Bag: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+        </svg>
+      ),
+      Share: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
         </svg>
       ),
       Search: ({ className = "w-4 h-4" }) => (
@@ -441,6 +462,7 @@
       // Modales y Vistas Rápidas
       const [quickViewProduct, setQuickViewProduct] = useState(null);
       const [quickViewSelectedVar, setQuickViewSelectedVar] = useState(null);
+      const [quickViewActiveImageIndex, setQuickViewActiveImageIndex] = useState(0);
       const [isCartOpen, setIsCartOpen] = useState(false);
       const [isTrackingOpen, setIsTrackingOpen] = useState(false);
       const [trackingCode, setTrackingCode] = useState('');
@@ -528,6 +550,67 @@
           setFavorites([...favorites, productId]);
           showToast(`¡"${productName}" guardado en tus favoritos! ❤️`);
         }
+      }
+
+      function handleShareProduct(product) {
+        if (!product) return;
+        const currentUrl = `${window.location.origin}${window.location.pathname}#/producto/${product.id}`;
+        const title = `Kaoj Store - ${product.name}`;
+        const text = `¡Mira este producto en Kaoj Store: ${product.name}! ✨🛍️`;
+
+        if (navigator.share) {
+          navigator.share({
+            title,
+            text,
+            url: currentUrl
+          }).catch(() => {});
+        } else if (navigator.clipboard) {
+          navigator.clipboard.writeText(currentUrl).then(() => {
+            showToast('¡Enlace del producto copiado al portapapeles! 📋');
+          }).catch(() => {
+            window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + currentUrl)}`, '_blank');
+          });
+        } else {
+          window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + currentUrl)}`, '_blank');
+        }
+      }
+
+      // Obtener todas las imágenes de un producto (galería múltiple, variantes y fotos de tonos)
+      function getProductImages(product) {
+        if (!product) return ['https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
+        const list = [];
+
+        // 1. Array `images` directo del producto
+        if (Array.isArray(product.images)) {
+          product.images.forEach(img => {
+            if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
+              list.push(img.trim());
+            }
+          });
+        }
+
+        // 2. Galería almacenada en variantes[0].gallery (compatibilidad sin requerir cambios de esquema)
+        if (Array.isArray(product.variants?.[0]?.gallery)) {
+          product.variants[0].gallery.forEach(img => {
+            if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
+              list.push(img.trim());
+            }
+          });
+        }
+
+        // 3. Foto principal
+        if (product.image && typeof product.image === 'string' && product.image.trim() && !list.includes(product.image.trim())) {
+          list.unshift(product.image.trim());
+        }
+
+        // 4. Fotos de variantes o tonos
+        (product.variants || []).forEach(v => {
+          if (v.image && typeof v.image === 'string' && v.image.trim() && !list.includes(v.image.trim())) {
+            list.push(v.image.trim());
+          }
+        });
+
+        return list.length > 0 ? list : [product.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
       }
 
       // Auto-detección de cliente VIP al escribir celular en el checkout
@@ -691,6 +774,7 @@
         price: '',
         discount_price: '',
         image: '',
+        images: [],
         description: '',
         variant_label: 'Tono / Talla',
         variants: [
@@ -759,7 +843,10 @@
               if (pid) {
                 setProducts(currentProds => {
                   const p = currentProds.find(item => item.id === pid);
-                  if (p) setQuickViewProduct(p);
+                  if (p) {
+                    setQuickViewProduct(p);
+                    setQuickViewActiveImageIndex(0);
+                  }
                   return currentProds;
                 });
               }
@@ -845,7 +932,10 @@
             if (currentHash.startsWith('#/producto/')) {
               const pid = Number(currentHash.replace('#/producto/', '').split('/')[0]);
               const p = prods.find(item => item.id === pid);
-              if (p) setQuickViewProduct(p);
+              if (p) {
+                setQuickViewProduct(p);
+                setQuickViewActiveImageIndex(0);
+              }
             }
           }
 
@@ -1106,7 +1196,7 @@
       // =======================================================================
       // 3. GESTIÓN DEL CARRITO Y CÁLCULOS (Envío Gratis & Puntos VIP)
       // =======================================================================
-      function addToCart(product, specificVariant = null) {
+      function addToCart(product, specificVariant = null, openCart = false) {
         const activeInfo = activeVariants[product.id];
         const varName = specificVariant || activeInfo?.variantName || (product.variants?.[0]?.name);
         const variantObj = (product.variants || []).find(v => v.name === varName);
@@ -1139,9 +1229,11 @@
           }]);
         }
 
-        showToast(`"${product.name}" (${varName}) agregado`);
-        setIsCartOpen(true);
-        if (quickViewProduct) setQuickViewProduct(null);
+        showToast(`"${product.name}" (${varName}) agregado al carrito ✨`);
+        if (openCart) {
+          setIsCartOpen(true);
+          if (quickViewProduct) setQuickViewProduct(null);
+        }
       }
 
       function updateCartQty(key, delta) {
@@ -1659,6 +1751,7 @@
 
       function openEditProductModal(prod) {
         const cloned = JSON.parse(JSON.stringify(prod));
+        cloned.images = getProductImages(cloned);
         const hasColorSize = (cloned.variants || []).some(v => v.color && v.size);
         if (hasColorSize) {
           setEditVariantMode('color_size');
@@ -1730,6 +1823,15 @@
             : [{ name: 'Único', stock: 5, image: '' }];
         }
 
+        const prodImages = (editingProduct.images && editingProduct.images.length > 0)
+          ? editingProduct.images.filter(Boolean)
+          : (editingProduct.image ? [editingProduct.image] : []);
+        const primaryImage = prodImages[0] || editingProduct.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
+
+        if (finalVariants.length > 0 && prodImages.length > 0) {
+          finalVariants[0].gallery = prodImages;
+        }
+
         setUploading(true);
         try {
           const updatedPayload = {
@@ -1738,16 +1840,27 @@
             category: editingProduct.category,
             price: parseFloat(editingProduct.price),
             discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
-            image: editingProduct.image,
+            image: primaryImage,
+            images: prodImages,
             description: editingProduct.description,
             variant_label: finalVariantLabel,
             variants: finalVariants
           };
 
-          const { error } = await supabase
+          let { error } = await supabase
             .from('kaoj_products')
             .update(updatedPayload)
             .eq('id', editingProduct.id);
+
+          if (error && error.message && error.message.includes('images')) {
+            const fallbackPayload = { ...updatedPayload };
+            delete fallbackPayload.images;
+            const retry = await supabase
+              .from('kaoj_products')
+              .update(fallbackPayload)
+              .eq('id', editingProduct.id);
+            error = retry.error;
+          }
 
           if (error) throw error;
 
@@ -1798,27 +1911,44 @@
           finalVariants = newProd.variants.length > 0 ? newProd.variants : [{ name: 'Único', stock: 5, image: '' }];
         }
 
+        const prodImages = (newProd.images && newProd.images.length > 0)
+          ? newProd.images.filter(Boolean)
+          : (newProd.image ? [newProd.image] : []);
+        const primaryImage = prodImages[0] || newProd.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600';
+
+        if (finalVariants.length > 0 && prodImages.length > 0) {
+          finalVariants[0].gallery = prodImages;
+        }
+
         const prodPayload = {
           name: newProd.name.trim(),
           section: newProd.section,
           category: newProd.category,
           price: parseFloat(newProd.price),
           discount_price: newProd.discount_price ? parseFloat(newProd.discount_price) : null,
-          image: newProd.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600',
+          image: primaryImage,
+          images: prodImages,
           description: newProd.description.trim(),
           variant_label: finalVariantLabel,
           variants: finalVariants,
           is_active: true
         };
 
-        const { data, error } = await supabase.from('kaoj_products').insert([prodPayload]).select();
+        let { data, error } = await supabase.from('kaoj_products').insert([prodPayload]).select();
+        if (error && error.message && error.message.includes('images')) {
+          const fallbackPayload = { ...prodPayload };
+          delete fallbackPayload.images;
+          const retry = await supabase.from('kaoj_products').insert([fallbackPayload]).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) return showToast('Error al crear: ' + error.message, 'error');
 
         if (data && data[0]) setProducts([data[0], ...products]);
-        showToast('Producto agregado al catálogo');
+        showToast('Producto agregado al catálogo con sus fotos ✨');
         setNewProd({
           name: '', section: 'MAQUILLAJES', category: 'Labiales',
-          price: '', discount_price: '', image: '', description: '',
+          price: '', discount_price: '', image: '', images: [], description: '',
           variant_label: 'Tono / Talla',
           variants: [{ name: '01 Rosa', stock: 5, image: '' }]
         });
@@ -1906,10 +2036,14 @@
         return result;
       }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy, favorites]);
 
-      // Métricas administrativas
+      // Métricas administrativas (excluyendo ventas canceladas)
       const metrics = useMemo(() => {
-        const totalSales = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
-        const pendingCount = orders.filter(o => o.status === 'pendiente').length;
+        const validOrders = orders.filter(o => o.status !== 'cancelado');
+        const cancelledOrders = orders.filter(o => o.status === 'cancelado');
+        const totalSales = validOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+        const pendingCount = validOrders.filter(o => o.status === 'pendiente').length;
+        const activeOrdersCount = validOrders.length;
+        const cancelledCount = cancelledOrders.length;
         const criticalStockCount = products.filter(p =>
           (p.variants || []).some(v => v.stock <= 2)
         ).length;
@@ -1921,7 +2055,7 @@
           else secCounts[sec] = 1;
         });
 
-        return { totalSales, pendingCount, criticalStockCount, secCounts };
+        return { totalSales, pendingCount, activeOrdersCount, cancelledCount, criticalStockCount, secCounts };
       }, [orders, products]);
 
       // =======================================================================
@@ -1930,19 +2064,31 @@
       return (
         <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-zinc-900 overflow-x-hidden w-full max-w-full">
 
-          {/* BARRA SUPERIOR CON ANUNCIO Y SALDO VIP EN VIVO */}
-          <div className="w-full overflow-hidden bg-zinc-900 text-zinc-200 text-xs py-2 px-3 sm:px-4 font-medium tracking-wider flex items-center justify-between gap-2 sm:gap-4">
-            <div className="min-w-0 flex-1 truncate text-center sm:text-left text-[11px] sm:text-xs">
-              {settings.banner_message}
+          {/* BARRA SUPERIOR CON ANUNCIO EN PASARELA Y SALDO VIP */}
+          <div className="w-full overflow-hidden bg-zinc-900 text-zinc-200 text-xs py-2 px-3 sm:px-4 font-medium tracking-wider flex items-center justify-between gap-3 border-b border-zinc-800">
+            <div className="min-w-0 flex-1 overflow-hidden relative flex items-center h-5">
+              <div className="animate-marquee-pasarela flex items-center gap-8 text-[11px] sm:text-xs font-semibold text-zinc-100">
+                <span className="flex items-center gap-2">
+                  <span>{settings.banner_message}</span>
+                  <span className="text-[#FF2E93] font-bold">•</span>
+                  <span>✨ No es un gasto, es una inversión en ti | KAOJ STORE ✨</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[#FF2E93] font-bold">•</span>
+                  <span>{settings.banner_message}</span>
+                  <span className="text-[#FF2E93] font-bold">•</span>
+                  <span>✨ No es un gasto, es una inversión en ti | KAOJ STORE ✨</span>
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 z-10 bg-zinc-900 pl-2">
               {customerProfile ? (
                 <span className="bg-zinc-800 text-[#FF2E93] text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-zinc-700 flex items-center gap-1 shrink-0">
                   <Icon.Diamond className="w-3 h-3 text-[#FF2E93]" /> VIP: {customerProfile.customer_code} • {customerProfile.points || 0} pts
                 </span>
               ) : (
                 <span className="hidden md:inline text-[11px] text-zinc-400">
-                  Gana 1 punto por cada $1 en compras ✨
+                  Gana 1 punto por cada $1 ✨
                 </span>
               )}
             </div>
@@ -2439,6 +2585,7 @@
                     const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
                     const displayImage = activeVar.image || varObj?.image || (hasColorAndSize ? prod.variants?.find(v => v.color === currentColor && v.image)?.image : null) || prod.image;
+                    const cardImages = getProductImages(prod);
 
                     return (
                       <div key={prod.id} className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group">
@@ -2448,6 +2595,7 @@
                           onClick={() => {
                             setQuickViewProduct(prod);
                             setQuickViewSelectedVar(currentVarName);
+                            setQuickViewActiveImageIndex(0);
                             window.location.hash = `#/producto/${prod.id}`;
                           }}
                         >
@@ -2458,18 +2606,38 @@
                             loading="lazy"
                           />
 
-                          {/* BOTÓN FAVORITO FLOTANTE */}
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              toggleFavorite(prod.id, prod.name);
-                            }}
-                            className="absolute top-2.5 right-2.5 z-20 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100"
-                            title={favorites.includes(prod.id) ? "Quitar de favoritos" : "Guardar en favoritos"}
-                          >
-                            <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.includes(prod.id)} />
-                          </button>
+                          {/* BADGE DE MÚLTIPLES FOTOS SI HAY MÁS DE 1 */}
+                          {cardImages.length > 1 && (
+                            <span className="absolute bottom-2.5 right-2.5 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md z-10 flex items-center gap-1 shadow-xs">
+                              📷 {cardImages.length}
+                            </span>
+                          )}
+
+                          {/* BOTONES FLOTANTES: FAVORITO Y COMPARTIR */}
+                          <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleShareProduct(prod);
+                              }}
+                              className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100 text-zinc-600 hover:text-[#FF2E93]"
+                              title="Compartir producto"
+                            >
+                              <Icon.Share className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                toggleFavorite(prod.id, prod.name);
+                              }}
+                              className="w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md hover:scale-110 active:scale-90 transition border border-zinc-100"
+                              title={favorites.includes(prod.id) ? "Quitar de favoritos" : "Guardar en favoritos"}
+                            >
+                              <Icon.Heart className="w-3.5 h-3.5 text-[#FF2E93]" filled={favorites.includes(prod.id)} />
+                            </button>
+                          </div>
 
                           {/* OVERLAY DE AGOTADO O ALERTA DE POCAS UNIDADES */}
                           {isAllOutOfStock ? (
@@ -2507,6 +2675,7 @@
                               onClick={() => {
                                 setQuickViewProduct(prod);
                                 setQuickViewSelectedVar(currentVarName);
+                                setQuickViewActiveImageIndex(0);
                                 window.location.hash = `#/producto/${prod.id}`;
                               }}
                               className="font-bold text-zinc-900 hover:text-[#FF2E93] transition line-clamp-2 text-xs sm:text-sm cursor-pointer"
@@ -2534,7 +2703,7 @@
                                     <span className="font-semibold text-zinc-500">Color:</span>
                                     <span className="font-bold text-zinc-800 truncate">{currentColor}</span>
                                   </div>
-                                  <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto no-scrollbar">
+                                  <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto no-scrollbar p-1">
                                     {distinctColors.map(c => {
                                       const colorVar = (prod.variants || []).find(v => v.color === c);
                                       const isColActive = currentColor === c;
@@ -2560,16 +2729,16 @@
                                               }
                                             });
                                           }}
-                                          className={`px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium border transition flex items-center gap-1 ${
+                                          className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-semibold transition flex items-center gap-1 border-2 ${
                                             isColActive
-                                              ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
+                                              ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
                                               : colorStock <= 0
-                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
-                                              : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60'
+                                              : 'border-zinc-200 bg-white text-zinc-700 hover:border-pink-300'
                                           }`}
                                         >
                                           {colorVar?.image && (
-                                            <img src={colorVar.image} alt="" className="w-3 h-3 rounded-full object-cover" />
+                                            <img src={colorVar.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />
                                           )}
                                           <span>{c}</span>
                                         </button>
@@ -2653,7 +2822,7 @@
                                   )}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto no-scrollbar">
+                                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto no-scrollbar p-1">
                                   {(prod.variants || []).map(v => (
                                     <button
                                       key={v.name}
@@ -2664,16 +2833,16 @@
                                           [prod.id]: { variantName: v.name, image: v.image || prod.image }
                                         });
                                       }}
-                                      className={`px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-medium border transition flex items-center gap-1 ${
+                                      className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-semibold transition flex items-center gap-1 border-2 ${
                                         currentVarName === v.name
-                                          ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
+                                          ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
                                           : v.stock <= 0
-                                          ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
-                                          : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                          ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60'
+                                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-pink-300'
                                       }`}
                                     >
                                       {v.image && (
-                                        <img src={v.image} alt="" className="w-3 h-3 rounded-full object-cover" />
+                                        <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />
                                       )}
                                       <span>{v.name}</span>
                                     </button>
@@ -2685,17 +2854,15 @@
 
                           <button
                             disabled={stock <= 0}
-                            onClick={() => addToCart(prod, currentVarName)}
-                            className={`w-full py-2 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
+                            onClick={() => addToCart(prod, currentVarName, false)}
+                            className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
                               stock <= 0
                                 ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-                                : stock <= 2
-                                ? 'bg-amber-500 hover:bg-amber-600 text-zinc-950 active:scale-95'
                                 : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95'
                             }`}
                           >
                             <Icon.Bag className="w-3.5 h-3.5" />
-                            <span>{stock <= 0 ? 'Agotado' : stock <= 2 ? `Comprar (Solo ${stock})` : 'Agregar'}</span>
+                            <span>{stock <= 0 ? 'Agotado' : 'Agregar al Carrito'}</span>
                           </button>
                         </div>
                       </div>
@@ -2856,9 +3023,9 @@
             /* =========================================================================
                 VISTA 2: PANEL DE ADMINISTRADOR PRO (Métricas, Inventario, Secciones, Pedidos, Reseñas, Clientes y Ajustes)
                 ========================================================================= */
-            <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 flex-1 w-full max-w-full overflow-hidden space-y-6">
+            <main className="max-w-7xl mx-auto px-2.5 sm:px-6 py-4 sm:py-6 flex-1 w-full max-w-full min-w-0 overflow-x-hidden space-y-6">
               {/* HEADER ADMIN */}
-              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full min-w-0">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="bg-zinc-900 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full tracking-wider uppercase">Panel Administrativo</span>
@@ -2899,22 +3066,29 @@
 
               {/* ADMIN TAB 1: MÉTRICAS Y GRÁFICAS */}
               {adminTab === 'metrics' && (
-                <div className="space-y-6">
+                <div className="space-y-6 w-full min-w-0">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
-                      <span className="text-xs text-zinc-500 font-medium">Ventas Registradas</span>
+                      <span className="text-xs text-zinc-500 font-medium">Ventas Realizadas</span>
                       <p className="text-2xl font-black text-zinc-900">${metrics.totalSales.toFixed(2)}</p>
                       <span className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
-                        <Icon.Check className="w-3 h-3" /> Transacciones en Supabase
+                        <Icon.Check className="w-3 h-3" /> {metrics.activeOrdersCount} transacciones válidas
                       </span>
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
                       <span className="text-xs text-zinc-500 font-medium">Pedidos Totales</span>
-                      <p className="text-2xl font-black text-zinc-900">{orders.length}</p>
-                      <span className="text-[11px] text-[#FF2E93] font-bold">
-                        {metrics.pendingCount} pendientes por verificar
-                      </span>
+                      <p className="text-2xl font-black text-zinc-900">{metrics.activeOrdersCount}</p>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[11px] text-[#FF2E93] font-bold">
+                          {metrics.pendingCount} pendientes por verificar
+                        </span>
+                        {metrics.cancelledCount > 0 && (
+                          <span className="text-[10px] text-zinc-400 font-medium">
+                            ({metrics.cancelledCount} cancelados excluidos)
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-zinc-200 space-y-1">
@@ -2956,13 +3130,14 @@
 
                     <div className="bg-white p-6 rounded-3xl border border-zinc-200 space-y-4">
                       <h4 className="font-bold text-sm text-zinc-900">Estado de Órdenes y Entregas</h4>
-                      <div className="grid grid-cols-2 gap-3 pt-2">
-                        {['pendiente', 'verificado', 'en_camino', 'entregado'].map(st => {
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                        {['pendiente', 'verificado', 'en_camino', 'entregado', 'cancelado'].map(st => {
                           const count = orders.filter(o => o.status === st).length;
+                          const isCancelled = st === 'cancelado';
                           return (
-                            <div key={st} className="border border-zinc-200 p-3 rounded-2xl bg-zinc-50">
-                              <span className="text-[11px] text-zinc-500 uppercase font-bold tracking-wider block">{st}</span>
-                              <span className="text-xl font-black text-zinc-900">{count}</span>
+                            <div key={st} className={`border p-3 rounded-2xl ${isCancelled ? 'border-red-200 bg-red-50/70' : 'border-zinc-200 bg-zinc-50'}`}>
+                              <span className={`text-[11px] uppercase font-bold tracking-wider block ${isCancelled ? 'text-red-600' : 'text-zinc-500'}`}>{st}</span>
+                              <span className={`text-xl font-black ${isCancelled ? 'text-red-700' : 'text-zinc-900'}`}>{count}</span>
                             </div>
                           );
                         })}
@@ -2974,9 +3149,9 @@
 
               {/* ADMIN TAB 2: INVENTARIO */}
               {adminTab === 'inventory' && (
-                <div className="grid lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 w-full max-w-full min-w-0">
                   {/* FORMULARIO AGREGAR PRODUCTO */}
-                  <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-xs h-fit space-y-4">
+                  <div className="bg-white p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs h-fit space-y-4 w-full max-w-full min-w-0">
                     <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
                       <Icon.Plus className="w-4 h-4 text-[#FF2E93]" /> Agregar Nuevo Producto
                     </h3>
@@ -3021,42 +3196,95 @@
                         </div>
                       </div>
 
-                      <div>
-                        <label className="font-semibold text-zinc-700 block mb-1">Foto Principal del Producto</label>
-                        <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-2xl p-2.5">
-                          {newProd.image ? (
-                            <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                              <img src={newProd.image} alt="Preview" className="w-full h-full object-contain" />
-                              <button
-                                type="button"
-                                onClick={() => setNewProd({ ...newProd, image: '' })}
-                                className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold"
-                                title="Eliminar foto"
-                              >✕</button>
-                            </div>
-                          ) : (
-                            <div className="w-14 h-14 rounded-xl bg-pink-50 border border-dashed border-pink-300 flex flex-col items-center justify-center text-[#FF2E93] shrink-0">
-                              <Icon.Photo className="w-5 h-5" />
-                              <span className="text-[8px] font-bold mt-0.5">Sin foto</span>
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <label className="cursor-pointer bg-white hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-800 hover:text-[#FF2E93] px-3 py-1.5 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 transition shadow-2xs">
-                              <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
-                              <span>{newProd.image ? 'Cambiar foto desde dispositivo' : 'Subir foto desde dispositivo'}</span>
+                      {/* GESTOR DE FOTOS MÚLTIPLES DEL PRODUCTO */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="font-semibold text-zinc-700 block text-xs">
+                            Fotos del Producto ({(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).length})
+                          </label>
+                          <span className="text-[10px] text-zinc-400">Puedes seleccionar varias fotos</span>
+                        </div>
+
+                        <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            {(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).map((imgUrl, imgIdx) => (
+                              <div
+                                key={imgIdx}
+                                className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 bg-white flex items-center justify-center shadow-xs group transition ${
+                                  imgIdx === 0 ? 'border-[#FF2E93] ring-2 ring-pink-100' : 'border-zinc-200 hover:border-zinc-300'
+                                }`}
+                              >
+                                <img src={imgUrl} alt={`Foto ${imgIdx + 1}`} className="w-full h-full object-contain p-0.5" />
+
+                                {imgIdx === 0 ? (
+                                  <span className="absolute bottom-0 inset-x-0 bg-[#FF2E93] text-white text-[8px] font-black text-center py-0.5 tracking-wider uppercase">
+                                    Principal
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentImages = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
+                                      const selected = currentImages.splice(imgIdx, 1)[0];
+                                      const reordered = [selected, ...currentImages];
+                                      setNewProd({ ...newProd, image: reordered[0], images: reordered });
+                                      showToast('Foto establecida como Principal ✨');
+                                    }}
+                                    className="absolute bottom-0 inset-x-0 bg-black/60 hover:bg-[#FF2E93] text-white text-[8px] font-bold text-center py-0.5 opacity-0 group-hover:opacity-100 transition"
+                                  >
+                                    Hacer Principal
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const currentImages = (newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : [])).filter((_, i) => i !== imgIdx);
+                                    setNewProd({
+                                      ...newProd,
+                                      image: currentImages[0] || '',
+                                      images: currentImages
+                                    });
+                                  }}
+                                  className="absolute top-1 right-1 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold shadow-xs transition"
+                                  title="Eliminar foto"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+
+                            {/* Botón para Añadir Fotos */}
+                            <label className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-50 flex flex-col items-center justify-center cursor-pointer text-[#FF2E93] transition group shrink-0">
+                              <Icon.Plus className="w-5 h-5 group-hover:scale-110 transition" />
+                              <span className="text-[9px] font-bold mt-1">+ Fotos</span>
                               <input
                                 type="file"
+                                multiple
                                 accept="image/*"
                                 className="hidden"
                                 onChange={async e => {
-                                  if (e.target.files[0]) {
-                                    const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                    if (url) setNewProd({ ...newProd, image: url });
+                                  if (e.target.files && e.target.files.length > 0) {
+                                    const files = Array.from(e.target.files);
+                                    const current = [...(newProd.images?.length > 0 ? newProd.images : (newProd.image ? [newProd.image] : []))];
+                                    for (let f of files) {
+                                      const url = await uploadFileToSupabase(f, 'products');
+                                      if (url && !current.includes(url)) current.push(url);
+                                    }
+                                    setNewProd({
+                                      ...newProd,
+                                      image: current[0] || '',
+                                      images: current
+                                    });
                                   }
                                 }}
                               />
                             </label>
-                            <p className="text-[10px] text-zinc-400 mt-1 truncate">Formatos JPG, PNG, WEBP desde tu galería o cámara.</p>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-200/60">
+                            <span>Puedes subir varias fotos (frente, detalle, modelo).</span>
+                            <span>JPG, PNG, WEBP</span>
                           </div>
                         </div>
                       </div>
@@ -3469,13 +3697,13 @@
                                     <span className="font-bold text-zinc-800 text-xs">{col.name || `Color ${cIdx + 1}`}</span>
                                   </div>
 
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 w-full min-w-0">
                                     {newProdSizes.map((sz, szIdx) => {
                                       const key = `${col.name}_${sz}`;
                                       const val = newProdMatrixStock[key] !== undefined ? newProdMatrixStock[key] : (newProdBulkStock || 5);
                                       return (
-                                        <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
-                                          <span className="font-bold text-zinc-700 text-[11px] truncate">{sz}:</span>
+                                        <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-1.5 sm:px-2 py-1 min-w-0">
+                                          <span className="font-bold text-zinc-700 text-[11px] truncate min-w-0 flex-1">{sz}:</span>
                                           <input
                                             type="number"
                                             min="0"
@@ -3487,7 +3715,7 @@
                                                 [key]: isNaN(num) ? 0 : num
                                               });
                                             }}
-                                            className="w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93]"
+                                            className="w-10 sm:w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93] shrink-0"
                                           />
                                         </div>
                                       );
@@ -3507,8 +3735,8 @@
                   </div>
 
                   {/* LISTA DE PRODUCTOS */}
-                  <div className="lg:col-span-2 space-y-4">
-                    <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs space-y-3">
+                  <div className="lg:col-span-2 space-y-4 w-full max-w-full min-w-0">
+                    <div className="bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs space-y-3 w-full max-w-full min-w-0">
                       <div className="flex items-center justify-between gap-4">
                         <div className="relative flex-1">
                           <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-400">
@@ -3586,11 +3814,18 @@
                             {/* FILA SUPERIOR: FOTO, TÍTULO, PRECIO, CATEGORÍAS Y ACCIONES */}
                             <div className="flex items-start justify-between gap-2.5 min-w-0 w-full">
                               <div className="flex items-start gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-                                <img
-                                  src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
-                                  alt={prod.name}
-                                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-zinc-200 shrink-0"
-                                />
+                                <div className="relative shrink-0">
+                                  <img
+                                    src={prod.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                                    alt={prod.name}
+                                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-zinc-200"
+                                  />
+                                  {getProductImages(prod).length > 1 && (
+                                    <span className="absolute bottom-0 right-0 bg-black/70 text-white text-[9px] font-bold px-1 rounded-tl-md rounded-br-xl">
+                                      +{getProductImages(prod).length}
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="space-y-1 min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <h4 className="font-bold text-zinc-900 text-xs sm:text-sm break-words line-clamp-2">{prod.name}</h4>
@@ -4379,8 +4614,8 @@
               MODAL: EDITOR DE PRODUCTOS
               ========================================================================= */}
           {editingProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setEditingProduct(null)}>
-              <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto text-xs" onClick={e => e.stopPropagation()}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => setEditingProduct(null)}>
+              <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full p-4 sm:p-6 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto text-xs min-w-0" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b pb-3">
                   <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
                     <Icon.Edit className="w-4 h-4 text-[#FF2E93]" /> Editar Producto en Supabase
@@ -4448,42 +4683,95 @@
                     </div>
                   </div>
 
-                  <div>
-                    <label className="font-semibold text-zinc-700 block mb-1">Foto Principal del Producto</label>
-                    <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-2xl p-2.5">
-                      {editingProduct.image ? (
-                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                          <img src={editingProduct.image} alt="Preview" className="w-full h-full object-contain" />
-                          <button
-                            type="button"
-                            onClick={() => setEditingProduct({ ...editingProduct, image: '' })}
-                            className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold"
-                            title="Eliminar foto"
-                          >✕</button>
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-xl bg-pink-50 border border-dashed border-pink-300 flex flex-col items-center justify-center text-[#FF2E93] shrink-0">
-                          <Icon.Photo className="w-5 h-5" />
-                          <span className="text-[8px] font-bold mt-0.5">Sin foto</span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <label className="cursor-pointer bg-white hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-800 hover:text-[#FF2E93] px-3 py-1.5 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 transition shadow-2xs">
-                          <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
-                          <span>{editingProduct.image ? 'Cambiar foto desde dispositivo' : 'Subir foto desde dispositivo'}</span>
+                  {/* GESTOR DE FOTOS MÚLTIPLES EN EDICIÓN */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-semibold text-zinc-700 block text-xs">
+                        Fotos del Producto ({(editingProduct.images?.length > 0 ? editingProduct.images : (editingProduct.image ? [editingProduct.image] : [])).length})
+                      </label>
+                      <span className="text-[10px] text-zinc-400">Puedes añadir o cambiar fotos</span>
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 space-y-2.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        {(editingProduct.images?.length > 0 ? editingProduct.images : (editingProduct.image ? [editingProduct.image] : [])).map((imgUrl, imgIdx) => (
+                          <div
+                            key={imgIdx}
+                            className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 bg-white flex items-center justify-center shadow-xs group transition ${
+                              imgIdx === 0 ? 'border-[#FF2E93] ring-2 ring-pink-100' : 'border-zinc-200 hover:border-zinc-300'
+                            }`}
+                          >
+                            <img src={imgUrl} alt={`Foto ${imgIdx + 1}`} className="w-full h-full object-contain p-0.5" />
+
+                            {imgIdx === 0 ? (
+                              <span className="absolute bottom-0 inset-x-0 bg-[#FF2E93] text-white text-[8px] font-black text-center py-0.5 tracking-wider uppercase">
+                                Principal
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentImages = [...(editingProduct.images?.length > 0 ? editingProduct.images : (editingProduct.image ? [editingProduct.image] : []))];
+                                  const selected = currentImages.splice(imgIdx, 1)[0];
+                                  const reordered = [selected, ...currentImages];
+                                  setEditingProduct({ ...editingProduct, image: reordered[0], images: reordered });
+                                  showToast('Foto establecida como Principal ✨');
+                                }}
+                                className="absolute bottom-0 inset-x-0 bg-black/60 hover:bg-[#FF2E93] text-white text-[8px] font-bold text-center py-0.5 opacity-0 group-hover:opacity-100 transition"
+                              >
+                                Hacer Principal
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentImages = (editingProduct.images?.length > 0 ? editingProduct.images : (editingProduct.image ? [editingProduct.image] : [])).filter((_, i) => i !== imgIdx);
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  image: currentImages[0] || '',
+                                  images: currentImages
+                                });
+                              }}
+                              className="absolute top-1 right-1 w-4 h-4 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold shadow-xs transition"
+                              title="Eliminar foto"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Botón para Añadir Fotos */}
+                        <label className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-50 flex flex-col items-center justify-center cursor-pointer text-[#FF2E93] transition group shrink-0">
+                          <Icon.Plus className="w-5 h-5 group-hover:scale-110 transition" />
+                          <span className="text-[9px] font-bold mt-1">+ Fotos</span>
                           <input
                             type="file"
+                            multiple
                             accept="image/*"
                             className="hidden"
                             onChange={async e => {
-                              if (e.target.files[0]) {
-                                const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                if (url) setEditingProduct({ ...editingProduct, image: url });
+                              if (e.target.files && e.target.files.length > 0) {
+                                const files = Array.from(e.target.files);
+                                const current = [...(editingProduct.images?.length > 0 ? editingProduct.images : (editingProduct.image ? [editingProduct.image] : []))];
+                                for (let f of files) {
+                                  const url = await uploadFileToSupabase(f, 'products');
+                                  if (url && !current.includes(url)) current.push(url);
+                                }
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  image: current[0] || '',
+                                  images: current
+                                });
                               }
                             }}
                           />
                         </label>
-                        <p className="text-[10px] text-zinc-400 mt-1 truncate">Formatos JPG, PNG, WEBP desde tu galería o cámara.</p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-200/60">
+                        <span>Puedes subir varias fotos (frente, detalle, modelo).</span>
+                        <span>JPG, PNG, WEBP</span>
                       </div>
                     </div>
                   </div>
@@ -4902,13 +5190,13 @@
                                 <span className="font-bold text-zinc-800 text-xs">{col.name || `Color ${cIdx + 1}`}</span>
                               </div>
 
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 w-full min-w-0">
                                 {editSizes.map((sz, szIdx) => {
                                   const key = `${col.name}_${sz}`;
                                   const val = editMatrixStock[key] !== undefined ? editMatrixStock[key] : (editBulkStock || 5);
                                   return (
-                                    <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
-                                      <span className="font-bold text-zinc-700 text-[11px] truncate">{sz}:</span>
+                                    <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-1.5 sm:px-2 py-1 min-w-0">
+                                      <span className="font-bold text-zinc-700 text-[11px] truncate min-w-0 flex-1">{sz}:</span>
                                       <input
                                         type="number"
                                         min="0"
@@ -4920,7 +5208,7 @@
                                             [key]: isNaN(num) ? 0 : num
                                           });
                                         }}
-                                        className="w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93]"
+                                        className="w-10 sm:w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93] shrink-0"
                                       />
                                     </div>
                                   );
@@ -5445,20 +5733,83 @@
               MODAL: VISTA RÁPIDA DE PRODUCTO CON SELECTOR DE TONOS/TALLAS
               ========================================================================= */}
           {quickViewProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => {
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => {
               setQuickViewProduct(null);
               if (window.location.hash.startsWith('#/producto/')) {
                 window.location.hash = selectedSection === 'TODOS' ? '#/' : selectedSection === 'FAVORITOS' ? '#/favoritos' : `#/seccion/${encodeURIComponent(selectedSection)}`;
               }
             }}>
-              <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-zinc-200 flex flex-col md:flex-row relative" onClick={e => e.stopPropagation()}>
-                <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+              <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-zinc-200 flex flex-col md:flex-row relative" onClick={e => e.stopPropagation()}>
+                {/* HEADER MÓVIL STICKY (NUNCA SE CORTA EL BOTÓN VOLVER / CERRAR) */}
+                <div className="sticky top-0 z-30 flex items-center justify-between p-3 bg-white/95 backdrop-blur-md border-b border-zinc-100 md:hidden w-full">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickViewProduct(null);
+                      if (window.location.hash.startsWith('#/producto/')) {
+                        window.location.hash = selectedSection === 'TODOS' ? '#/' : selectedSection === 'FAVORITOS' ? '#/favoritos' : `#/seccion/${encodeURIComponent(selectedSection)}`;
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold active:scale-95 transition shadow-2xs"
+                  >
+                    <span>← Volver</span>
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleShareProduct(quickViewProduct)}
+                      className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-700 active:scale-90 transition shadow-xs"
+                      title="Compartir producto"
+                    >
+                      <Icon.Share className="w-4 h-4 text-zinc-700" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleFavorite(quickViewProduct.id, quickViewProduct.name)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center shadow-xs transition-all active:scale-90 ${
+                        favorites.includes(quickViewProduct.id)
+                          ? 'bg-rose-50 text-rose-500 border border-rose-200'
+                          : 'bg-zinc-100 text-zinc-600 hover:text-rose-500'
+                      }`}
+                      title={favorites.includes(quickViewProduct.id) ? 'Quitar de Favoritos' : 'Guardar en Favoritos'}
+                    >
+                      <Icon.Heart
+                        className={`w-4 h-4 ${favorites.includes(quickViewProduct.id) ? 'fill-rose-500 text-rose-500' : 'text-zinc-600'}`}
+                        filled={favorites.includes(quickViewProduct.id)}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickViewProduct(null);
+                        if (window.location.hash.startsWith('#/producto/')) {
+                          window.location.hash = selectedSection === 'TODOS' ? '#/' : selectedSection === 'FAVORITOS' ? '#/favoritos' : `#/seccion/${encodeURIComponent(selectedSection)}`;
+                        }
+                      }}
+                      className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-700 text-sm active:scale-90 transition shadow-xs"
+                      title="Cerrar"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* BOTONES FLOTANTES EN DESKTOP */}
+                <div className="hidden md:flex absolute top-3 right-3 items-center gap-2 z-20">
+                  <button
+                    type="button"
+                    onClick={() => handleShareProduct(quickViewProduct)}
+                    className="w-8 h-8 rounded-full bg-white/90 hover:bg-white flex items-center justify-center text-zinc-600 hover:text-[#FF2E93] shadow-md transition-all active:scale-90 border border-zinc-100"
+                    title="Compartir producto"
+                  >
+                    <Icon.Share className="w-4 h-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => toggleFavorite(quickViewProduct.id, quickViewProduct.name)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all active:scale-90 ${
+                    className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-all active:scale-90 border border-zinc-100 ${
                       favorites.includes(quickViewProduct.id)
-                        ? 'bg-rose-50 text-rose-500 border border-rose-200'
+                        ? 'bg-rose-50 text-rose-500 border-rose-200'
                         : 'bg-white/90 hover:bg-white text-zinc-500 hover:text-rose-500'
                     }`}
                     title={favorites.includes(quickViewProduct.id) ? 'Quitar de Favoritos' : 'Guardar en Favoritos'}
@@ -5475,7 +5826,8 @@
                         window.location.hash = selectedSection === 'TODOS' ? '#/' : selectedSection === 'FAVORITOS' ? '#/favoritos' : `#/seccion/${encodeURIComponent(selectedSection)}`;
                       }
                     }}
-                    className="w-8 h-8 rounded-full bg-white/90 hover:bg-white flex items-center justify-center font-bold text-zinc-600 shadow-md"
+                    className="w-8 h-8 rounded-full bg-white/90 hover:bg-white flex items-center justify-center font-bold text-zinc-600 shadow-md border border-zinc-100 active:scale-90 transition"
+                    title="Cerrar"
                   >
                     ✕
                   </button>
@@ -5505,16 +5857,74 @@
                   const displayImg = varObj?.image || (hasColorAndSize ? quickViewProduct.variants?.find(v => v.color === currentColor && v.image)?.image : null) || modalActive.image || quickViewProduct.image;
                   const stock = varObj ? varObj.stock : 0;
                   const hasDiscount = Boolean(quickViewProduct.discount_price && Number(quickViewProduct.discount_price) < Number(quickViewProduct.price));
+                  const allImages = getProductImages(quickViewProduct);
+                  const activePhotoUrl = allImages[quickViewActiveImageIndex] || displayImg || allImages[0];
 
                   return (
                     <>
-                      {/* FOTO COMPLETA SIN RECORTES (OPTIMIZADA PARA MÓVIL) */}
-                      <div className="md:w-1/2 min-h-[280px] sm:min-h-[360px] max-h-[52vh] md:max-h-[75vh] bg-gradient-to-b from-zinc-50 to-pink-50/20 relative flex items-center justify-center p-3 sm:p-5 overflow-hidden">
-                        <img
-                          src={displayImg || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
-                          alt={quickViewProduct.name}
-                          className="w-full h-full max-h-[46vh] md:max-h-[70vh] object-contain drop-shadow-sm transition-all duration-300"
-                        />
+                      {/* GALERÍA DE FOTOS: FOTO PRINCIPAL + MINIATURAS + CONTROLES */}
+                      <div className="md:w-1/2 flex flex-col bg-gradient-to-b from-zinc-50 to-pink-50/20 border-b md:border-b-0 md:border-r border-zinc-100">
+                        {/* FOTO GRANDE PRINCIPAL */}
+                        <div className="relative min-h-[280px] sm:min-h-[360px] max-h-[50vh] md:max-h-[65vh] flex-1 flex items-center justify-center p-3 sm:p-5 overflow-hidden">
+                          <img
+                            src={activePhotoUrl}
+                            alt={quickViewProduct.name}
+                            className="w-full h-full max-h-[46vh] md:max-h-[60vh] object-contain drop-shadow-sm transition-all duration-300"
+                          />
+
+                          {/* FLECHAS DE NAVEGACIÓN ANTERIOR / SIGUIENTE (SI HAY MÁS DE 1 FOTO) */}
+                          {allImages.length > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex - 1 + allImages.length) % allImages.length);
+                                }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80"
+                                title="Foto anterior"
+                              >
+                                ‹
+                              </button>
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setQuickViewActiveImageIndex((quickViewActiveImageIndex + 1) % allImages.length);
+                                }}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-zinc-700 shadow-md flex items-center justify-center text-sm font-black active:scale-90 transition border border-zinc-200/80"
+                                title="Foto siguiente"
+                              >
+                                ›
+                              </button>
+
+                              {/* INDICADOR DE FOTO ACTUAL (ej. 1 / 3) */}
+                              <span className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                                {quickViewActiveImageIndex + 1} / {allImages.length}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* MINIATURAS (THUMBNAILS) SI HAY MÁS DE 1 FOTO */}
+                        {allImages.length > 1 && (
+                          <div className="p-2 sm:p-2.5 bg-white/70 backdrop-blur-xs border-t border-zinc-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                            {allImages.map((imgUrl, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setQuickViewActiveImageIndex(idx)}
+                                className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition shrink-0 bg-white shadow-2xs ${
+                                  quickViewActiveImageIndex === idx
+                                    ? 'border-[#FF2E93] ring-2 ring-pink-200 scale-105'
+                                    : 'border-zinc-200 hover:border-pink-300 opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <img src={imgUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
@@ -5544,7 +5954,7 @@
                                 <div className="flex justify-between items-center text-xs mb-1.5">
                                   <span className="font-semibold text-zinc-700">1. Selecciona Color: <strong className="text-[#FF2E93]">{currentColor}</strong></span>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-2 p-1">
                                   {distinctColors.map(c => {
                                     const colorVar = (quickViewProduct.variants || []).find(v => v.color === c);
                                     const isColActive = currentColor === c;
@@ -5561,6 +5971,11 @@
                                           const nextSize = matchedVar ? matchedVar.size : currentSize;
                                           const nextVarName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
                                           setQuickViewSelectedVar(nextVarName);
+                                          const nextImg = matchedVar?.image || colorVar?.image;
+                                          if (nextImg) {
+                                            const targetIdx = allImages.indexOf(nextImg);
+                                            if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
+                                          }
                                           setActiveVariants({
                                             ...activeVariants,
                                             [quickViewProduct.id]: {
@@ -5571,12 +5986,12 @@
                                             }
                                           });
                                         }}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-2 ${
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 border-2 ${
                                           isColActive
-                                            ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-2 ring-[#FF2E93]'
+                                            ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
                                             : colorStock <= 0
-                                            ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
-                                            : 'border-zinc-200 hover:border-[#FF2E93] text-zinc-700'
+                                            ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60'
+                                            : 'border-zinc-200 bg-white hover:border-pink-300 text-zinc-700'
                                         }`}
                                       >
                                         {colorVar?.image ? (
@@ -5630,7 +6045,7 @@
                                         }}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
                                           isSizeActive
-                                            ? 'border-[#FF2E93] bg-[#FF2E93] text-white shadow-xs ring-2 ring-pink-200'
+                                            ? 'border-[#FF2E93] bg-[#FF2E93] text-white shadow-xs font-black'
                                             : combStock <= 0
                                             ? 'border-zinc-200 bg-zinc-100 text-zinc-300 line-through cursor-not-allowed'
                                             : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93] bg-white'
@@ -5662,27 +6077,31 @@
                                 </span>
                               </div>
 
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex flex-wrap gap-1.5 p-1">
                                 {(quickViewProduct.variants || []).map(v => (
                                   <button
                                     key={v.name}
                                     disabled={v.stock <= 0}
                                     onClick={() => {
                                       setQuickViewSelectedVar(v.name);
+                                      if (v.image) {
+                                        const targetIdx = allImages.indexOf(v.image);
+                                        if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
+                                      }
                                       setActiveVariants({
                                         ...activeVariants,
                                         [quickViewProduct.id]: { variantName: v.name, image: v.image || quickViewProduct.image }
                                       });
                                     }}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-1.5 ${
                                       currentVarName === v.name
-                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-1 ring-[#FF2E93]'
+                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
                                         : v.stock <= 0
-                                        ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through'
-                                        : 'border-zinc-200 hover:border-[#FF2E93]'
+                                        ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
+                                        : 'border-zinc-200 bg-white hover:border-[#FF2E93] text-zinc-700'
                                     }`}
                                   >
-                                    {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
+                                    {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />}
                                     <span>{v.name}</span>
                                     {v.stock > 0 && v.stock <= 2 && (
                                       <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
@@ -5694,20 +6113,36 @@
                           )}
                         </div>
 
-                        <button
-                          disabled={stock <= 0}
-                          onClick={() => addToCart(quickViewProduct, currentVarName)}
-                          className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 ${
-                            stock <= 0
-                              ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-                              : stock <= 2
-                              ? 'bg-amber-500 hover:bg-amber-600 text-zinc-950 active:scale-95'
-                              : 'bg-[#FF2E93] hover:bg-[#e0157a] text-white active:scale-95'
-                          }`}
-                        >
-                          <Icon.Bag className="w-4 h-4" />
-                          <span>{stock <= 0 ? 'Agotado' : stock <= 2 ? `Comprar Ahora (Solo quedan ${stock})` : `Agregar al Carrito (${currentVarName})`}</span>
-                        </button>
+                        {stock <= 0 ? (
+                          <button
+                            disabled
+                            className="w-full py-3.5 rounded-xl font-bold text-sm bg-zinc-100 text-zinc-400 cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            <Icon.Bag className="w-4 h-4" />
+                            <span>Producto Agotado</span>
+                          </button>
+                        ) : (
+                          <div className="space-y-2 pt-1">
+                            {/* BOTÓN 1: COMPRAR AHORA (Añade y abre el carrito directamente) */}
+                            <button
+                              onClick={() => addToCart(quickViewProduct, currentVarName, true)}
+                              className="w-full py-3.5 rounded-xl font-bold text-sm bg-[#FF2E93] hover:bg-[#e0157a] text-white shadow-md active:scale-95 transition flex items-center justify-center gap-2"
+                            >
+                              <Icon.Bag className="w-4 h-4" />
+                              <span>Comprar Ahora ({currentVarName})</span>
+                            </button>
+
+                            {/* BOTÓN 2: SOLO AGREGAR AL CARRITO (Añade con toast y permanece en la tienda) */}
+                            <button
+                              type="button"
+                              onClick={() => addToCart(quickViewProduct, currentVarName, false)}
+                              className="w-full py-2.5 rounded-xl font-bold text-xs bg-pink-50 hover:bg-pink-100 text-[#FF2E93] border border-pink-200 active:scale-95 transition flex items-center justify-center gap-1.5"
+                            >
+                              <Icon.Plus className="w-3.5 h-3.5" />
+                              <span>+ Solo Agregar al Carrito</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </>
                   );

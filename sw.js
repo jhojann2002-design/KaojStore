@@ -1,10 +1,11 @@
 // =========================================================================
 // SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Soporte Offline)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v7';
+const CACHE_NAME = 'kaoj-store-v8';
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './app.js',
   './manifest.json',
   './icons/kaoj-logo.png',
   './icons/icon-192.png',
@@ -20,7 +21,6 @@ const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 

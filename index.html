@@ -4021,9 +4021,30 @@
         if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
         if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
 
-        // Verificación inteligente de comprobante Banco Pichincha / DeUna
+        // Verificación anti-fraude y anti-duplicados de comprobante Banco Pichincha / DeUna
+        if (customer.receiptQrData?.isDuplicate) {
+          setIsSubmittingOrder(false);
+          return showToast(`Este comprobante ya fue utilizado en el pedido #${customer.receiptQrData.duplicateOrder}. Debes realizar una transferencia nueva.`, 'error');
+        }
+
+        // Doble comprobación en tiempo real en la base de datos
+        if (customer.receiptRef && customer.receiptRef.trim()) {
+          try {
+            const {
+              data: serverCheck
+            } = await supabase.rpc('kaoj_check_receipt_duplicate', {
+              check_ref: customer.receiptRef.trim(),
+              check_uuid: customer.receiptQrData?.uuid || '',
+              check_hash: customer.receiptQrData?.hash || ''
+            });
+            if (serverCheck && serverCheck.is_duplicate) {
+              setIsSubmittingOrder(false);
+              return showToast(`Este comprobante ya fue utilizado en el pedido #${serverCheck.existing_order_code}. No se permiten comprobantes duplicados.`, 'error');
+            }
+          } catch (_) {}
+        }
         let initialStatus = 'pendiente';
-        if (customer.receiptQrData) {
+        if (customer.receiptQrData && !customer.receiptQrData.isDuplicate) {
           const qr = customer.receiptQrData;
           adminNotesParts.push(`[QR PICHINCHA VERIFICADO: $${Number(qr.amount).toFixed(2)} | Emisor: ${qr.senderName} | Ref: ${qr.secuencial || qr.uuid} | Dest: ${qr.receiverName} (${qr.receiverAcc})]`);
           const receiverMatches = qr.receiverAcc && qr.receiverAcc.includes('7440') || qr.receiverName && qr.receiverName.toUpperCase().includes('DEMERA') || settings.bank_pichincha_acc && qr.receiverAcc && qr.receiverAcc.includes(settings.bank_pichincha_acc.slice(-4));
@@ -10330,16 +10351,41 @@
           setUploading(true);
 
           // 1. Escaneo inteligente del código QR de la transferencia en segundo plano
-          scanQRCodeFromImage(file).then(qrRaw => {
+          scanQRCodeFromImage(file).then(async qrRaw => {
             if (qrRaw) {
               const parsed = parsePichinchaReceiptQR(qrRaw);
               if (parsed) {
+                let isDuplicate = false;
+                let duplicateOrder = null;
+                try {
+                  const {
+                    data: dupCheck
+                  } = await supabase.rpc('kaoj_check_receipt_duplicate', {
+                    check_ref: parsed.secuencial || '',
+                    check_uuid: parsed.uuid || '',
+                    check_hash: parsed.hash || ''
+                  });
+                  if (dupCheck && dupCheck.is_duplicate) {
+                    isDuplicate = true;
+                    duplicateOrder = dupCheck.existing_order_code;
+                  }
+                } catch (errCheck) {
+                  console.warn('Error comprobando duplicados:', errCheck);
+                }
                 setCustomer(prev => ({
                   ...prev,
                   receiptRef: parsed.secuencial || prev.receiptRef,
-                  receiptQrData: parsed
+                  receiptQrData: {
+                    ...parsed,
+                    isDuplicate,
+                    duplicateOrder
+                  }
                 }));
-                showToast(`✓ Comprobante Pichincha/DeUna verificado: $${parsed.amount.toFixed(2)} por ${parsed.senderName}`, 'success');
+                if (isDuplicate) {
+                  showToast(`❌ Comprobante ya usado anteriormente en el pedido #${duplicateOrder}`, 'error');
+                } else {
+                  showToast(`✓ Comprobante Pichincha/DeUna verificado: $${parsed.amount.toFixed(2)} por ${parsed.senderName}`, 'success');
+                }
               }
             }
           }).catch(err => console.warn('QR scan error:', err));
@@ -10380,7 +10426,17 @@
           receiptQrData: null
         }),
         className: "text-[10px] text-red-500 font-bold hover:underline"
-      }, "Cambiar")), customer.receiptQrData && /*#__PURE__*/React.createElement("div", {
+      }, "Cambiar")), customer.receiptQrData && (customer.receiptQrData.isDuplicate ? /*#__PURE__*/React.createElement("div", {
+        className: "bg-red-50 border border-red-300 rounded-2xl p-3.5 text-xs space-y-1.5 animate-in fade-in"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-1.5 text-red-800 font-extrabold text-xs"
+      }, /*#__PURE__*/React.createElement(Icon.Close, {
+        className: "w-4 h-4 text-red-600 shrink-0"
+      }), /*#__PURE__*/React.createElement("span", null, "❌ ¡Comprobante ya utilizado en otra compra!")), /*#__PURE__*/React.createElement("p", {
+        className: "text-red-800 text-[11px] leading-relaxed"
+      }, "Este comprobante con secuencial ", /*#__PURE__*/React.createElement("b", null, "#", customer.receiptQrData.secuencial || customer.receiptQrData.uuid), " ya fue registrado previamente en el pedido ", /*#__PURE__*/React.createElement("b", null, "#", customer.receiptQrData.duplicateOrder), "."), /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] text-red-700 font-bold bg-white/80 p-2 rounded-xl border border-red-200"
+      }, "⚠️ Cada compra requiere su propia transferencia única e intransferible. Por favor realiza tu pago o sube el comprobante correspondiente a este pedido.")) : /*#__PURE__*/React.createElement("div", {
         className: "bg-emerald-50 border border-emerald-300 rounded-2xl p-3 text-xs space-y-1.5 animate-in fade-in"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-1.5 text-emerald-900 font-extrabold text-xs"
@@ -10408,7 +10464,7 @@
         className: "text-[10px] text-emerald-700 font-bold flex items-center gap-1"
       }, /*#__PURE__*/React.createElement("span", null, "✓ Monto exacto confirmado ($", total.toFixed(2), "). Tu pedido será validado al instante.")) : /*#__PURE__*/React.createElement("p", {
         className: "text-[10px] text-amber-700 font-bold flex items-center gap-1"
-      }, /*#__PURE__*/React.createElement("span", null, "ℹ️ Monto transferido: $", customer.receiptQrData.amount.toFixed(2), " (Total de tu orden: $", total.toFixed(2), ")")))))), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, "ℹ️ Monto transferido: $", customer.receiptQrData.amount.toFixed(2), " (Total de tu orden: $", total.toFixed(2), ")"))))))), /*#__PURE__*/React.createElement("div", {
         className: "bg-zinc-50 border border-zinc-200 rounded-2xl p-4 space-y-1.5 text-xs"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex justify-between text-zinc-600"
@@ -11559,37 +11615,52 @@
           const duplicate = sec && orders.find(o => o.id !== ord.id && o.admin_notes && o.admin_notes.includes(sec));
           if (duplicate) {
             return /*#__PURE__*/React.createElement("div", {
-              className: "bg-red-50 border border-red-200 text-red-800 p-2 rounded-xl text-[11px] font-bold"
-            }, "⚠️ ALERTA DE SEGURIDAD: El secuencial ", sec, " ya fue registrado en el pedido #", duplicate.order_code, ".");
+              className: "bg-red-50 border border-red-300 text-red-800 p-2.5 rounded-xl text-[11px] font-bold space-y-1"
+            }, /*#__PURE__*/React.createElement("p", {
+              className: "flex items-center gap-1 text-red-700"
+            }, /*#__PURE__*/React.createElement(Icon.Close, {
+              className: "w-4 h-4 text-red-600 shrink-0"
+            }), /*#__PURE__*/React.createElement("span", null, "⚠️ ALERTA DE SEGURIDAD: Comprobante Duplicado")), /*#__PURE__*/React.createElement("p", {
+              className: "text-[10px] text-red-800 font-medium"
+            }, "El secuencial ", /*#__PURE__*/React.createElement("b", null, "#", sec), " ya fue utilizado y registrado en el pedido ", /*#__PURE__*/React.createElement("b", null, "#", duplicate.order_code), ". No se debe validar dos veces la misma transferencia."));
           }
           return null;
-        })(), /*#__PURE__*/React.createElement("div", {
-          className: "flex gap-2 pt-1 flex-wrap"
-        }, /*#__PURE__*/React.createElement("button", {
-          type: "button",
-          onClick: async () => {
-            const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
-            const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
-            await handleUpdateOrderStatus({
-              ...ord,
-              admin_notes: newNotes
-            }, 'verificado');
-            setAdminReceiptModal(null);
-          },
-          className: "flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
-        }, "✓ Validar Pago (", ord.status === 'verificado' ? 'Ya Verificado' : 'Marcar Verificado', ")"), /*#__PURE__*/React.createElement("button", {
-          type: "button",
-          onClick: async () => {
-            const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
-            const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
-            await handleUpdateOrderStatus({
-              ...ord,
-              admin_notes: newNotes
-            }, 'empacado');
-            setAdminReceiptModal(null);
-          },
-          className: "flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
-        }, "📦 Pasar a Empacado"))) : /*#__PURE__*/React.createElement("div", {
+        })(), (() => {
+          const sec = adminReceiptQrResult.secuencial;
+          const isDup = sec && orders.some(o => o.id !== ord.id && o.admin_notes && o.admin_notes.includes(sec));
+          if (isDup) {
+            return /*#__PURE__*/React.createElement("div", {
+              className: "bg-red-100/70 border border-red-200 text-red-800 p-2 rounded-xl text-center text-[11px] font-bold"
+            }, "⛔ Validación rápida bloqueada: Este comprobante ya pertenece a otro pedido.");
+          }
+          return /*#__PURE__*/React.createElement("div", {
+            className: "flex gap-2 pt-1 flex-wrap"
+          }, /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: async () => {
+              const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
+              const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
+              await handleUpdateOrderStatus({
+                ...ord,
+                admin_notes: newNotes
+              }, 'verificado');
+              setAdminReceiptModal(null);
+            },
+            className: "flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
+          }, "✓ Validar Pago (", ord.status === 'verificado' ? 'Ya Verificado' : 'Marcar Verificado', ")"), /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: async () => {
+              const note = `[QR PICHINCHA VERIFICADO: $${Number(adminReceiptQrResult.amount).toFixed(2)} | Emisor: ${adminReceiptQrResult.senderName} | Ref: ${adminReceiptQrResult.secuencial || adminReceiptQrResult.uuid}]`;
+              const newNotes = ord.admin_notes ? `${ord.admin_notes} • ${note}` : note;
+              await handleUpdateOrderStatus({
+                ...ord,
+                admin_notes: newNotes
+              }, 'empacado');
+              setAdminReceiptModal(null);
+            },
+            className: "flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-xl transition text-center shadow-xs"
+          }, "📦 Pasar a Empacado"));
+        })()) : /*#__PURE__*/React.createElement("div", {
           className: "space-y-1"
         }, /*#__PURE__*/React.createElement("p", {
           className: "font-bold text-zinc-800"

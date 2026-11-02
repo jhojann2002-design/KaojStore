@@ -651,6 +651,57 @@ BEGIN
 END;
 $$;
 
+-- 9.8.2 Verificar Si un Comprobante ya fue Utilizado (Anti-Fraude y Detección de Duplicados en Tiempo Real)
+CREATE OR REPLACE FUNCTION public.kaoj_check_receipt_duplicate(
+    check_ref TEXT,
+    check_uuid TEXT DEFAULT '',
+    check_hash TEXT DEFAULT ''
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    matched_order RECORD;
+    c_ref TEXT := NULLIF(TRIM(check_ref), '');
+    c_uuid TEXT := NULLIF(TRIM(check_uuid), '');
+    c_hash TEXT := NULLIF(TRIM(check_hash), '');
+BEGIN
+    IF c_ref IS NULL AND c_uuid IS NULL AND c_hash IS NULL THEN
+        RETURN jsonb_build_object('is_duplicate', false);
+    END IF;
+
+    -- Buscar órdenes existentes no canceladas que contengan este secuencial, UUID o firma hash
+    SELECT order_code, created_at INTO matched_order
+    FROM public.kaoj_orders
+    WHERE status != 'cancelado'
+      AND (
+        (c_ref IS NOT NULL AND (
+            admin_notes LIKE '%' || c_ref || '%' OR
+            payment_method LIKE '%' || c_ref || '%' OR
+            receipt_url LIKE '%' || c_ref || '%'
+        ))
+        OR
+        (c_uuid IS NOT NULL AND admin_notes LIKE '%' || c_uuid || '%')
+        OR
+        (c_hash IS NOT NULL AND admin_notes LIKE '%' || c_hash || '%')
+      )
+    ORDER BY id DESC
+    LIMIT 1;
+
+    IF matched_order.order_code IS NOT NULL THEN
+        RETURN jsonb_build_object(
+            'is_duplicate', true,
+            'existing_order_code', matched_order.order_code,
+            'message', 'Este comprobante ya fue utilizado en el pedido #' || matched_order.order_code
+        );
+    END IF;
+
+    RETURN jsonb_build_object('is_duplicate', false);
+END;
+$$;
+
 -- 9.9 Obtener Clientes VIP (Solo Administrador Autorizado)
 CREATE OR REPLACE FUNCTION public.kaoj_admin_get_customers(admin_pin TEXT)
 RETURNS SETOF public.kaoj_customers

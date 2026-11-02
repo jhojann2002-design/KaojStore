@@ -2435,7 +2435,7 @@ ESTADO: ${status.toUpperCase()}
       const [isAdmin, setIsAdmin] = useState(false);
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinInput, setPinInput] = useState('');
-      const [adminTab, setAdminTab] = useState('metrics'); // 'metrics', 'inventory', 'sections', 'orders', 'reviews', 'customers', 'settings'
+      const [adminTab, setAdminTab] = useState('orders'); // 'orders', 'inventory', 'metrics', 'sections', 'reviews', 'customers', 'waitlist', 'settings'
       const [adminSearch, setAdminSearch] = useState('');
       const [adminFilterStatus, setAdminFilterStatus] = useState('todos');
       const [adminOrderSearch, setAdminOrderSearch] = useState('');
@@ -2814,7 +2814,7 @@ ESTADO: ${status.toUpperCase()}
 
           if (hash.startsWith('#/admin') || isAdminEntry) {
             const parts = hash.split('/');
-            const targetTab = parts[2] || (isAdminEntry ? 'orders' : 'metrics');
+            const targetTab = parts[2] || 'orders';
             const savedPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin');
             if (savedPin && (savedPin === '091002' || savedPin === '2026' || sessionStorage.getItem('kaoj_admin_authenticated') === 'true')) {
               sessionStorage.setItem('kaoj_admin_authenticated', 'true');
@@ -4555,7 +4555,7 @@ ESTADO: ${status.toUpperCase()}
           </div>
 
           {/* HEADER / NAVBAR PRINCIPAL */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-30 w-full overflow-hidden">
+          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-40 w-full">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO OFICIAL KAOJ STORE */}
@@ -4693,34 +4693,65 @@ ESTADO: ${status.toUpperCase()}
 
                     {/* MENÚ DESPLEGABLE DE PERFIL */}
                     {isProfileOpen && (
-                      <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-zinc-200 p-4 z-50 text-xs space-y-3">
-                        <div className="border-b pb-2">
-                          <p className="font-bold text-zinc-900 truncate">{user.user_metadata?.full_name || 'Clienta Kaoj'}</p>
-                          <p className="text-zinc-500 truncate text-[11px]">{user.email}</p>
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setIsProfileOpen(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-50 text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
+                          <div className="border-b border-zinc-100 pb-3 flex items-center gap-3">
+                            {user.user_metadata?.avatar_url ? (
+                              <img src={user.user_metadata.avatar_url} alt="User" className="w-10 h-10 rounded-full border-2 border-[#FF007F] shadow-2xs" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-[#FF007F] text-white flex items-center justify-center font-bold text-sm">
+                                {user.email?.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="font-extrabold text-zinc-900 truncate">{user.user_metadata?.full_name || 'Clienta Kaoj'}</p>
+                              <p className="text-zinc-500 truncate text-[11px] font-mono">{user.email}</p>
+                            </div>
+                          </div>
+
                           {customerProfile && (
-                            <div className="mt-2 bg-pink-50 border border-pink-200 text-[#FF2E93] rounded-lg p-2 text-center font-bold">
-                              Código: {customerProfile.customer_code} • {customerProfile.points || 0} Puntos
+                            <div className="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 text-[#FF007F] rounded-2xl p-2.5 text-center font-extrabold shadow-2xs">
+                              Código VIP: <span className="font-mono">{customerProfile.customer_code}</span> • {customerProfile.points || 0} Puntos
                             </div>
                           )}
+
+                          <div className="space-y-1.5 text-zinc-600 pt-1">
+                            <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
+                              <Icon.Check className="w-3.5 h-3.5" /> Carrito sincronizado en la nube
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => { setIsProfileOpen(false); setIsTrackingOpen(true); window.location.hash = '#/pedidos'; }}
+                              className="w-full text-left py-2 px-3 rounded-xl hover:bg-pink-50 hover:text-[#FF007F] font-bold transition flex items-center justify-between"
+                            >
+                              <span>📦 Mis Pedidos y Calificaciones</span>
+                              <span>→</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setIsProfileOpen(false); setIsPointsModalOpen(true); }}
+                              className="w-full text-left py-2 px-3 rounded-xl hover:bg-pink-50 hover:text-[#FF007F] font-bold transition flex items-center justify-between"
+                            >
+                              <span>💎 Mis Puntos Kaoj VIP</span>
+                              <span>→</span>
+                            </button>
+                          </div>
+
+                          <div className="pt-2 border-t border-zinc-100">
+                            <button
+                              type="button"
+                              onClick={handleLogout}
+                              className="w-full bg-zinc-100 hover:bg-red-50 hover:text-red-600 text-zinc-700 py-2.5 rounded-xl font-bold transition text-center flex items-center justify-center gap-1.5"
+                            >
+                              <span>Cerrar Sesión</span>
+                            </button>
+                          </div>
                         </div>
-                        <div className="space-y-1.5 text-zinc-600">
-                          <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
-                            <Icon.Check className="w-3.5 h-3.5" /> Carrito sincronizado en la nube
-                          </p>
-                          <button
-                            onClick={() => { setIsProfileOpen(false); setIsTrackingOpen(true); window.location.hash = '#/pedidos'; }}
-                            className="w-full text-left py-1 hover:text-[#FF2E93] font-medium"
-                          >
-                            Mis Pedidos y Calificaciones
-                          </button>
-                        </div>
-                        <button
-                          onClick={handleLogout}
-                          className="w-full bg-zinc-100 hover:bg-red-50 hover:text-red-600 text-zinc-700 py-2 rounded-xl font-bold transition text-center"
-                        >
-                          Cerrar Sesión
-                        </button>
-                      </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -5524,61 +5555,175 @@ ESTADO: ${status.toUpperCase()}
                 VISTA 2: PANEL DE ADMINISTRADOR PRO (Métricas, Inventario, Secciones, Pedidos, Reseñas, Clientes y Ajustes)
                 ========================================================================= */
             <main className="max-w-7xl mx-auto px-2.5 sm:px-6 py-4 sm:py-6 flex-1 w-full max-w-full min-w-0 overflow-x-hidden space-y-6">
-              {/* HEADER ADMIN */}
-              <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-zinc-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full min-w-0">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-zinc-900 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full tracking-wider uppercase">Panel Administrativo</span>
-                    <h2 className="font-serif-kaoj text-2xl sm:text-3xl font-extrabold text-zinc-900">
-                      KAOJ STORE
-                    </h2>
+              {/* HEADER ADMIN REDISEÑADO CON JERARQUÍA PROFESIONAL */}
+              <div className="bg-white p-4 sm:p-6 rounded-3xl border border-zinc-200/90 shadow-sm space-y-4 w-full min-w-0">
+                {/* 1. TÍTULO, IDENTIDAD & ACCIONES GLOBALES */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 w-full">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="bg-[#151E28] text-white text-[10px] font-extrabold px-3 py-1 rounded-full tracking-wider uppercase shadow-2xs">
+                        Panel Administrativo
+                      </span>
+                      <h2 className="font-serif-kaoj text-2xl sm:text-3xl font-black text-zinc-900 tracking-wide">
+                        KAOJ STORE
+                      </h2>
+                    </div>
+                    <p className="text-xs text-zinc-500">
+                      Centro de Control Boutique • Despacho de órdenes, gestión de inventario y configuración.
+                    </p>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Control integral de inventario, analítica, despacho de órdenes y configuración global.</p>
+
+                  {/* ACCIONES GLOBALES DE SESIÓN Y VISTA DE TIENDA */}
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => { setIsAdmin(false); window.location.hash = '#/'; }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-pink-50 hover:text-[#FF007F] text-zinc-700 border border-zinc-200 transition flex items-center gap-1.5 shadow-2xs"
+                      title="Ver la tienda tal como la ven tus clientas"
+                    >
+                      <Icon.Bag className="w-3.5 h-3.5 text-[#FF007F]" />
+                      <span>Ver Tienda</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sessionStorage.removeItem('kaoj_admin_authenticated');
+                        sessionStorage.removeItem('kaoj_admin_pin');
+                        localStorage.removeItem('kaoj_admin_pin');
+                        setIsAdmin(false);
+                        showToast('Sesión administrativa cerrada.');
+                        window.location.hash = '#/';
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#151E28] hover:bg-red-600 text-white transition flex items-center gap-1.5 shadow-2xs"
+                      title="Cerrar sesión de administrador"
+                    >
+                      <span>Salir</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 shrink-0">
-                  <button onClick={() => { setAdminTab('metrics'); window.location.hash = '#/admin/metrics'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'metrics' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.TrendingUp className="w-4 h-4" /> Métricas
-                  </button>
-                  <button onClick={() => { setAdminTab('inventory'); window.location.hash = '#/admin/inventory'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'inventory' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Box className="w-4 h-4" /> Inventario ({products.length})
-                  </button>
-                  <button onClick={() => { setAdminTab('sections'); window.location.hash = '#/admin/sections'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'sections' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Tag className="w-4 h-4" /> Secciones
-                  </button>
-                  <button onClick={() => { setAdminTab('orders'); window.location.hash = '#/admin/orders'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'orders' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Truck className="w-4 h-4" /> Pedidos ({orders.length})
-                  </button>
-                  <button onClick={() => { setAdminTab('reviews'); window.location.hash = '#/admin/reviews'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'reviews' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Star className="w-4 h-4" filled={true} /> Reseñas ({reviews.length})
-                  </button>
-                  <button onClick={() => { setAdminTab('customers'); window.location.hash = '#/admin/customers'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'customers' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.User className="w-4 h-4" /> Clientes VIP ({customersList.length})
-                  </button>
-                  <button onClick={() => { setAdminTab('waitlist'); window.location.hash = '#/admin/waitlist'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'waitlist' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Bell className="w-4 h-4" /> Solicitudes ({waitlistLeads.filter(l => l.status !== 'notificado').length})
-                  </button>
-                  <button onClick={() => { setAdminTab('settings'); window.location.hash = '#/admin/settings'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
-                    <Icon.Settings className="w-4 h-4" /> Ajustes
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleInstallApp}
-                    className="px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-[#FF007F] via-[#FF2E93] to-pink-500 text-white hover:brightness-110 shadow-xs transition flex items-center gap-1.5 shrink-0"
-                    title="Instalar Kaoj Admin como aplicación independiente en tu teléfono"
-                  >
-                    <span>📲</span> Instalar App
-                  </button>
-                  <button onClick={() => {
-                    sessionStorage.removeItem('kaoj_admin_authenticated');
-                    sessionStorage.removeItem('kaoj_admin_pin');
-                    localStorage.removeItem('kaoj_admin_pin');
-                    setIsAdmin(false);
-                    showToast('Sesión administrativa cerrada.');
-                    window.location.hash = '#/';
-                  }} className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white hover:bg-black transition">
-                    Cerrar Sesión / Tienda
-                  </button>
+                {/* 2. PESTAÑAS DE NAVEGACIÓN: PEDIDOS (1º) E INVENTARIO (2º) PRIMERO */}
+                <div className="border-t border-zinc-100 pt-3">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                    {/* 1. PEDIDOS (1ER LUGAR) */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('orders'); window.location.hash = '#/admin/orders'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'orders'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Truck className="w-4 h-4" />
+                      <span>Pedidos ({orders.length})</span>
+                      {orderStats.pendingCount > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                          adminTab === 'orders' ? 'bg-white text-[#FF007F]' : 'bg-amber-400 text-amber-950 animate-pulse'
+                        }`}>
+                          {orderStats.pendingCount} pendientes
+                        </span>
+                      )}
+                    </button>
+
+                    {/* 2. INVENTARIO (2DO LUGAR) */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('inventory'); window.location.hash = '#/admin/inventory'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'inventory'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Box className="w-4 h-4" />
+                      <span>Inventario ({products.length})</span>
+                    </button>
+
+                    {/* 3. MÉTRICAS */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('metrics'); window.location.hash = '#/admin/metrics'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'metrics'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.TrendingUp className="w-4 h-4" />
+                      <span>Métricas</span>
+                    </button>
+
+                    {/* 4. SECCIONES */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('sections'); window.location.hash = '#/admin/sections'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'sections'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Tag className="w-4 h-4" />
+                      <span>Secciones</span>
+                    </button>
+
+                    {/* 5. CLIENTES VIP */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('customers'); window.location.hash = '#/admin/customers'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'customers'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.User className="w-4 h-4" />
+                      <span>Clientes VIP ({customersList.length})</span>
+                    </button>
+
+                    {/* 6. RESEÑAS */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('reviews'); window.location.hash = '#/admin/reviews'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'reviews'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Star className="w-4 h-4" filled={true} />
+                      <span>Reseñas ({reviews.length})</span>
+                    </button>
+
+                    {/* 7. SOLICITUDES AGOTADOS */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('waitlist'); window.location.hash = '#/admin/waitlist'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'waitlist'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Bell className="w-4 h-4" />
+                      <span>Solicitudes ({waitlistLeads.filter(l => l.status !== 'notificado').length})</span>
+                    </button>
+
+                    {/* 8. AJUSTES */}
+                    <button
+                      type="button"
+                      onClick={() => { setAdminTab('settings'); window.location.hash = '#/admin/settings'; }}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition flex items-center gap-2 whitespace-nowrap shrink-0 shadow-2xs ${
+                        adminTab === 'settings'
+                          ? 'bg-[#FF007F] text-white shadow-md ring-2 ring-pink-400/30'
+                          : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      <Icon.Settings className="w-4 h-4" />
+                      <span>Ajustes</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 

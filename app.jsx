@@ -2229,7 +2229,15 @@ ESTADO: ${status.toUpperCase()}
         // Router Hash con Slash (#/admin, #/producto/:id, #/seccion/:name, #/favoritos, #/pedidos)
         const handleRouteFromHash = () => {
           let hash = window.location.hash || '#/';
-          const isAdminEntry = Boolean(window.IS_ADMIN_APP || window.location.pathname.endsWith('admin.html'));
+          const isAdminEntry = Boolean(window.IS_ADMIN_APP || window.location.pathname.endsWith('admin.html') || window.location.pathname.includes('/admin/'));
+
+          // Aislamiento PWA para iOS Safari y Android:
+          // Si intenta acceder al admin desde index.html, redirigir inmediatamente a admin.html
+          // para que Safari guarde la app "Kaoj Admin" (icono oscuro) y no "Kaoj Store".
+          if (hash.startsWith('#/admin') && !isAdminEntry) {
+            window.location.replace('admin.html' + hash);
+            return;
+          }
 
           if (isAdminEntry && (!hash.startsWith('#/admin'))) {
             hash = '#/admin/orders';
@@ -8138,8 +8146,15 @@ ESTADO: ${status.toUpperCase()}
                     setIsAdmin(true);
                     setShowPinModal(false);
                     setPinInput('');
-                    window.location.hash = '#/admin' + (adminTab && adminTab !== 'metrics' ? `/${adminTab}` : '');
                     showToast('Acceso administrativo concedido 👑');
+
+                    const isAlreadyAdminHtml = Boolean(window.IS_ADMIN_APP || window.location.pathname.includes('admin.html') || window.location.pathname.includes('/admin/'));
+                    if (!isAlreadyAdminHtml) {
+                      window.location.href = 'admin.html#/admin/orders';
+                      return;
+                    }
+
+                    window.location.hash = '#/admin' + (adminTab && adminTab !== 'metrics' ? `/${adminTab}` : '');
                     fetchAdminData(enteredPin);
                   } else {
                     showToast('PIN incorrecto. Acceso denegado.', 'error');
@@ -10971,16 +10986,41 @@ ESTADO: ${status.toUpperCase()}
 
               {/* Guía modal desplegable para iPhone / iOS Safari */}
               {showIosGuide && (
-                <div className="mt-2 bg-white text-zinc-900 p-4 rounded-2xl border border-pink-200 shadow-xl space-y-2 text-xs">
-                  <div className="flex justify-between items-center font-bold text-zinc-800">
-                    <span className="flex items-center gap-1 text-[#FF2E93]">
-                      📲 Cómo instalar en iPhone / Safari:
+                <div className="mt-2 bg-white text-zinc-900 p-4 rounded-3xl border border-zinc-200 shadow-2xl space-y-3 text-xs">
+                  <div className="flex justify-between items-center font-bold text-zinc-800 border-b border-zinc-100 pb-2">
+                    <span className="flex items-center gap-2 text-zinc-900 font-extrabold text-sm">
+                      <img
+                        src={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "icons/apple-touch-admin.png" : "icons/apple-touch-icon.png"}
+                        alt="Icono"
+                        className="w-7 h-7 rounded-xl shadow-xs border border-zinc-200 object-cover"
+                      />
+                      <span>
+                        {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin')))
+                          ? "Instalar Kaoj Admin en iPhone:"
+                          : "Instalar Kaoj Store en iPhone:"}
+                      </span>
                     </span>
-                    <button type="button" onClick={() => setShowIosGuide(false)} className="text-zinc-400 hover:text-zinc-600 font-bold">✕</button>
+                    <button type="button" onClick={() => setShowIosGuide(false)} className="text-zinc-400 hover:text-zinc-600 font-bold p-1">✕</button>
                   </div>
-                  <ol className="list-decimal list-inside space-y-1.5 text-zinc-600 text-[11px] leading-relaxed">
-                    <li className="flex items-center gap-1.5 flex-wrap">Toca el botón <b>Compartir</b> <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-pink-50 border border-pink-200 text-[#FF007F] rounded-md font-bold text-[10px]"><Icon.Share className="w-3 h-3" /> Compartir</span> en Safari.</li>
-                    <li className="flex items-center gap-1.5 flex-wrap">Desliza hacia abajo y pulsa <b>"Agregar a inicio"</b> <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-pink-50 border border-pink-200 text-[#FF007F] rounded-md font-bold text-[10px]"><Icon.Plus className="w-3 h-3" /> Agregar</span>.</li>
+
+                  {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) && !window.location.pathname.includes('admin.html') && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-2.5 text-[11px] space-y-1.5">
+                      <p className="font-bold">⚠️ Abre directamente la página de administración:</p>
+                      <a
+                        href="admin.html#/admin/orders"
+                        className="block text-center py-2 px-3 bg-zinc-900 text-white rounded-xl font-bold shadow-xs hover:bg-black"
+                      >
+                        Abrir admin.html para instalar ➔
+                      </a>
+                    </div>
+                  )}
+
+                  <ol className="list-decimal list-inside space-y-2 text-zinc-700 text-[11.5px] leading-relaxed bg-zinc-50 p-3 rounded-2xl border border-zinc-200">
+                    <li className="flex items-center gap-1.5 flex-wrap">Toca el botón <b>Compartir</b> <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-zinc-300 text-blue-600 rounded-md font-bold text-[10px]"><Icon.Share className="w-3 h-3" /> Compartir</span> abajo en Safari.</li>
+                    <li className="flex items-center gap-1.5 flex-wrap">Desliza hacia abajo y pulsa <b>"Agregar a inicio"</b> <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-zinc-300 text-zinc-900 rounded-md font-bold text-[10px]"><Icon.Plus className="w-3 h-3" /> Agregar a inicio</span>.</li>
+                    <li>
+                      Verifica que el nombre sea <b>{Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "Kaoj Admin" : "Kaoj Store"}</b> con su icono {Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "oscuro/dorado" : "blanco/rosa"}.
+                    </li>
                     <li>Toca <b>"Agregar"</b> arriba a la derecha. ¡Listo!</li>
                   </ol>
                 </div>
@@ -11145,8 +11185,7 @@ ESTADO: ${status.toUpperCase()}
               <button
                 onClick={() => {
                   if (sessionStorage.getItem('kaoj_admin_authenticated') === 'true') {
-                    setIsAdmin(true);
-                    window.location.hash = '#/admin';
+                    window.location.href = 'admin.html#/admin/orders';
                   } else {
                     setShowPinModal(true);
                   }

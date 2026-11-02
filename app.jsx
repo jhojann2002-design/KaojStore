@@ -2122,6 +2122,13 @@
         if (!newReview.customer_name.trim() || !newReview.comment.trim()) {
           return showToast('Por favor ingresa tu nombre y opinión.', 'error');
         }
+        if (newReview.order_code && Array.isArray(trackedOrders)) {
+          const linkedOrder = trackedOrders.find(o => o.order_code === newReview.order_code);
+          if (linkedOrder && linkedOrder.status === 'cancelado') {
+            setIsReviewModalOpen(false);
+            return showToast('No se pueden calificar productos de un pedido cancelado.', 'error');
+          }
+        }
 
         const reviewPayload = {
           customer_name: newReview.customer_name.trim(),
@@ -8136,12 +8143,18 @@
                         <p className="text-[11px] text-zinc-500">Si hiciste tu compra como invitada, ingresa el mismo número de WhatsApp que indicaste al momento de pagar.</p>
                       </div>
                     ) : (
-                      trackedOrders.map(o => (
-                        <div key={o.id} className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-3 shadow-2xs hover:border-pink-200 transition">
+                      trackedOrders.map(o => {
+                        const isOrderCancelled = o.status === 'cancelado';
+                        return (
+                        <div key={o.id} className={`border rounded-2xl p-4 space-y-3 shadow-2xs transition ${
+                          isOrderCancelled
+                            ? 'border-red-200 bg-red-50/20 opacity-85'
+                            : 'border-zinc-200 bg-zinc-50/50 hover:border-pink-200'
+                        }`}>
                           {/* ENCABEZADO DE ORDEN */}
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200/70 pb-2.5">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-black text-xs text-[#FF2E93]">{o.order_code}</span>
+                              <span className={`font-mono font-black text-xs ${isOrderCancelled ? 'text-zinc-500 line-through' : 'text-[#FF2E93]'}`}>{o.order_code}</span>
                               <button
                                 type="button"
                                 onClick={() => copyToClipboard(o.order_code, 'Código de Pedido')}
@@ -8152,15 +8165,23 @@
                               </button>
                             </div>
                             <span className={`font-bold text-[10px] sm:text-[11px] uppercase px-2.5 py-0.5 rounded-full border shadow-2xs ${
+                              o.status === 'cancelado' ? 'bg-red-50 text-red-700 border-red-200' :
                               o.status === 'entregado' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
                               o.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
                               o.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
-                              {o.status === 'entregado' ? '✓ Entregado' :
+                              {o.status === 'cancelado' ? '✕ Pedido Cancelado' :
+                               o.status === 'entregado' ? '✓ Entregado' :
                                o.status === 'en_camino' ? '🚚 En Camino' :
                                o.status === 'verificado' ? '✓ Pago Verificado' : '⏳ En Verificación'}
                             </span>
                           </div>
+
+                          {isOrderCancelled && (
+                            <div className="bg-red-50 border border-red-200/80 text-red-800 rounded-xl px-3 py-2 text-[11px] font-medium">
+                              Este pedido fue cancelado/anulado y no acumula puntos ni habilita reseñas de productos.
+                            </div>
+                          )}
 
                           {/* DATOS RESUMIDOS */}
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-zinc-600">
@@ -8173,16 +8194,16 @@
                               <span className="font-bold text-zinc-800 truncate block">{o.delivery_method}</span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-zinc-400 block font-semibold">Total Pagado:</span>
-                              <span className="font-black text-[#FF2E93] text-xs">${Number(o.total).toFixed(2)}</span>
+                              <span className="text-[10px] text-zinc-400 block font-semibold">Total:</span>
+                              <span className={`font-black text-xs ${isOrderCancelled ? 'text-zinc-400 line-through' : 'text-[#FF2E93]'}`}>${Number(o.total).toFixed(2)}</span>
                             </div>
                           </div>
 
-                          {/* PRODUCTOS COMPRADOS Y BOTÓN DIRECTO PARA CALIFICAR CADA UNO */}
+                          {/* PRODUCTOS COMPRADOS Y BOTÓN DIRECTO PARA CALIFICAR (DESHABILITADO EN CANCELADOS) */}
                           {Array.isArray(o.items) && o.items.length > 0 && (
                             <div className="pt-2 border-t border-zinc-200/70 space-y-2">
                               <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
-                                Productos en este pedido (Toca para calificar):
+                                {isOrderCancelled ? 'Productos de esta orden cancelada:' : 'Productos en este pedido (Toca para calificar):'}
                               </p>
                               <div className="space-y-1.5">
                                 {o.items.map((item, itemIdx) => (
@@ -8191,44 +8212,51 @@
                                       <img
                                         src={item.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
                                         alt={item.name}
-                                        className="w-10 h-10 rounded-lg object-cover border border-zinc-100 shrink-0"
+                                        className={`w-10 h-10 rounded-lg object-cover border border-zinc-100 shrink-0 ${isOrderCancelled ? 'grayscale opacity-60' : ''}`}
                                       />
                                       <div className="min-w-0 flex-1">
-                                        <p className="font-bold text-zinc-900 text-xs truncate">{item.name}</p>
+                                        <p className={`font-bold text-xs truncate ${isOrderCancelled ? 'text-zinc-500 line-through' : 'text-zinc-900'}`}>{item.name}</p>
                                         <p className="text-[11px] text-zinc-500 truncate">{item.variant || 'Estándar'} • {item.qty} un. x ${Number(item.price).toFixed(2)}</p>
                                       </div>
                                     </div>
 
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setNewReview({
-                                          customer_name: customerProfile?.name || o.customer_name || user?.user_metadata?.full_name || '',
-                                          customer_code: customerProfile?.customer_code || o.customer_code || '',
-                                          product_id: item.productId,
-                                          product_name: item.name,
-                                          product_image: item.image,
-                                          product_variant: item.variant || '',
-                                          order_code: o.order_code,
-                                          rating: 5,
-                                          comment: '',
-                                          photo_url: ''
-                                        });
-                                        setIsReviewModalOpen(true);
-                                      }}
-                                      className="bg-pink-50 hover:bg-[#FF2E93] text-[#FF2E93] hover:text-white border border-pink-200 hover:border-[#FF2E93] px-3 py-1.5 rounded-xl font-bold text-[11px] transition flex items-center gap-1.5 shrink-0 shadow-2xs"
-                                      title="Calificar este producto"
-                                    >
-                                      <Icon.Star className="w-3.5 h-3.5 text-amber-500" filled={true} />
-                                      <span>Calificar</span>
-                                    </button>
+                                    {!isOrderCancelled ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setNewReview({
+                                            customer_name: customerProfile?.name || o.customer_name || user?.user_metadata?.full_name || '',
+                                            customer_code: customerProfile?.customer_code || o.customer_code || '',
+                                            product_id: item.productId,
+                                            product_name: item.name,
+                                            product_image: item.image,
+                                            product_variant: item.variant || '',
+                                            order_code: o.order_code,
+                                            rating: 5,
+                                            comment: '',
+                                            photo_url: ''
+                                          });
+                                          setIsReviewModalOpen(true);
+                                        }}
+                                        className="bg-pink-50 hover:bg-[#FF2E93] text-[#FF2E93] hover:text-white border border-pink-200 hover:border-[#FF2E93] px-3 py-1.5 rounded-xl font-bold text-[11px] transition flex items-center gap-1.5 shrink-0 shadow-2xs"
+                                        title="Calificar este producto"
+                                      >
+                                        <Icon.Star className="w-3.5 h-3.5 text-amber-500" filled={true} />
+                                        <span>Calificar</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-lg shrink-0">
+                                        Cancelado
+                                      </span>
+                                    )}
                                   </div>
                                 ))}
                               </div>
                             </div>
                           )}
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}

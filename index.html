@@ -2202,12 +2202,20 @@
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO OFICIAL KAOJ STORE */}
+              {/* LOGOTIPO KAOJ STORE */}
               <div
                 onClick={() => { setIsAdmin(false); setSelectedSection('TODOS'); setSelectedSubcategory('TODOS'); setSearchQuery(''); window.location.hash = '#/'; }}
-                className="cursor-pointer select-none text-left group shrink-0 flex items-center gap-2"
+                className="cursor-pointer select-none text-left group shrink-0"
                 title="KAOJ STORE - Inicio"
               >
-                <img src="icons/kaoj-logo.png" alt="KAOJ STORE" className="h-8 sm:h-9 w-auto object-contain transition-transform group-hover:scale-105" />
+                <div className="flex flex-col items-start leading-none group-hover:scale-105 transition-transform">
+                  <h1 className="font-serif-kaoj text-2xl sm:text-3xl font-black text-[#FF007F] tracking-widest leading-none">
+                    KAOJ
+                  </h1>
+                  <span className="block text-[9px] sm:text-[10px] tracking-[0.45em] text-zinc-900 font-extrabold mt-0.5">
+                    STORE
+                  </span>
+                </div>
               </div>
 
               {/* BUSCADOR DESKTOP */}

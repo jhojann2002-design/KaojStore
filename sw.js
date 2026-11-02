@@ -1,7 +1,7 @@
 // =========================================================================
 // SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Soporte Offline)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v5';
+const CACHE_NAME = 'kaoj-store-v7';
 const STATIC_ASSETS = [
   './',
   './index.html',

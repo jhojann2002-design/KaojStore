@@ -216,6 +216,24 @@ ALTER TABLE public.kaoj_reviews ALTER COLUMN is_approved SET DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_kaoj_reviews_approved ON public.kaoj_reviews(is_approved);
 
 -- -------------------------------------------------------------------------
+-- 7.1 TABLA: kaoj_waitlist (Lista de Espera / Solicitudes de Productos Agotados)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.kaoj_waitlist (
+    id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT REFERENCES public.kaoj_products(id) ON DELETE CASCADE,
+    product_name TEXT NOT NULL,
+    variant_name TEXT DEFAULT '',
+    customer_name TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    status TEXT DEFAULT 'pendiente',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kaoj_waitlist_created ON public.kaoj_waitlist(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kaoj_waitlist_prod ON public.kaoj_waitlist(product_id);
+
+-- -------------------------------------------------------------------------
 -- 8. POLÍTICAS RLS (Row Level Security) - BLINDADAS CONTRA ATAQUES
 -- -------------------------------------------------------------------------
 ALTER TABLE public.kaoj_admin_auth ENABLE ROW LEVEL SECURITY;
@@ -225,6 +243,7 @@ ALTER TABLE public.kaoj_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_carts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.kaoj_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.kaoj_waitlist ENABLE ROW LEVEL SECURITY;
 
 -- 8.1 kaoj_admin_auth: Denegar todo acceso directo
 DROP POLICY IF EXISTS "Deny all on admin auth" ON public.kaoj_admin_auth;
@@ -276,6 +295,16 @@ CREATE POLICY "Lectura pública de reseñas aprobadas" ON public.kaoj_reviews FO
 CREATE POLICY "Creación pública de reseñas" ON public.kaoj_reviews FOR INSERT WITH CHECK (
     rating >= 1 AND rating <= 5 AND LENGTH(comment) <= 1000 AND (is_approved IS NULL OR is_approved = false)
 );
+
+-- 8.8 kaoj_waitlist: Solicitudes de aviso de stock
+DROP POLICY IF EXISTS "Creación pública de solicitudes waitlist" ON public.kaoj_waitlist;
+CREATE POLICY "Creación pública de solicitudes waitlist" ON public.kaoj_waitlist FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Lectura pública de waitlist" ON public.kaoj_waitlist;
+CREATE POLICY "Lectura pública de waitlist" ON public.kaoj_waitlist FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Actualización de waitlist" ON public.kaoj_waitlist;
+CREATE POLICY "Actualización de waitlist" ON public.kaoj_waitlist FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Eliminación de waitlist" ON public.kaoj_waitlist;
+CREATE POLICY "Eliminación de waitlist" ON public.kaoj_waitlist FOR DELETE USING (true);
 
 -- -------------------------------------------------------------------------
 -- 9. FUNCIONES DE SEGURIDAD Y CONTROL ADMINISTRATIVO (SECURITY DEFINER)

@@ -1634,6 +1634,20 @@ ESTADO: ${status.toUpperCase()}
       const [showCartItemsInStep, setShowCartItemsInStep] = useState(true);
       const [showCouponInputBox, setShowCouponInputBox] = useState(false);
 
+      // Solicitudes de Agotados / Lista de Espera ("Avísame" o "Lo quiero")
+      const [waitlistLeads, setWaitlistLeads] = useState(() => {
+        try {
+          const saved = localStorage.getItem('kaoj_waitlist_leads');
+          if (saved) return JSON.parse(saved);
+        } catch (e) {}
+        return [];
+      });
+      const [waitlistModalData, setWaitlistModalData] = useState(null); // { product, variantName }
+      const [waitlistForm, setWaitlistForm] = useState({ name: '', phone: '', notes: '' });
+      const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
+      const [waitlistSearch, setWaitlistSearch] = useState('');
+      const [waitlistFilter, setWaitlistFilter] = useState('todos'); // 'todos', 'pendiente', 'notificado'
+
       // Nueva reseña en modal vinculada a pedido verificado
       const [newReview, setNewReview] = useState({
         customer_name: '',
@@ -2054,6 +2068,113 @@ ESTADO: ${status.toUpperCase()}
           setTrackingLoading(false);
         }
       };
+
+      // =======================================================================
+      // GESTIÓN DE SOLICITUDES DE STOCK / LISTA DE ESPERA ("AVÍSAME" / "LO QUIERO")
+      // =======================================================================
+      function handleOpenWaitlistModal(product, variantName = null) {
+        if (!product) return;
+        const vName = variantName || (product.variants || [])[0]?.name || 'Estándar';
+        const defaultName = customerProfile?.name || (user?.user_metadata?.full_name) || customer?.name || '';
+        const defaultPhone = customerProfile?.phone || customer?.phone || localStorage.getItem('kaoj_customer_phone') || '';
+        setWaitlistForm({
+          name: defaultName,
+          phone: defaultPhone,
+          notes: ''
+        });
+        setWaitlistSubmitted(false);
+        setWaitlistModalData({ product, variantName: vName });
+      }
+
+      async function handleSubmitWaitlist(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!waitlistModalData || !waitlistModalData.product) return;
+
+        const prod = waitlistModalData.product;
+        const varName = waitlistModalData.variantName || 'Estándar';
+        const targetVar = (prod.variants || []).find(v => v.name === varName);
+        const itemImage = targetVar?.image || prod.image || '';
+
+        const newLead = {
+          id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          product_id: prod.id,
+          product_name: prod.name,
+          variant_name: varName,
+          product_image: itemImage,
+          customer_name: waitlistForm.name.trim() || 'Clienta interesada',
+          phone: waitlistForm.phone.trim(),
+          notes: waitlistForm.notes.trim(),
+          created_at: new Date().toISOString(),
+          status: 'pendiente'
+        };
+
+        // 1. Guardar en estado local y persistir en localStorage
+        const updatedLeads = [newLead, ...waitlistLeads];
+        setWaitlistLeads(updatedLeads);
+        try {
+          localStorage.setItem('kaoj_waitlist_leads', JSON.stringify(updatedLeads));
+          if (waitlistForm.phone.trim()) {
+            localStorage.setItem('kaoj_customer_phone', waitlistForm.phone.trim());
+          }
+        } catch (e) {}
+
+        // 2. Intentar guardar en Supabase (si la tabla kaoj_waitlist existe)
+        try {
+          await supabase.from('kaoj_waitlist').insert([{
+            product_id: prod.id,
+            product_name: prod.name,
+            variant_name: varName,
+            customer_name: waitlistForm.name.trim() || 'Clienta interesada',
+            phone: waitlistForm.phone.trim(),
+            notes: waitlistForm.notes.trim(),
+            status: 'pendiente'
+          }]);
+        } catch (err) {
+          console.log('Registro waitlist guardado en almacenamiento local:', err);
+        }
+
+        setWaitlistSubmitted(true);
+        showToast('¡Anotada con éxito! Te avisaremos apenas tengamos stock 💕', 'success');
+
+        setTimeout(() => {
+          setWaitlistModalData(null);
+          setWaitlistSubmitted(false);
+        }, 1800);
+      }
+
+      function handleWaitlistWhatsApp() {
+        if (!waitlistModalData || !waitlistModalData.product) return;
+        const prod = waitlistModalData.product;
+        const varName = waitlistModalData.variantName || 'Estándar';
+        const phone = settings.whatsapp_number || '593963073456';
+        const cleanPhone = phone.replace(/\D/g, '');
+        const msg = `¡Hola Kaoj Store! 💕 Vi que el producto *${prod.name}* (${varName}) está agotado en la tienda y me interesa muchísimo saber cuándo volverá a estar disponible o si lo puedo encargar. ¡Muchas gracias!`;
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      }
+
+      function handleToggleWaitlistStatus(leadId) {
+        const updated = waitlistLeads.map(l => {
+          if (l.id === leadId) {
+            const nextStatus = l.status === 'notificado' ? 'pendiente' : 'notificado';
+            return { ...l, status: nextStatus };
+          }
+          return l;
+        });
+        setWaitlistLeads(updated);
+        try {
+          localStorage.setItem('kaoj_waitlist_leads', JSON.stringify(updated));
+        } catch (e) {}
+        showToast('Estado de solicitud actualizado', 'info');
+      }
+
+      function handleDeleteWaitlistLead(leadId) {
+        const updated = waitlistLeads.filter(l => l.id !== leadId);
+        setWaitlistLeads(updated);
+        try {
+          localStorage.setItem('kaoj_waitlist_leads', JSON.stringify(updated));
+        } catch (e) {}
+        showToast('Solicitud eliminada de la lista', 'info');
+      }
 
       // Disparador automático al abrir el modal Mis Pedidos
       useEffect(() => {
@@ -2598,6 +2719,17 @@ ESTADO: ${status.toUpperCase()}
           if (revs && revs.length > 0) {
             setReviews(revs);
           }
+
+          // 4. Solicitudes de stock / lista de espera
+          try {
+            const { data: waitlistData } = await supabase.from('kaoj_waitlist').select('*').order('created_at', { ascending: false });
+            if (waitlistData && waitlistData.length > 0) {
+              setWaitlistLeads(waitlistData);
+              try {
+                localStorage.setItem('kaoj_waitlist_leads', JSON.stringify(waitlistData));
+              } catch(e) {}
+            }
+          } catch (e) {}
         } catch (err) {
           console.error('Error cargando catálogo:', err);
         }
@@ -3844,6 +3976,27 @@ ESTADO: ${status.toUpperCase()}
           result.sort((a, b) => (b.discount_price ? 1 : 0) - (a.discount_price ? 1 : 0));
         }
 
+        // =====================================================================
+        // REORDENAMIENTO INTELIGENTE: DISPONIBLES PRIMERO, AGOTADOS AL FINAL
+        // Los productos con stock disponible aparecen primero; los que tengan
+        // stock 0 en todas sus variantes se desplazan automáticamente abajo,
+        // evitando frustrar al comprador de stock inmediato pero manteniéndolos
+        // accesibles para búsquedas específicas o lista de espera.
+        // =====================================================================
+        result.sort((a, b) => {
+          const aOutOfStock = (a.variants && a.variants.length > 0)
+            ? a.variants.every(v => Number(v.stock || 0) <= 0)
+            : Number(a.stock || 0) <= 0;
+          const bOutOfStock = (b.variants && b.variants.length > 0)
+            ? b.variants.every(v => Number(v.stock || 0) <= 0)
+            : Number(b.stock || 0) <= 0;
+
+          if (aOutOfStock !== bOutOfStock) {
+            return aOutOfStock ? 1 : -1;
+          }
+          return 0;
+        });
+
         return result;
       }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy, favorites]);
 
@@ -4703,19 +4856,29 @@ ESTADO: ${status.toUpperCase()}
                               )}
                             </div>
 
-                            <button
-                              type="button"
-                              disabled={stock <= 0}
-                              onClick={() => addToCart(prod, currentVarName, false)}
-                              className={`shrink-0 whitespace-nowrap px-3 sm:px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center justify-center gap-1 ${
-                                stock <= 0
-                                  ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-                                  : 'bg-[#151E28] hover:bg-[#FF2E93] text-white active:scale-95'
-                              }`}
-                            >
-                              <Icon.Plus className="w-3 h-3 shrink-0" />
-                              <span>{stock <= 0 ? 'Agotado' : 'Añadir'}</span>
-                            </button>
+                            {stock <= 0 ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenWaitlistModal(prod, currentVarName);
+                                }}
+                                className="shrink-0 whitespace-nowrap px-3 sm:px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center justify-center gap-1.5 bg-pink-50 hover:bg-[#FF007F] text-[#FF007F] hover:text-white border border-pink-200 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Avísame cuando vuelva a estar disponible"
+                              >
+                                <Icon.Bell className="w-3 h-3 shrink-0" />
+                                <span>Avísame</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => addToCart(prod, currentVarName, false)}
+                                className="shrink-0 whitespace-nowrap px-3 sm:px-3.5 py-2 rounded-full font-bold text-[11px] transition flex items-center justify-center gap-1 bg-[#151E28] hover:bg-[#FF2E93] text-white active:scale-95 shadow-2xs cursor-pointer"
+                              >
+                                <Icon.Plus className="w-3 h-3 shrink-0" />
+                                <span>Añadir</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -4907,6 +5070,9 @@ ESTADO: ${status.toUpperCase()}
                   </button>
                   <button onClick={() => { setAdminTab('customers'); window.location.hash = '#/admin/customers'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'customers' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.User className="w-4 h-4" /> Clientes VIP ({customersList.length})
+                  </button>
+                  <button onClick={() => { setAdminTab('waitlist'); window.location.hash = '#/admin/waitlist'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'waitlist' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
+                    <Icon.Bell className="w-4 h-4" /> Solicitudes ({waitlistLeads.filter(l => l.status !== 'notificado').length})
                   </button>
                   <button onClick={() => { setAdminTab('settings'); window.location.hash = '#/admin/settings'; }} className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminTab === 'settings' ? 'bg-[#FF2E93] text-white' : 'bg-zinc-100 text-zinc-700'}`}>
                     <Icon.Settings className="w-4 h-4" /> Ajustes
@@ -7267,6 +7433,194 @@ ESTADO: ${status.toUpperCase()}
                 </div>
               )}
 
+              {/* ADMIN TAB: SOLICITUDES DE STOCK / LISTA DE ESPERA */}
+              {adminTab === 'waitlist' && (
+                <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs space-y-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
+                    <div>
+                      <h3 className="font-bold text-zinc-900 text-lg flex items-center gap-2">
+                        <Icon.Bell className="w-5 h-5 text-[#FF2E93]" /> Solicitudes de Stock y Lista de Espera
+                      </h3>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Clientes que tocaron "Avísame" o "Lo quiero" en productos agotados. Escríbeles directamente por WhatsApp apenas reabastezcas.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="bg-pink-50 border border-pink-200 rounded-2xl px-4 py-2 text-center">
+                        <span className="text-[10px] text-zinc-500 font-bold block uppercase">Pendientes</span>
+                        <span className="text-base font-black text-[#FF007F]">
+                          {waitlistLeads.filter(l => l.status !== 'notificado').length}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2 text-center">
+                        <span className="text-[10px] text-zinc-500 font-bold block uppercase">Total Registros</span>
+                        <span className="text-base font-black text-zinc-800">
+                          {waitlistLeads.length}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* FILTROS Y BÚSQUEDA */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-1.5 bg-zinc-100 p-1 rounded-xl shrink-0 text-xs font-bold">
+                      <button
+                        onClick={() => setWaitlistFilter('todos')}
+                        className={`px-3 py-1.5 rounded-lg transition ${waitlistFilter === 'todos' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'}`}
+                      >
+                        Todos ({waitlistLeads.length})
+                      </button>
+                      <button
+                        onClick={() => setWaitlistFilter('pendiente')}
+                        className={`px-3 py-1.5 rounded-lg transition ${waitlistFilter === 'pendiente' ? 'bg-white text-[#FF007F] shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'}`}
+                      >
+                        Pendientes ({waitlistLeads.filter(l => l.status !== 'notificado').length})
+                      </button>
+                      <button
+                        onClick={() => setWaitlistFilter('notificado')}
+                        className={`px-3 py-1.5 rounded-lg transition ${waitlistFilter === 'notificado' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'}`}
+                      >
+                        Notificados ({waitlistLeads.filter(l => l.status === 'notificado').length})
+                      </button>
+                    </div>
+
+                    <div className="relative flex-1 max-w-sm">
+                      <Icon.Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        placeholder="Buscar por producto, variante o teléfono..."
+                        value={waitlistSearch}
+                        onChange={e => setWaitlistSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 border border-zinc-200 rounded-xl text-xs bg-zinc-50 focus:bg-white outline-none focus:border-[#FF007F]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* LISTADO DE SOLICITUDES */}
+                  {(() => {
+                    const filteredLeads = waitlistLeads.filter(lead => {
+                      if (waitlistFilter === 'pendiente' && lead.status === 'notificado') return false;
+                      if (waitlistFilter === 'notificado' && lead.status !== 'notificado') return false;
+                      if (waitlistSearch.trim()) {
+                        const q = waitlistSearch.toLowerCase().trim();
+                        return (
+                          (lead.product_name || '').toLowerCase().includes(q) ||
+                          (lead.variant_name || '').toLowerCase().includes(q) ||
+                          (lead.customer_name || '').toLowerCase().includes(q) ||
+                          (lead.phone || '').includes(q)
+                        );
+                      }
+                      return true;
+                    });
+
+                    if (filteredLeads.length === 0) {
+                      return (
+                        <div className="text-center py-12 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200 space-y-2">
+                          <Icon.Bell className="w-8 h-8 text-zinc-300 mx-auto" />
+                          <p className="font-bold text-zinc-700 text-sm">No hay solicitudes registradas con este filtro</p>
+                          <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                            Cuando las clientas hagan clic en "Avísame" o "Lo quiero" en productos agotados, aparecerán listadas aquí con su WhatsApp para que puedas escribirles en 1 clic.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-zinc-50 text-zinc-500 uppercase border-b border-zinc-200">
+                            <tr>
+                              <th className="p-3">Fecha</th>
+                              <th className="p-3">Producto / Variante</th>
+                              <th className="p-3">Clienta</th>
+                              <th className="p-3">Teléfono WhatsApp</th>
+                              <th className="p-3">Nota</th>
+                              <th className="p-3">Estado</th>
+                              <th className="p-3 text-right">Acción WhatsApp</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {filteredLeads.map(lead => {
+                              const cleanPhone = (lead.phone || '').replace(/\D/g, '');
+                              const formattedPhone = cleanPhone.startsWith('593') ? cleanPhone : cleanPhone.startsWith('0') ? '593' + cleanPhone.slice(1) : '593' + cleanPhone;
+                              const waMessage = `¡Hola ${lead.customer_name || ''}! 💕 Te saludamos desde Kaoj Store. Nos dejaste tus datos porque te interesaba el producto *${lead.product_name}* (${lead.variant_name || 'Estándar'}). ¡Te escribimos para avisarte que ya tenemos unidades disponibles! ¿Te gustaría apartar la tuya antes de que se agote? ✨🛍️`;
+                              const waLink = cleanPhone ? `https://wa.me/${formattedPhone}?text=${encodeURIComponent(waMessage)}` : null;
+
+                              return (
+                                <tr key={lead.id} className="hover:bg-pink-50/20 transition">
+                                  <td className="p-3 text-zinc-500 whitespace-nowrap">
+                                    {new Date(lead.created_at || Date.now()).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex items-center gap-2.5">
+                                      {lead.product_image && (
+                                        <img src={lead.product_image} alt="" className="w-9 h-9 rounded-lg object-contain bg-zinc-50 border border-zinc-200 shrink-0" />
+                                      )}
+                                      <div>
+                                        <p className="font-bold text-zinc-900">{lead.product_name}</p>
+                                        <p className="text-[10px] text-[#FF007F] font-semibold">{lead.variant_name || 'Estándar'}</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="p-3 font-semibold text-zinc-800">
+                                    {lead.customer_name || 'Clienta'}
+                                  </td>
+                                  <td className="p-3 font-bold text-zinc-900">
+                                    {lead.phone || <span className="text-zinc-400 font-normal">No especificado</span>}
+                                  </td>
+                                  <td className="p-3 text-zinc-600 max-w-xs truncate" title={lead.notes}>
+                                    {lead.notes || '—'}
+                                  </td>
+                                  <td className="p-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleWaitlistStatus(lead.id)}
+                                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide transition cursor-pointer border ${
+                                        lead.status === 'notificado'
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                      }`}
+                                      title="Haz clic para cambiar estado"
+                                    >
+                                      {lead.status === 'notificado' ? '✓ Notificado' : '⏳ Pendiente'}
+                                    </button>
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {waLink ? (
+                                        <a
+                                          href={waLink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition active:scale-95"
+                                          title="Escribir por WhatsApp a esta clienta"
+                                        >
+                                          <Icon.WhatsApp className="w-3.5 h-3.5" />
+                                          <span>WhatsApp</span>
+                                        </a>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteWaitlistLead(lead.id)}
+                                        className="w-7 h-7 rounded-lg bg-zinc-100 hover:bg-red-50 text-zinc-400 hover:text-red-500 flex items-center justify-center transition cursor-pointer"
+                                        title="Eliminar solicitud"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* ADMIN TAB 7: AJUSTES GLOBALES */}
               {adminTab === 'settings' && adminSettingsForm && (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs max-w-4xl space-y-6">
@@ -8648,6 +9002,148 @@ ESTADO: ${status.toUpperCase()}
                 >
                   ¡Entendido, seguir comprando!
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              MODAL: LISTA DE ESPERA / ¡LO QUIERO! (AVÍSAME CUANDO HAYA STOCK)
+              ========================================================================= */}
+          {waitlistModalData && (
+            <div
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+              onClick={() => { setWaitlistModalData(null); setWaitlistSubmitted(false); }}
+            >
+              <div
+                className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-pink-100 relative text-xs"
+                onClick={e => e.stopPropagation()}
+              >
+                {/* CABECERA */}
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#FF007F] to-pink-400 text-white flex items-center justify-center shadow-md shrink-0">
+                      <Icon.Bell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#FF007F] bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200">
+                        Agotado Temporalmente
+                      </span>
+                      <h3 className="font-serif-kaoj text-lg font-bold text-zinc-900 leading-snug mt-0.5">
+                        ¡Lo quiero! Avísame cuando vuelva
+                      </h3>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setWaitlistModalData(null); setWaitlistSubmitted(false); }}
+                    className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center font-bold text-zinc-500 hover:text-zinc-800 transition shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* PREVIEW DEL PRODUCTO */}
+                {waitlistModalData.product && (
+                  <div className="flex items-center gap-3 p-2.5 bg-gradient-to-r from-pink-50/50 to-zinc-50 rounded-2xl border border-pink-100/80">
+                    <img
+                      src={
+                        (waitlistModalData.product.variants?.find(v => v.name === waitlistModalData.variantName)?.image) ||
+                        waitlistModalData.product.image ||
+                        'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'
+                      }
+                      alt={waitlistModalData.product.name}
+                      className="w-14 h-14 rounded-xl object-contain bg-white border border-zinc-200 shrink-0 p-1"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-zinc-900 text-xs sm:text-sm truncate">
+                        {waitlistModalData.product.name}
+                      </h4>
+                      <p className="text-[11px] text-[#FF007F] font-bold">
+                        Tono / Variante: {waitlistModalData.variantName || 'Estándar'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 font-medium">
+                        Precio habitual: ${Number(waitlistModalData.product.discount_price || waitlistModalData.product.price || 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {waitlistSubmitted ? (
+                  <div className="py-6 text-center space-y-2">
+                    <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl shadow-sm">
+                      ✓
+                    </div>
+                    <h4 className="font-bold text-zinc-900 text-sm">¡Anotada con éxito!</h4>
+                    <p className="text-zinc-600 text-xs leading-relaxed max-w-xs mx-auto">
+                      Guardamos tu interés. Serás de las primeras en enterarte por WhatsApp en cuanto ingrese nuevo stock de este modelo. 💕
+                    </p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmitWaitlist} className="space-y-3">
+                    <p className="text-zinc-600 text-xs leading-relaxed">
+                      Déjanos tu número de WhatsApp para notificarte sin compromiso apenas tengamos nuevas unidades:
+                    </p>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-700 block mb-1">Tu Nombre (opcional):</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Carolina Mendoza"
+                        value={waitlistForm.name}
+                        onChange={e => setWaitlistForm({ ...waitlistForm, name: e.target.value })}
+                        className="w-full border border-zinc-200 rounded-xl px-3 py-2 text-xs bg-zinc-50 focus:bg-white font-medium outline-none focus:border-[#FF007F] focus:ring-1 focus:ring-pink-300 transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-700 block mb-1">
+                        Tu WhatsApp / Celular: <span className="text-[#FF007F]">*</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-zinc-400 font-bold text-xs">🇪🇨 +593</span>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="0991234567"
+                          value={waitlistForm.phone}
+                          onChange={e => setWaitlistForm({ ...waitlistForm, phone: e.target.value })}
+                          className="w-full pl-20 pr-3 py-2 border border-zinc-200 rounded-xl text-xs bg-zinc-50 focus:bg-white font-bold text-zinc-900 outline-none focus:border-[#FF007F] focus:ring-1 focus:ring-pink-300 transition"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-700 block mb-1">¿Alguna talla o detalle específico? (opcional):</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Me interesa en talla M o color negro..."
+                        value={waitlistForm.notes}
+                        onChange={e => setWaitlistForm({ ...waitlistForm, notes: e.target.value })}
+                        className="w-full border border-zinc-200 rounded-xl px-3 py-2 text-xs bg-zinc-50 focus:bg-white font-medium outline-none focus:border-[#FF007F] focus:ring-1 focus:ring-pink-300 transition"
+                      />
+                    </div>
+
+                    <div className="pt-2 space-y-2">
+                      <button
+                        type="submit"
+                        className="w-full h-11 rounded-2xl bg-gradient-to-r from-[#FF007F] via-[#FF2E93] to-pink-500 hover:brightness-105 text-white font-bold text-xs sm:text-sm shadow-md shadow-pink-500/20 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Icon.Bell className="w-4 h-4 text-white" />
+                        <span>Notificarme cuando haya stock</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleWaitlistWhatsApp}
+                        className="w-full h-10 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+                        title="Preguntar directamente a nuestro WhatsApp"
+                      >
+                        <Icon.WhatsApp className="w-4 h-4 text-emerald-600" />
+                        <span>Consultar directo por WhatsApp</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             </div>
           )}
@@ -10453,13 +10949,19 @@ ESTADO: ${status.toUpperCase()}
                         </div>
 
                         {stock <= 0 ? (
-                          <button
-                            disabled
-                            className="w-full py-3.5 rounded-xl font-bold text-sm bg-zinc-100 text-zinc-400 cursor-not-allowed flex items-center justify-center gap-2"
-                          >
-                            <Icon.Bag className="w-4 h-4" />
-                            <span>Producto Agotado</span>
-                          </button>
+                          <div className="space-y-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenWaitlistModal(quickViewProduct, currentVarName)}
+                              className="w-full h-12 px-4 rounded-2xl font-bold text-xs sm:text-sm bg-gradient-to-r from-[#FF007F] to-[#E0006E] hover:opacity-95 text-white shadow-lg shadow-pink-500/25 active:scale-98 transition flex items-center justify-center gap-2 tracking-wide cursor-pointer"
+                            >
+                              <Icon.Bell className="w-4 h-4 text-white shrink-0" />
+                              <span>¡Lo quiero! Avísame cuando vuelva</span>
+                            </button>
+                            <p className="text-center text-[11px] text-zinc-500">
+                              Este modelo está agotado. Déjanos tus datos para avisarte apenas tengamos stock.
+                            </p>
+                          </div>
                         ) : (
                           <div className="space-y-2 pt-1">
                             {/* BOTÓN 1: COMPRAR AHORA (Fucsia Oficial Kaoj Store - Altura fija sin descuadrarse con textos largos) */}

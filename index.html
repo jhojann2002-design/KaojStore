@@ -703,6 +703,25 @@
       const [newSectionName, setNewSectionName] = useState('');
       const [newSubcatInputs, setNewSubcatInputs] = useState({});
 
+      // Estados para Tallas y Colores Separados en Nuevo Producto
+      const [newProdVariantMode, setNewProdVariantMode] = useState('simple'); // 'simple' o 'color_size'
+      const [newProdColors, setNewProdColors] = useState([
+        { name: 'Negro', image: '' },
+        { name: 'Blanco', image: '' }
+      ]);
+      const [newProdSizes, setNewProdSizes] = useState(['S', 'M', 'L']);
+      const [newProdMatrixStock, setNewProdMatrixStock] = useState({});
+      const [newProdCustomSize, setNewProdCustomSize] = useState('');
+      const [newProdBulkStock, setNewProdBulkStock] = useState('5');
+
+      // Estados para Tallas y Colores Separados en Edición de Producto
+      const [editVariantMode, setEditVariantMode] = useState('simple'); // 'simple' o 'color_size'
+      const [editColors, setEditColors] = useState([]);
+      const [editSizes, setEditSizes] = useState([]);
+      const [editMatrixStock, setEditMatrixStock] = useState({});
+      const [editCustomSize, setEditCustomSize] = useState('');
+      const [editBulkStock, setEditBulkStock] = useState('5');
+
       // =======================================================================
       // 1. CARGA INICIAL SEGURA (Solo productos, ajustes públicos y reseñas aprobadas)
       // =======================================================================
@@ -811,7 +830,12 @@
             prods.forEach(p => {
               const firstAvail = (p.variants || []).find(v => v.stock > 0) || (p.variants || [])[0];
               if (firstAvail) {
-                initVars[p.id] = { variantName: firstAvail.name, image: firstAvail.image || p.image };
+                initVars[p.id] = {
+                  variantName: firstAvail.name,
+                  color: firstAvail.color,
+                  size: firstAvail.size,
+                  image: firstAvail.image || p.image
+                };
               }
             });
             setActiveVariants(initVars);
@@ -1633,30 +1657,102 @@
         }
       }
 
+      function openEditProductModal(prod) {
+        const cloned = JSON.parse(JSON.stringify(prod));
+        const hasColorSize = (cloned.variants || []).some(v => v.color && v.size);
+        if (hasColorSize) {
+          setEditVariantMode('color_size');
+          const colorMap = new Map();
+          (cloned.variants || []).forEach(v => {
+            if (v.color && !colorMap.has(v.color)) {
+              colorMap.set(v.color, v.image || '');
+            }
+          });
+          const colorsList = Array.from(colorMap.entries()).map(([name, image]) => ({ name, image }));
+          setEditColors(colorsList.length > 0 ? colorsList : [{ name: 'Color 1', image: '' }]);
+
+          const sizeSet = new Set();
+          (cloned.variants || []).forEach(v => {
+            if (v.size) sizeSet.add(v.size);
+          });
+          const sizesList = Array.from(sizeSet);
+          setEditSizes(sizesList.length > 0 ? sizesList : ['S', 'M', 'L']);
+
+          const stockMap = {};
+          (cloned.variants || []).forEach(v => {
+            if (v.color && v.size) {
+              stockMap[`${v.color}_${v.size}`] = v.stock ?? 0;
+            }
+          });
+          setEditMatrixStock(stockMap);
+        } else {
+          setEditVariantMode('simple');
+          setEditColors([{ name: 'Negro', image: '' }, { name: 'Blanco', image: '' }]);
+          setEditSizes(['S', 'M', 'L']);
+          setEditMatrixStock({});
+        }
+        setEditingProduct(cloned);
+      }
+
       async function handleSaveEditedProduct(e) {
         e.preventDefault();
         if (!editingProduct) return;
 
+        let finalVariants = [];
+        let finalVariantLabel = editingProduct.variant_label || 'Tono / Talla';
+
+        if (editVariantMode === 'color_size') {
+          finalVariantLabel = 'Color y Talla';
+          editColors.forEach(c => {
+            const colName = (c.name || '').trim();
+            if (!colName) return;
+            editSizes.forEach(s => {
+              const sizeName = (s || '').trim();
+              if (!sizeName) return;
+              const key = `${colName}_${sizeName}`;
+              const st = editMatrixStock[key];
+              finalVariants.push({
+                name: `${colName} - ${sizeName}`,
+                color: colName,
+                size: sizeName,
+                stock: parseInt(st !== undefined && st !== '' ? st : (editBulkStock || 5), 10),
+                image: c.image || editingProduct.image || ''
+              });
+            });
+          });
+
+          if (finalVariants.length === 0) {
+            return showToast('Debes configurar al menos 1 color y 1 talla', 'error');
+          }
+        } else {
+          finalVariants = (editingProduct.variants && editingProduct.variants.length > 0)
+            ? editingProduct.variants
+            : [{ name: 'Único', stock: 5, image: '' }];
+        }
+
         setUploading(true);
         try {
+          const updatedPayload = {
+            name: editingProduct.name.trim(),
+            section: editingProduct.section,
+            category: editingProduct.category,
+            price: parseFloat(editingProduct.price),
+            discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
+            image: editingProduct.image,
+            description: editingProduct.description,
+            variant_label: finalVariantLabel,
+            variants: finalVariants
+          };
+
           const { error } = await supabase
             .from('kaoj_products')
-            .update({
-              name: editingProduct.name.trim(),
-              section: editingProduct.section,
-              category: editingProduct.category,
-              price: parseFloat(editingProduct.price),
-              discount_price: editingProduct.discount_price ? parseFloat(editingProduct.discount_price) : null,
-              image: editingProduct.image,
-              description: editingProduct.description,
-              variant_label: editingProduct.variant_label,
-              variants: editingProduct.variants
-            })
+            .update(updatedPayload)
             .eq('id', editingProduct.id);
 
           if (error) throw error;
 
-          setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p));
+          const updatedProd = { ...editingProduct, ...updatedPayload };
+          setProducts(products.map(p => p.id === editingProduct.id ? updatedProd : p));
           setEditingProduct(null);
           setUploading(false);
           showToast('Producto actualizado exitosamente');
@@ -1672,6 +1768,36 @@
           return showToast('Ingresa nombre y precio', 'error');
         }
 
+        let finalVariants = [];
+        let finalVariantLabel = newProd.variant_label.trim() || 'Tono / Talla';
+
+        if (newProdVariantMode === 'color_size') {
+          finalVariantLabel = 'Color y Talla';
+          newProdColors.forEach(c => {
+            const colName = (c.name || '').trim();
+            if (!colName) return;
+            newProdSizes.forEach(s => {
+              const sizeName = (s || '').trim();
+              if (!sizeName) return;
+              const key = `${colName}_${sizeName}`;
+              const st = newProdMatrixStock[key];
+              finalVariants.push({
+                name: `${colName} - ${sizeName}`,
+                color: colName,
+                size: sizeName,
+                stock: parseInt(st !== undefined && st !== '' ? st : (newProdBulkStock || 5), 10),
+                image: c.image || newProd.image || ''
+              });
+            });
+          });
+
+          if (finalVariants.length === 0) {
+            return showToast('Debes configurar al menos 1 color y 1 talla', 'error');
+          }
+        } else {
+          finalVariants = newProd.variants.length > 0 ? newProd.variants : [{ name: 'Único', stock: 5, image: '' }];
+        }
+
         const prodPayload = {
           name: newProd.name.trim(),
           section: newProd.section,
@@ -1680,8 +1806,8 @@
           discount_price: newProd.discount_price ? parseFloat(newProd.discount_price) : null,
           image: newProd.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600',
           description: newProd.description.trim(),
-          variant_label: newProd.variant_label.trim() || 'Tono / Talla',
-          variants: newProd.variants.length > 0 ? newProd.variants : [{ name: 'Único', stock: 5, image: '' }],
+          variant_label: finalVariantLabel,
+          variants: finalVariants,
           is_active: true
         };
 
@@ -1696,6 +1822,14 @@
           variant_label: 'Tono / Talla',
           variants: [{ name: '01 Rosa', stock: 5, image: '' }]
         });
+        setNewProdColors([
+          { name: 'Negro', image: '' },
+          { name: 'Blanco', image: '' }
+        ]);
+        setNewProdSizes(['S', 'M', 'L']);
+        setNewProdMatrixStock({});
+        setNewProdCustomSize('');
+        setNewProdVariantMode('simple');
       }
 
       async function handleDeleteProduct(productId) {
@@ -2280,20 +2414,37 @@
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-6">
                   {filteredProducts.map(prod => {
                     const activeVar = activeVariants[prod.id] || {};
-                    const currentVarName = activeVar.variantName || prod.variants?.[0]?.name;
-                    const varObj = (prod.variants || []).find(v => v.name === currentVarName);
-                    const stock = varObj ? varObj.stock : 0;
+                    const hasColorAndSize = (prod.variants || []).some(v => v.color && v.size);
+                    const distinctColors = hasColorAndSize ? Array.from(new Set(prod.variants.map(v => v.color).filter(Boolean))) : [];
+                    const distinctSizes = hasColorAndSize ? Array.from(new Set(prod.variants.map(v => v.size).filter(Boolean))) : [];
+
+                    const currentColor = hasColorAndSize
+                      ? (activeVar.color || (distinctColors.find(c => (prod.variants || []).some(v => v.color === c && v.stock > 0))) || distinctColors[0])
+                      : null;
+
+                    const currentSize = hasColorAndSize
+                      ? (activeVar.size || (distinctSizes.find(s => (prod.variants || []).some(v => v.color === currentColor && v.size === s && v.stock > 0))) || distinctSizes[0])
+                      : null;
+
+                    const varObj = hasColorAndSize
+                      ? ((prod.variants || []).find(v => v.color === currentColor && v.size === currentSize) ||
+                         (prod.variants || []).find(v => v.color === currentColor) ||
+                         prod.variants?.[0])
+                      : ((prod.variants || []).find(v => v.name === (activeVar.variantName || prod.variants?.[0]?.name)) || prod.variants?.[0]);
+
+                    const currentVarName = varObj ? varObj.name : (prod.variants?.[0]?.name || 'Único');
+                    const stock = varObj ? (varObj.stock || 0) : 0;
                     const isAllOutOfStock = (prod.variants || []).every(v => (v.stock || 0) <= 0);
                     const hasLowStockVariant = (prod.variants || []).some(v => v.stock > 0 && v.stock <= 2);
                     const hasDiscount = Boolean(prod.discount_price && Number(prod.discount_price) < Number(prod.price));
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
-                    const displayImage = activeVar.image || varObj?.image || prod.image;
+                    const displayImage = activeVar.image || varObj?.image || (hasColorAndSize ? prod.variants?.find(v => v.color === currentColor && v.image)?.image : null) || prod.image;
 
                     return (
                       <div key={prod.id} className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs hover:shadow-md transition duration-200 overflow-hidden flex flex-col group">
-                        {/* FOTO CON CLIC A VISTA RÁPIDA */}
+                        {/* FOTO COMPLETA SIN CORTES (OPTIMIZADA PARA MÓVIL Y MODA) */}
                         <div
-                          className="relative h-48 sm:h-64 bg-zinc-50 overflow-hidden cursor-pointer"
+                          className="relative aspect-[3/4] sm:aspect-[4/5] bg-gradient-to-b from-zinc-50 to-pink-50/20 overflow-hidden cursor-pointer flex items-center justify-center p-1.5 sm:p-2.5"
                           onClick={() => {
                             setQuickViewProduct(prod);
                             setQuickViewSelectedVar(currentVarName);
@@ -2303,7 +2454,7 @@
                           <img
                             src={displayImage || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
                             alt={prod.name}
-                            className={`w-full h-full object-cover group-hover:scale-105 transition duration-300 ${isAllOutOfStock ? 'grayscale opacity-75' : ''}`}
+                            className={`w-full h-full object-contain group-hover:scale-105 transition duration-300 drop-shadow-xs ${isAllOutOfStock ? 'grayscale opacity-75' : ''}`}
                             loading="lazy"
                           />
 
@@ -2374,57 +2525,167 @@
                               )}
                             </div>
 
-                            {/* SELECTOR DE VARIANTES */}
-                            <div className="mt-2.5">
-                              <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
-                                <span className="font-semibold text-zinc-600 truncate">{prod.variant_label || 'Tono / Talla'}:</span>
-                                {varObj && (
-                                  varObj.stock <= 0 ? (
-                                    <span className="font-bold text-red-500 text-[10px] sm:text-xs">Agotado</span>
-                                  ) : varObj.stock <= 2 ? (
-                                    <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] animate-pulse">
-                                      🔥 ¡Solo {varObj.stock} disp!
-                                    </span>
-                                  ) : (
-                                    <span className="font-bold text-emerald-700 text-[10px] sm:text-xs">
-                                      {varObj.stock} disp.
-                                    </span>
-                                  )
-                                )}
-                              </div>
+                            {/* SELECTOR DE VARIANTES: 2 PASOS (COLOR Y TALLA) O SIMPLE */}
+                            {hasColorAndSize ? (
+                              <div className="mt-2.5 space-y-2">
+                                {/* FILA DE COLORES */}
+                                <div>
+                                  <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
+                                    <span className="font-semibold text-zinc-500">Color:</span>
+                                    <span className="font-bold text-zinc-800 truncate">{currentColor}</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto no-scrollbar">
+                                    {distinctColors.map(c => {
+                                      const colorVar = (prod.variants || []).find(v => v.color === c);
+                                      const isColActive = currentColor === c;
+                                      const colorStock = (prod.variants || []).filter(v => v.color === c).reduce((sum, v) => sum + (v.stock || 0), 0);
+                                      return (
+                                        <button
+                                          key={c}
+                                          type="button"
+                                          disabled={colorStock <= 0}
+                                          onClick={() => {
+                                            const matchedVar = (prod.variants || []).find(v => v.color === c && v.size === currentSize && v.stock > 0) ||
+                                                              (prod.variants || []).find(v => v.color === c && v.stock > 0) ||
+                                                              (prod.variants || []).find(v => v.color === c);
+                                            const nextSize = matchedVar ? matchedVar.size : currentSize;
+                                            const nextName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
+                                            setActiveVariants({
+                                              ...activeVariants,
+                                              [prod.id]: {
+                                                color: c,
+                                                size: nextSize,
+                                                variantName: nextName,
+                                                image: matchedVar?.image || colorVar?.image || prod.image
+                                              }
+                                            });
+                                          }}
+                                          className={`px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium border transition flex items-center gap-1 ${
+                                            isColActive
+                                              ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
+                                              : colorStock <= 0
+                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
+                                              : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                          }`}
+                                        >
+                                          {colorVar?.image && (
+                                            <img src={colorVar.image} alt="" className="w-3 h-3 rounded-full object-cover" />
+                                          )}
+                                          <span>{c}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
 
-                              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto no-scrollbar">
-                                {(prod.variants || []).map(v => (
-                                  <button
-                                    key={v.name}
-                                    disabled={v.stock <= 0}
-                                    onClick={() => {
-                                      setActiveVariants({
-                                        ...activeVariants,
-                                        [prod.id]: { variantName: v.name, image: v.image || prod.image }
-                                      });
-                                    }}
-                                    className={`px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-medium border transition flex items-center gap-1 ${
-                                      currentVarName === v.name
-                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
-                                        : v.stock <= 0
-                                        ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
-                                        : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
-                                    }`}
-                                  >
-                                    {v.image && (
-                                      <img src={v.image} alt="" className="w-3 h-3 rounded-full object-cover" />
+                                {/* FILA DE TALLAS */}
+                                <div>
+                                  <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
+                                    <span className="font-semibold text-zinc-500">Talla:</span>
+                                    {varObj && (
+                                      varObj.stock <= 0 ? (
+                                        <span className="font-bold text-red-500 text-[10px]">Agotada</span>
+                                      ) : varObj.stock <= 2 ? (
+                                        <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded text-[9px] animate-pulse">
+                                          🔥 Solo {varObj.stock}
+                                        </span>
+                                      ) : (
+                                        <span className="font-bold text-emerald-700 text-[10px]">
+                                          {varObj.stock} disp.
+                                        </span>
+                                      )
                                     )}
-                                    <span>{v.name}</span>
-                                  </button>
-                                ))}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {distinctSizes.map(s => {
+                                      const combVar = (prod.variants || []).find(v => v.color === currentColor && v.size === s);
+                                      const combStock = combVar ? (combVar.stock || 0) : 0;
+                                      const isSizeActive = currentSize === s;
+                                      return (
+                                        <button
+                                          key={s}
+                                          type="button"
+                                          disabled={combStock <= 0}
+                                          onClick={() => {
+                                            const varName = combVar ? combVar.name : `${currentColor} - ${s}`;
+                                            setActiveVariants({
+                                              ...activeVariants,
+                                              [prod.id]: {
+                                                color: currentColor,
+                                                size: s,
+                                                variantName: varName,
+                                                image: combVar?.image || prod.image
+                                              }
+                                            });
+                                          }}
+                                          className={`px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold border transition ${
+                                            isSizeActive
+                                              ? 'border-[#FF2E93] bg-[#FF2E93] text-white shadow-2xs'
+                                              : combStock <= 0
+                                              ? 'border-zinc-200 bg-zinc-100 text-zinc-300 line-through cursor-not-allowed'
+                                              : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                          }`}
+                                        >
+                                          {s}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              /* SELECTOR SIMPLE DE TONOS/VARIANTES */
+                              <div className="mt-2.5">
+                                <div className="flex justify-between items-center text-[10px] sm:text-xs mb-1">
+                                  <span className="font-semibold text-zinc-600 truncate">{prod.variant_label || 'Tono / Talla'}:</span>
+                                  {varObj && (
+                                    varObj.stock <= 0 ? (
+                                      <span className="font-bold text-red-500 text-[10px] sm:text-xs">Agotado</span>
+                                    ) : varObj.stock <= 2 ? (
+                                      <span className="font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] animate-pulse">
+                                        🔥 ¡Solo {varObj.stock} disp!
+                                      </span>
+                                    ) : (
+                                      <span className="font-bold text-emerald-700 text-[10px] sm:text-xs">
+                                        {varObj.stock} disp.
+                                      </span>
+                                    )
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto no-scrollbar">
+                                  {(prod.variants || []).map(v => (
+                                    <button
+                                      key={v.name}
+                                      disabled={v.stock <= 0}
+                                      onClick={() => {
+                                        setActiveVariants({
+                                          ...activeVariants,
+                                          [prod.id]: { variantName: v.name, image: v.image || prod.image }
+                                        });
+                                      }}
+                                      className={`px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-medium border transition flex items-center gap-1 ${
+                                        currentVarName === v.name
+                                          ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-bold ring-1 ring-[#FF2E93]'
+                                          : v.stock <= 0
+                                          ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
+                                          : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93]'
+                                      }`}
+                                    >
+                                      {v.image && (
+                                        <img src={v.image} alt="" className="w-3 h-3 rounded-full object-cover" />
+                                      )}
+                                      <span>{v.name}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <button
                             disabled={stock <= 0}
-                            onClick={() => addToCart(prod)}
+                            onClick={() => addToCart(prod, currentVarName)}
                             className={`w-full py-2 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs ${
                               stock <= 0
                                 ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
@@ -2764,8 +3025,8 @@
                         <label className="font-semibold text-zinc-700 block mb-1">Foto Principal del Producto</label>
                         <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-2xl p-2.5">
                           {newProd.image ? (
-                            <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0">
-                              <img src={newProd.image} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                              <img src={newProd.image} alt="Preview" className="w-full h-full object-contain" />
                               <button
                                 type="button"
                                 onClick={() => setNewProd({ ...newProd, image: '' })}
@@ -2805,115 +3066,439 @@
                         <textarea rows="2" value={newProd.description} onChange={e => setNewProd({ ...newProd, description: e.target.value })} placeholder="Detalles del producto..." className="w-full border rounded-xl p-2.5 outline-none resize-none"></textarea>
                       </div>
 
-                      {/* GESTOR DE VARIANTES CON SUBIDA DE FOTO DESDE DISPOSITIVO */}
-                      <div className="border border-zinc-200 rounded-2xl p-3 bg-zinc-50/70 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <label className="font-bold text-zinc-800">Variantes con Foto Propia ({newProd.variants.length})</label>
+                      {/* SELECTOR DE MODALIDAD: TONOS SIMPLES vs TALLAS Y COLORES SEPARADOS */}
+                      <div className="space-y-2">
+                        <label className="font-semibold text-zinc-700 block">Tipo de Variantes</label>
+                        <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200">
                           <button
                             type="button"
-                            onClick={() => setNewProd({
-                              ...newProd,
-                              variants: [...newProd.variants, { name: `Tono ${newProd.variants.length + 1}`, stock: 5, image: '' }]
-                            })}
-                            className="text-[#FF2E93] font-bold text-xs"
+                            onClick={() => setNewProdVariantMode('simple')}
+                            className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                              newProdVariantMode === 'simple'
+                                ? 'bg-white text-zinc-900 shadow-2xs'
+                                : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
                           >
-                            + Añadir Variante
+                            <span>💅 Tonos / Simples</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewProdVariantMode('color_size')}
+                            className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                              newProdVariantMode === 'color_size'
+                                ? 'bg-[#FF2E93] text-white shadow-2xs'
+                                : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
+                          >
+                            <span>👗 Tallas y Colores</span>
                           </button>
                         </div>
+                      </div>
 
-                        <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
-                          {newProd.variants.map((v, idx) => (
-                            <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2 shadow-2xs">
-                              <div className="flex gap-2 items-center">
-                                <input
-                                  placeholder="Nombre (ej. 01 Rosa Nude / Talla M)"
-                                  value={v.name}
-                                  onChange={e => {
-                                    const updated = [...newProd.variants];
-                                    updated[idx].name = e.target.value;
-                                    setNewProd({ ...newProd, variants: updated });
-                                  }}
-                                  className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
-                                />
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className="text-[10px] text-zinc-400 font-bold">Stock:</span>
+                      {newProdVariantMode === 'simple' ? (
+                        /* GESTOR DE VARIANTES SIMPLES CON SUBIDA DE FOTO DESDE DISPOSITIVO */
+                        <div className="border border-zinc-200 rounded-2xl p-3 bg-zinc-50/70 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="font-bold text-zinc-800">Variantes con Foto Propia ({newProd.variants.length})</label>
+                            <button
+                              type="button"
+                              onClick={() => setNewProd({
+                                ...newProd,
+                                variants: [...newProd.variants, { name: `Tono ${newProd.variants.length + 1}`, stock: 5, image: '' }]
+                              })}
+                              className="text-[#FF2E93] font-bold text-xs"
+                            >
+                              + Añadir Variante
+                            </button>
+                          </div>
+
+                          <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
+                            {newProd.variants.map((v, idx) => (
+                              <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2 shadow-2xs">
+                                <div className="flex gap-2 items-center">
                                   <input
-                                    type="number"
-                                    value={v.stock}
+                                    placeholder="Nombre (ej. 01 Rosa Nude / Talla M)"
+                                    value={v.name}
                                     onChange={e => {
                                       const updated = [...newProd.variants];
-                                      updated[idx].stock = parseInt(e.target.value || '0', 10);
+                                      updated[idx].name = e.target.value;
                                       setNewProd({ ...newProd, variants: updated });
                                     }}
-                                    className="w-14 border rounded-lg p-1.5 text-xs font-bold text-center outline-none focus:border-[#FF2E93]"
+                                    className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
                                   />
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <span className="text-[10px] text-zinc-400 font-bold">Stock:</span>
+                                    <input
+                                      type="number"
+                                      value={v.stock}
+                                      onChange={e => {
+                                        const updated = [...newProd.variants];
+                                        updated[idx].stock = parseInt(e.target.value || '0', 10);
+                                        setNewProd({ ...newProd, variants: updated });
+                                      }}
+                                      className="w-14 border rounded-lg p-1.5 text-xs font-bold text-center outline-none focus:border-[#FF2E93]"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewProd({ ...newProd, variants: newProd.variants.filter((_, i) => i !== idx) });
+                                    }}
+                                    className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
+                                    title="Eliminar variante"
+                                  >
+                                    ✕
+                                  </button>
                                 </div>
+
+                                {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {v.image ? (
+                                      <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                                        <img src={v.image} alt="" className="w-full h-full object-contain" />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = [...newProd.variants];
+                                            updated[idx].image = '';
+                                            setNewProd({ ...newProd, variants: updated });
+                                          }}
+                                          className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
+                                          title="Quitar foto"
+                                        >✕</button>
+                                      </div>
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
+                                        <Icon.Photo className="w-4 h-4" />
+                                      </div>
+                                    )}
+
+                                    <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
+                                      <Icon.Photo className="w-3 h-3 text-[#FF2E93]" />
+                                      <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={async e => {
+                                          if (e.target.files[0]) {
+                                            const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                                            if (url) {
+                                              const updated = [...newProd.variants];
+                                              updated[idx].image = url;
+                                              setNewProd({ ...newProd, variants: updated });
+                                            }
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+
+                                  {v.image && (
+                                    <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
+                                      <Icon.Check className="w-3 h-3" /> Foto lista
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        /* GESTOR DE TALLAS Y COLORES SEPARADOS */
+                        <div className="border border-pink-200 bg-pink-50/20 rounded-2xl p-3.5 space-y-4">
+                          {/* PASO 1: COLORES */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">1</span>
+                                <label className="font-bold text-zinc-800 text-xs">Colores Disponibles ({newProdColors.length})</label>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setNewProdColors([...newProdColors, { name: `Color ${newProdColors.length + 1}`, image: '' }])}
+                                className="text-[#FF2E93] hover:text-[#e0157a] font-bold text-xs flex items-center gap-0.5"
+                              >
+                                <Icon.Plus className="w-3.5 h-3.5" /> Añadir Color
+                              </button>
+                            </div>
+
+                            {/* Sugerencias rápidas de colores */}
+                            <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar text-[11px]">
+                              <span className="text-zinc-400 text-[10px] shrink-0 font-medium">Sugeridos:</span>
+                              {['Negro', 'Blanco', 'Beige', 'Palo de Rosa', 'Rojo', 'Azul', 'Verde', 'Café', 'Lila'].map(suggested => (
+                                <button
+                                  key={suggested}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!newProdColors.some(c => c.name.toLowerCase() === suggested.toLowerCase())) {
+                                      setNewProdColors([...newProdColors, { name: suggested, image: '' }]);
+                                    }
+                                  }}
+                                  className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] shrink-0 font-medium"
+                                >
+                                  +{suggested}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Lista de colores con foto de cada uno */}
+                            <div className="space-y-2 max-h-52 overflow-y-auto no-scrollbar">
+                              {newProdColors.map((col, cIdx) => (
+                                <div key={cIdx} className="bg-white border border-zinc-200 rounded-xl p-2.5 shadow-2xs space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      value={col.name}
+                                      placeholder="Nombre del color (ej. Negro)"
+                                      onChange={e => {
+                                        const up = [...newProdColors];
+                                        up[cIdx].name = e.target.value;
+                                        setNewProdColors(up);
+                                      }}
+                                      className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
+                                    />
+                                    {newProdColors.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setNewProdColors(newProdColors.filter((_, i) => i !== cIdx))}
+                                        className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
+                                        title="Eliminar este color"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {col.image ? (
+                                        <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                                          <img src={col.image} alt="" className="w-full h-full object-contain" />
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const up = [...newProdColors];
+                                              up[cIdx].image = '';
+                                              setNewProdColors(up);
+                                            }}
+                                            className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
+                                            title="Quitar foto"
+                                          >✕</button>
+                                        </div>
+                                      ) : (
+                                        <div className="w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0">
+                                          <Icon.Photo className="w-3.5 h-3.5" />
+                                        </div>
+                                      )}
+
+                                      <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
+                                        <Icon.Photo className="w-3 h-3 text-[#FF2E93]" />
+                                        <span>{col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'}</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="hidden"
+                                          onChange={async e => {
+                                            if (e.target.files[0]) {
+                                              const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                                              if (url) {
+                                                const up = [...newProdColors];
+                                                up[cIdx].image = url;
+                                                setNewProdColors(up);
+                                              }
+                                            }
+                                          }}
+                                        />
+                                      </label>
+                                    </div>
+
+                                    {col.image && (
+                                      <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
+                                        <Icon.Check className="w-3 h-3" /> Foto lista
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* PASO 2: TALLAS */}
+                          <div className="space-y-2 pt-2 border-t border-pink-100">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">2</span>
+                                <label className="font-bold text-zinc-800 text-xs">Tallas Disponibles ({newProdSizes.length})</label>
+                              </div>
+                            </div>
+
+                            {/* Presets */}
+                            <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                              <span className="text-zinc-400 text-[10px] font-medium mr-1">Presets:</span>
+                              <button
+                                type="button"
+                                onClick={() => setNewProdSizes(['XS', 'S', 'M', 'L', 'XL'])}
+                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                              >
+                                Ropa (XS - XL)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewProdSizes(['S', 'M', 'L'])}
+                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                              >
+                                Estándar (S, M, L)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewProdSizes(['35', '36', '37', '38', '39', '40'])}
+                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                              >
+                                Calzado (35 - 40)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewProdSizes(['Única'])}
+                                className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                              >
+                                Talla Única
+                              </button>
+                            </div>
+
+                            {/* Chips de tallas */}
+                            <div className="flex flex-wrap items-center gap-1.5 p-2 bg-white rounded-xl border border-zinc-200">
+                              {newProdSizes.map((sz, szIdx) => (
+                                <span
+                                  key={szIdx}
+                                  className="px-2.5 py-1 bg-pink-50 border border-pink-200 text-[#FF2E93] rounded-lg text-xs font-bold flex items-center gap-1.5"
+                                >
+                                  {sz}
+                                  {newProdSizes.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewProdSizes(newProdSizes.filter((_, i) => i !== szIdx))}
+                                      className="text-pink-400 hover:text-red-500 font-bold"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </span>
+                              ))}
+
+                              <div className="flex items-center gap-1 min-w-[110px]">
+                                <input
+                                  value={newProdCustomSize}
+                                  placeholder="+ Talla..."
+                                  onChange={e => setNewProdCustomSize(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      if (newProdCustomSize.trim() && !newProdSizes.includes(newProdCustomSize.trim())) {
+                                        setNewProdSizes([...newProdSizes, newProdCustomSize.trim()]);
+                                        setNewProdCustomSize('');
+                                      }
+                                    }
+                                  }}
+                                  className="border border-dashed border-zinc-300 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#FF2E93] w-20"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setNewProd({ ...newProd, variants: newProd.variants.filter((_, i) => i !== idx) });
+                                    if (newProdCustomSize.trim() && !newProdSizes.includes(newProdCustomSize.trim())) {
+                                      setNewProdSizes([...newProdSizes, newProdCustomSize.trim()]);
+                                      setNewProdCustomSize('');
+                                    }
                                   }}
-                                  className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
-                                  title="Eliminar variante"
+                                  className="p-1 bg-[#FF2E93] text-white rounded-lg hover:bg-[#e0157a]"
                                 >
-                                  ✕
+                                  <Icon.Plus className="w-3 h-3" />
                                 </button>
                               </div>
+                            </div>
+                          </div>
 
-                              {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
-                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {v.image ? (
-                                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0">
-                                      <img src={v.image} alt="" className="w-full h-full object-cover" />
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updated = [...newProd.variants];
-                                          updated[idx].image = '';
-                                          setNewProd({ ...newProd, variants: updated });
-                                        }}
-                                        className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                        title="Quitar foto"
-                                      >✕</button>
-                                    </div>
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
-                                      <Icon.Photo className="w-4 h-4" />
-                                    </div>
-                                  )}
+                          {/* PASO 3: STOCK POR COMBINACIÓN */}
+                          <div className="space-y-2.5 pt-2 border-t border-pink-100">
+                            <div className="flex flex-wrap justify-between items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">3</span>
+                                <label className="font-bold text-zinc-800 text-xs">
+                                  Stock ({newProdColors.length * newProdSizes.length} combinaciones)
+                                </label>
+                              </div>
 
-                                  <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                    <Icon.Photo className="w-3 h-3 text-[#FF2E93]" />
-                                    <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={async e => {
-                                        if (e.target.files[0]) {
-                                          const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                          if (url) {
-                                            const updated = [...newProd.variants];
-                                            updated[idx].image = url;
-                                            setNewProd({ ...newProd, variants: updated });
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-
-                                {v.image && (
-                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                    <Icon.Check className="w-3 h-3" /> Foto lista
-                                  </span>
-                                )}
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <span className="text-zinc-500 font-medium">Asignar a todo:</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={newProdBulkStock}
+                                  onChange={e => setNewProdBulkStock(e.target.value)}
+                                  className="w-12 border rounded-lg px-1.5 py-0.5 text-center font-bold text-xs outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const val = parseInt(newProdBulkStock || '0', 10);
+                                    const newMap = { ...newProdMatrixStock };
+                                    newProdColors.forEach(c => {
+                                      newProdSizes.forEach(s => {
+                                        newMap[`${c.name}_${s}`] = val;
+                                      });
+                                    });
+                                    setNewProdMatrixStock(newMap);
+                                    showToast(`Stock de ${val} aplicado a todo`);
+                                  }}
+                                  className="bg-zinc-800 hover:bg-black text-white px-2 py-0.5 rounded-lg font-bold text-[10px] transition"
+                                >
+                                  Aplicar
+                                </button>
                               </div>
                             </div>
-                          ))}
+
+                            <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
+                              {newProdColors.map((col, cIdx) => (
+                                <div key={cIdx} className="bg-white border border-zinc-200 rounded-xl p-2.5 shadow-2xs space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    {col.image ? (
+                                      <img src={col.image} alt="" className="w-5 h-5 rounded-md object-contain border border-zinc-200" />
+                                    ) : (
+                                      <span className="w-3.5 h-3.5 rounded-full bg-[#FF2E93]/20 border border-[#FF2E93]"></span>
+                                    )}
+                                    <span className="font-bold text-zinc-800 text-xs">{col.name || `Color ${cIdx + 1}`}</span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                    {newProdSizes.map((sz, szIdx) => {
+                                      const key = `${col.name}_${sz}`;
+                                      const val = newProdMatrixStock[key] !== undefined ? newProdMatrixStock[key] : (newProdBulkStock || 5);
+                                      return (
+                                        <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
+                                          <span className="font-bold text-zinc-700 text-[11px] truncate">{sz}:</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={val}
+                                            onChange={e => {
+                                              const num = parseInt(e.target.value || '0', 10);
+                                              setNewProdMatrixStock({
+                                                ...newProdMatrixStock,
+                                                [key]: isNaN(num) ? 0 : num
+                                              });
+                                            }}
+                                            className="w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93]"
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <button type="submit" disabled={uploading} className="w-full bg-[#FF2E93] hover:bg-[#e0157a] text-white py-3 rounded-xl font-bold text-xs shadow-xs transition">
                         {uploading ? 'Guardando...' : 'Crear Producto en Supabase'}
@@ -3029,7 +3614,7 @@
                               {/* BOTONES ACCIÓN (EDITAR / BORRAR) */}
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
-                                  onClick={() => setEditingProduct(JSON.parse(JSON.stringify(prod)))}
+                                  onClick={() => openEditProductModal(prod)}
                                   className="px-2.5 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] rounded-xl font-bold border border-pink-200 text-xs flex items-center gap-1 shadow-2xs transition"
                                   title="Editar producto"
                                 >
@@ -3867,8 +4452,8 @@
                     <label className="font-semibold text-zinc-700 block mb-1">Foto Principal del Producto</label>
                     <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-2xl p-2.5">
                       {editingProduct.image ? (
-                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0">
-                          <img src={editingProduct.image} alt="Preview" className="w-full h-full object-cover" />
+                        <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                          <img src={editingProduct.image} alt="Preview" className="w-full h-full object-contain" />
                           <button
                             type="button"
                             onClick={() => setEditingProduct({ ...editingProduct, image: '' })}
@@ -3913,116 +4498,440 @@
                     ></textarea>
                   </div>
 
-                  {/* VARIANTES CON FOTO PROPIA DESDE DISPOSITIVO */}
-                  <div className="border border-zinc-200 rounded-2xl p-3 bg-zinc-50 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="font-bold text-zinc-800">Variantes con Foto y Stock ({editingProduct.variants?.length || 0})</label>
+                  {/* SELECTOR DE MODALIDAD EN EDICIÓN: TONOS SIMPLES vs TALLAS Y COLORES SEPARADOS */}
+                  <div className="space-y-2">
+                    <label className="font-semibold text-zinc-700 block">Tipo de Variantes</label>
+                    <div className="flex rounded-xl bg-zinc-100 p-1 border border-zinc-200">
                       <button
                         type="button"
-                        onClick={() => {
-                          const updated = [...(editingProduct.variants || []), { name: `Variante ${(editingProduct.variants || []).length + 1}`, stock: 5, image: '' }];
-                          setEditingProduct({ ...editingProduct, variants: updated });
-                        }}
-                        className="text-[#FF2E93] font-bold text-xs"
+                        onClick={() => setEditVariantMode('simple')}
+                        className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                          editVariantMode === 'simple'
+                            ? 'bg-white text-zinc-900 shadow-2xs'
+                            : 'text-zinc-500 hover:text-zinc-800'
+                        }`}
                       >
-                        + Añadir Variante
+                        <span>💅 Tonos / Simples</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditVariantMode('color_size')}
+                        className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                          editVariantMode === 'color_size'
+                            ? 'bg-[#FF2E93] text-white shadow-2xs'
+                            : 'text-zinc-500 hover:text-zinc-800'
+                        }`}
+                      >
+                        <span>👗 Tallas y Colores</span>
                       </button>
                     </div>
+                  </div>
 
-                    <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
-                      {(editingProduct.variants || []).map((v, idx) => (
-                        <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2 shadow-2xs">
-                          <div className="flex gap-2 items-center">
-                            <input
-                              value={v.name}
-                              placeholder="Nombre variante (ej. Tono 01 Rose)"
-                              onChange={e => {
-                                const up = [...editingProduct.variants];
-                                up[idx].name = e.target.value;
-                                setEditingProduct({ ...editingProduct, variants: up });
-                              }}
-                              className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
-                            />
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className="text-[10px] text-zinc-400 font-bold">Stock:</span>
+                  {editVariantMode === 'simple' ? (
+                    /* VARIANTES SIMPLES CON FOTO PROPIA DESDE DISPOSITIVO */
+                    <div className="border border-zinc-200 rounded-2xl p-3 bg-zinc-50 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="font-bold text-zinc-800">Variantes con Foto y Stock ({editingProduct.variants?.length || 0})</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = [...(editingProduct.variants || []), { name: `Variante ${(editingProduct.variants || []).length + 1}`, stock: 5, image: '' }];
+                            setEditingProduct({ ...editingProduct, variants: updated });
+                          }}
+                          className="text-[#FF2E93] font-bold text-xs"
+                        >
+                          + Añadir Variante
+                        </button>
+                      </div>
+
+                      <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
+                        {(editingProduct.variants || []).map((v, idx) => (
+                          <div key={idx} className="bg-white border border-zinc-200 rounded-xl p-2.5 space-y-2 shadow-2xs">
+                            <div className="flex gap-2 items-center">
                               <input
-                                type="number"
-                                value={v.stock}
+                                value={v.name}
+                                placeholder="Nombre variante (ej. Tono 01 Rose)"
                                 onChange={e => {
                                   const up = [...editingProduct.variants];
-                                  up[idx].stock = parseInt(e.target.value || '0', 10);
+                                  up[idx].name = e.target.value;
                                   setEditingProduct({ ...editingProduct, variants: up });
                                 }}
-                                className="w-14 border rounded-lg p-1.5 text-xs font-bold text-center outline-none focus:border-[#FF2E93]"
+                                className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
                               />
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="text-[10px] text-zinc-400 font-bold">Stock:</span>
+                                <input
+                                  type="number"
+                                  value={v.stock}
+                                  onChange={e => {
+                                    const up = [...editingProduct.variants];
+                                    up[idx].stock = parseInt(e.target.value || '0', 10);
+                                    setEditingProduct({ ...editingProduct, variants: up });
+                                  }}
+                                  className="w-14 border rounded-lg p-1.5 text-xs font-bold text-center outline-none focus:border-[#FF2E93]"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const up = editingProduct.variants.filter((_, i) => i !== idx);
+                                  setEditingProduct({ ...editingProduct, variants: up });
+                                }}
+                                className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
+                                title="Eliminar variante"
+                              >
+                                ✕
+                              </button>
                             </div>
+
+                            {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
+                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {v.image ? (
+                                  <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                                    <img src={v.image} alt="" className="w-full h-full object-contain" />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const up = [...editingProduct.variants];
+                                        up[idx].image = '';
+                                        setEditingProduct({ ...editingProduct, variants: up });
+                                      }}
+                                      className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
+                                      title="Quitar foto"
+                                    >✕</button>
+                                  </div>
+                                ) : (
+                                  <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
+                                    <Icon.Photo className="w-4 h-4" />
+                                  </div>
+                                )}
+
+                                <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
+                                  <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                  <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async e => {
+                                      if (e.target.files[0]) {
+                                        const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                                        if (url) {
+                                          const up = [...editingProduct.variants];
+                                          up[idx].image = url;
+                                          setEditingProduct({ ...editingProduct, variants: up });
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
+
+                              {v.image && (
+                                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
+                                  <Icon.Check className="w-3 h-3" /> Foto lista
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* GESTOR DE TALLAS Y COLORES SEPARADOS EN EDICIÓN */
+                    <div className="border border-pink-200 bg-pink-50/20 rounded-2xl p-3.5 space-y-4">
+                      {/* PASO 1: COLORES */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">1</span>
+                            <label className="font-bold text-zinc-800 text-xs">Colores Disponibles ({editColors.length})</label>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditColors([...editColors, { name: `Color ${editColors.length + 1}`, image: '' }])}
+                            className="text-[#FF2E93] hover:text-[#e0157a] font-bold text-xs flex items-center gap-0.5"
+                          >
+                            <Icon.Plus className="w-3.5 h-3.5" /> Añadir Color
+                          </button>
+                        </div>
+
+                        {/* Sugerencias rápidas */}
+                        <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar text-[11px]">
+                          <span className="text-zinc-400 text-[10px] shrink-0 font-medium">Sugeridos:</span>
+                          {['Negro', 'Blanco', 'Beige', 'Palo de Rosa', 'Rojo', 'Azul', 'Verde', 'Café', 'Lila'].map(suggested => (
+                            <button
+                              key={suggested}
+                              type="button"
+                              onClick={() => {
+                                if (!editColors.some(c => c.name.toLowerCase() === suggested.toLowerCase())) {
+                                  setEditColors([...editColors, { name: suggested, image: '' }]);
+                                }
+                              }}
+                              className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] shrink-0 font-medium"
+                            >
+                              +{suggested}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Lista de colores con foto */}
+                        <div className="space-y-2 max-h-52 overflow-y-auto no-scrollbar">
+                          {editColors.map((col, cIdx) => (
+                            <div key={cIdx} className="bg-white border border-zinc-200 rounded-xl p-2.5 shadow-2xs space-y-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  value={col.name}
+                                  placeholder="Nombre del color (ej. Negro)"
+                                  onChange={e => {
+                                    const up = [...editColors];
+                                    up[cIdx].name = e.target.value;
+                                    setEditColors(up);
+                                  }}
+                                  className="flex-1 border rounded-lg p-1.5 text-xs font-semibold outline-none focus:border-[#FF2E93]"
+                                />
+                                {editColors.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditColors(editColors.filter((_, i) => i !== cIdx))}
+                                    className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
+                                    title="Eliminar este color"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {col.image ? (
+                                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
+                                      <img src={col.image} alt="" className="w-full h-full object-contain" />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const up = [...editColors];
+                                          up[cIdx].image = '';
+                                          setEditColors(up);
+                                        }}
+                                        className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
+                                        title="Quitar foto"
+                                      >✕</button>
+                                    </div>
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0">
+                                      <Icon.Photo className="w-3.5 h-3.5" />
+                                    </div>
+                                  )}
+
+                                  <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
+                                    <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                    <span>{col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'}</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={async e => {
+                                        if (e.target.files[0]) {
+                                          const url = await uploadFileToSupabase(e.target.files[0], 'products');
+                                          if (url) {
+                                            const up = [...editColors];
+                                            up[cIdx].image = url;
+                                            setEditColors(up);
+                                          }
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+
+                                {col.image && (
+                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
+                                    <Icon.Check className="w-3 h-3" /> Foto lista
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* PASO 2: TALLAS */}
+                      <div className="space-y-2 pt-2 border-t border-pink-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">2</span>
+                            <label className="font-bold text-zinc-800 text-xs">Tallas Disponibles ({editSizes.length})</label>
+                          </div>
+                        </div>
+
+                        {/* Presets */}
+                        <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                          <span className="text-zinc-400 text-[10px] font-medium mr-1">Presets:</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditSizes(['XS', 'S', 'M', 'L', 'XL'])}
+                            className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                          >
+                            Ropa (XS - XL)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditSizes(['S', 'M', 'L'])}
+                            className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                          >
+                            Estándar (S, M, L)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditSizes(['35', '36', '37', '38', '39', '40'])}
+                            className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                          >
+                            Calzado (35 - 40)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditSizes(['Única'])}
+                            className="px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-700 hover:border-[#FF2E93] hover:text-[#FF2E93] font-medium"
+                          >
+                            Talla Única
+                          </button>
+                        </div>
+
+                        {/* Chips de tallas */}
+                        <div className="flex flex-wrap items-center gap-1.5 p-2 bg-white rounded-xl border border-zinc-200">
+                          {editSizes.map((sz, szIdx) => (
+                            <span
+                              key={szIdx}
+                              className="px-2.5 py-1 bg-pink-50 border border-pink-200 text-[#FF2E93] rounded-lg text-xs font-bold flex items-center gap-1.5"
+                            >
+                              {sz}
+                              {editSizes.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditSizes(editSizes.filter((_, i) => i !== szIdx))}
+                                  className="text-pink-400 hover:text-red-500 font-bold"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </span>
+                          ))}
+
+                          <div className="flex items-center gap-1 min-w-[110px]">
+                            <input
+                              value={editCustomSize}
+                              placeholder="+ Talla..."
+                              onChange={e => setEditCustomSize(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (editCustomSize.trim() && !editSizes.includes(editCustomSize.trim())) {
+                                    setEditSizes([...editSizes, editCustomSize.trim()]);
+                                    setEditCustomSize('');
+                                  }
+                                }
+                              }}
+                              className="border border-dashed border-zinc-300 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#FF2E93] w-20"
+                            />
                             <button
                               type="button"
                               onClick={() => {
-                                const up = editingProduct.variants.filter((_, i) => i !== idx);
-                                setEditingProduct({ ...editingProduct, variants: up });
+                                if (editCustomSize.trim() && !editSizes.includes(editCustomSize.trim())) {
+                                  setEditSizes([...editSizes, editCustomSize.trim()]);
+                                  setEditCustomSize('');
+                                }
                               }}
-                              className="text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition"
-                              title="Eliminar variante"
+                              className="p-1 bg-[#FF2E93] text-white rounded-lg hover:bg-[#e0157a]"
                             >
-                              ✕
+                              <Icon.Plus className="w-3 h-3" />
                             </button>
                           </div>
+                        </div>
+                      </div>
 
-                          {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
-                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {v.image ? (
-                                <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0">
-                                  <img src={v.image} alt="" className="w-full h-full object-cover" />
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const up = [...editingProduct.variants];
-                                      up[idx].image = '';
-                                      setEditingProduct({ ...editingProduct, variants: up });
-                                    }}
-                                    className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                    title="Quitar foto"
-                                  >✕</button>
-                                </div>
-                              ) : (
-                                <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
-                                  <Icon.Photo className="w-4 h-4" />
-                                </div>
-                              )}
+                      {/* PASO 3: STOCK POR COMBINACIÓN */}
+                      <div className="space-y-2.5 pt-2 border-t border-pink-100">
+                        <div className="flex flex-wrap justify-between items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-[#FF2E93] text-white text-[10px] font-black flex items-center justify-center">3</span>
+                            <label className="font-bold text-zinc-800 text-xs">
+                              Stock ({editColors.length * editSizes.length} combinaciones)
+                            </label>
+                          </div>
 
-                              <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
-                                <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={async e => {
-                                    if (e.target.files[0]) {
-                                      const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                      if (url) {
-                                        const up = [...editingProduct.variants];
-                                        up[idx].image = url;
-                                        setEditingProduct({ ...editingProduct, variants: up });
-                                      }
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-
-                            {v.image && (
-                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                <Icon.Check className="w-3 h-3" /> Foto lista
-                              </span>
-                            )}
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <span className="text-zinc-500 font-medium">Asignar a todo:</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={editBulkStock}
+                              onChange={e => setEditBulkStock(e.target.value)}
+                              className="w-12 border rounded-lg px-1.5 py-0.5 text-center font-bold text-xs outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const val = parseInt(editBulkStock || '0', 10);
+                                const newMap = { ...editMatrixStock };
+                                editColors.forEach(c => {
+                                  editSizes.forEach(s => {
+                                    newMap[`${c.name}_${s}`] = val;
+                                  });
+                                });
+                                setEditMatrixStock(newMap);
+                                showToast(`Stock de ${val} aplicado a todo`);
+                              }}
+                              className="bg-zinc-800 hover:bg-black text-white px-2 py-0.5 rounded-lg font-bold text-[10px] transition"
+                            >
+                              Aplicar
+                            </button>
                           </div>
                         </div>
-                      ))}
+
+                        <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
+                          {editColors.map((col, cIdx) => (
+                            <div key={cIdx} className="bg-white border border-zinc-200 rounded-xl p-2.5 shadow-2xs space-y-2">
+                              <div className="flex items-center gap-2">
+                                {col.image ? (
+                                  <img src={col.image} alt="" className="w-5 h-5 rounded-md object-contain border border-zinc-200" />
+                                ) : (
+                                  <span className="w-3.5 h-3.5 rounded-full bg-[#FF2E93]/20 border border-[#FF2E93]"></span>
+                                )}
+                                <span className="font-bold text-zinc-800 text-xs">{col.name || `Color ${cIdx + 1}`}</span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                {editSizes.map((sz, szIdx) => {
+                                  const key = `${col.name}_${sz}`;
+                                  const val = editMatrixStock[key] !== undefined ? editMatrixStock[key] : (editBulkStock || 5);
+                                  return (
+                                    <div key={szIdx} className="flex items-center justify-between gap-1 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
+                                      <span className="font-bold text-zinc-700 text-[11px] truncate">{sz}:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={val}
+                                        onChange={e => {
+                                          const num = parseInt(e.target.value || '0', 10);
+                                          setEditMatrixStock({
+                                            ...editMatrixStock,
+                                            [key]: isNaN(num) ? 0 : num
+                                          });
+                                        }}
+                                        className="w-12 bg-white border border-zinc-300 rounded-md py-0.5 px-1 text-center font-bold text-xs outline-none focus:border-[#FF2E93]"
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="pt-2 flex gap-2">
                     <button
@@ -4573,16 +5482,39 @@
                 </div>
 
                 {(() => {
-                  const currentVarName = quickViewSelectedVar || activeVariants[quickViewProduct.id]?.variantName || quickViewProduct.variants?.[0]?.name;
-                  const varObj = (quickViewProduct.variants || []).find(v => v.name === currentVarName);
-                  const displayImg = varObj?.image || activeVariants[quickViewProduct.id]?.image || quickViewProduct.image;
+                  const hasColorAndSize = (quickViewProduct.variants || []).some(v => v.color && v.size);
+                  const distinctColors = hasColorAndSize ? Array.from(new Set(quickViewProduct.variants.map(v => v.color).filter(Boolean))) : [];
+                  const distinctSizes = hasColorAndSize ? Array.from(new Set(quickViewProduct.variants.map(v => v.size).filter(Boolean))) : [];
+
+                  const modalActive = activeVariants[quickViewProduct.id] || {};
+                  const currentColor = hasColorAndSize
+                    ? (modalActive.color || (distinctColors.find(c => (quickViewProduct.variants || []).some(v => v.color === c && v.stock > 0))) || distinctColors[0])
+                    : null;
+
+                  const currentSize = hasColorAndSize
+                    ? (modalActive.size || (distinctSizes.find(s => (quickViewProduct.variants || []).some(v => v.color === currentColor && v.size === s && v.stock > 0))) || distinctSizes[0])
+                    : null;
+
+                  const varObj = hasColorAndSize
+                    ? ((quickViewProduct.variants || []).find(v => v.color === currentColor && v.size === currentSize) ||
+                       (quickViewProduct.variants || []).find(v => v.color === currentColor) ||
+                       quickViewProduct.variants?.[0])
+                    : ((quickViewProduct.variants || []).find(v => v.name === (quickViewSelectedVar || modalActive.variantName || quickViewProduct.variants?.[0]?.name)) || quickViewProduct.variants?.[0]);
+
+                  const currentVarName = varObj ? varObj.name : (quickViewProduct.variants?.[0]?.name || 'Único');
+                  const displayImg = varObj?.image || (hasColorAndSize ? quickViewProduct.variants?.find(v => v.color === currentColor && v.image)?.image : null) || modalActive.image || quickViewProduct.image;
                   const stock = varObj ? varObj.stock : 0;
                   const hasDiscount = Boolean(quickViewProduct.discount_price && Number(quickViewProduct.discount_price) < Number(quickViewProduct.price));
 
                   return (
                     <>
-                      <div className="md:w-1/2 h-64 md:h-auto bg-zinc-50 relative">
-                        <img src={displayImg || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'} alt={quickViewProduct.name} className="w-full h-full object-cover" />
+                      {/* FOTO COMPLETA SIN RECORTES (OPTIMIZADA PARA MÓVIL) */}
+                      <div className="md:w-1/2 min-h-[280px] sm:min-h-[360px] max-h-[52vh] md:max-h-[75vh] bg-gradient-to-b from-zinc-50 to-pink-50/20 relative flex items-center justify-center p-3 sm:p-5 overflow-hidden">
+                        <img
+                          src={displayImg || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'}
+                          alt={quickViewProduct.name}
+                          className="w-full h-full max-h-[46vh] md:max-h-[70vh] object-contain drop-shadow-sm transition-all duration-300"
+                        />
                       </div>
 
                       <div className="p-6 md:w-1/2 flex flex-col justify-between space-y-4">
@@ -4604,50 +5536,162 @@
                             )}
                           </div>
 
-                          {/* SELECTOR DE VARIANTES EN MODAL */}
-                          <div className="mt-4 border-t pt-3 space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="font-semibold text-zinc-700">{quickViewProduct.variant_label || 'Tono / Talla'}:</span>
-                              <span className={`text-[11px] font-bold ${
-                                stock <= 0
-                                  ? 'text-red-500'
-                                  : stock <= 2
-                                  ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black animate-pulse'
-                                  : 'text-emerald-700'
-                              }`}>
-                                {stock <= 0 ? 'Agotado' : stock <= 2 ? `🔥 ¡Solo ${stock} disponibles!` : `Stock disponible: ${stock}`}
-                              </span>
-                            </div>
+                          {/* SELECTOR DE VARIANTES EN MODAL: COLOR Y TALLA SEPARADOS O SIMPLE */}
+                          {hasColorAndSize ? (
+                            <div className="mt-4 border-t pt-3 space-y-3">
+                              {/* PASO 1: SELECCIONAR COLOR */}
+                              <div>
+                                <div className="flex justify-between items-center text-xs mb-1.5">
+                                  <span className="font-semibold text-zinc-700">1. Selecciona Color: <strong className="text-[#FF2E93]">{currentColor}</strong></span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {distinctColors.map(c => {
+                                    const colorVar = (quickViewProduct.variants || []).find(v => v.color === c);
+                                    const isColActive = currentColor === c;
+                                    const colorStock = (quickViewProduct.variants || []).filter(v => v.color === c).reduce((sum, v) => sum + (v.stock || 0), 0);
+                                    return (
+                                      <button
+                                        key={c}
+                                        type="button"
+                                        disabled={colorStock <= 0}
+                                        onClick={() => {
+                                          const matchedVar = (quickViewProduct.variants || []).find(v => v.color === c && v.size === currentSize && v.stock > 0) ||
+                                                            (quickViewProduct.variants || []).find(v => v.color === c && v.stock > 0) ||
+                                                            (quickViewProduct.variants || []).find(v => v.color === c);
+                                          const nextSize = matchedVar ? matchedVar.size : currentSize;
+                                          const nextVarName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
+                                          setQuickViewSelectedVar(nextVarName);
+                                          setActiveVariants({
+                                            ...activeVariants,
+                                            [quickViewProduct.id]: {
+                                              color: c,
+                                              size: nextSize,
+                                              variantName: nextVarName,
+                                              image: matchedVar?.image || colorVar?.image || quickViewProduct.image
+                                            }
+                                          });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-2 ${
+                                          isColActive
+                                            ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-2 ring-[#FF2E93]'
+                                            : colorStock <= 0
+                                            ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
+                                            : 'border-zinc-200 hover:border-[#FF2E93] text-zinc-700'
+                                        }`}
+                                      >
+                                        {colorVar?.image ? (
+                                          <img src={colorVar.image} alt="" className="w-5 h-5 rounded-lg object-contain border border-zinc-200 bg-white" />
+                                        ) : (
+                                          <span className="w-3.5 h-3.5 rounded-full bg-zinc-300"></span>
+                                        )}
+                                        <span>{c}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
 
-                            <div className="flex flex-wrap gap-1.5">
-                              {(quickViewProduct.variants || []).map(v => (
-                                <button
-                                  key={v.name}
-                                  disabled={v.stock <= 0}
-                                  onClick={() => {
-                                    setQuickViewSelectedVar(v.name);
-                                    setActiveVariants({
-                                      ...activeVariants,
-                                      [quickViewProduct.id]: { variantName: v.name, image: v.image || quickViewProduct.image }
-                                    });
-                                  }}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
-                                    currentVarName === v.name
-                                      ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-1 ring-[#FF2E93]'
-                                      : v.stock <= 0
-                                      ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through'
-                                      : 'border-zinc-200 hover:border-[#FF2E93]'
-                                  }`}
-                                >
-                                  {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
-                                  <span>{v.name}</span>
-                                  {v.stock > 0 && v.stock <= 2 && (
-                                    <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
-                                  )}
-                                </button>
-                              ))}
+                              {/* PASO 2: SELECCIONAR TALLA */}
+                              <div>
+                                <div className="flex justify-between items-center text-xs mb-1.5">
+                                  <span className="font-semibold text-zinc-700">2. Selecciona Talla: <strong className="text-zinc-900">{currentSize}</strong></span>
+                                  <span className={`text-[11px] font-bold ${
+                                    stock <= 0
+                                      ? 'text-red-500'
+                                      : stock <= 2
+                                      ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black animate-pulse'
+                                      : 'text-emerald-700'
+                                  }`}>
+                                    {stock <= 0 ? 'Agotada en este color' : stock <= 2 ? `🔥 ¡Solo ${stock} disponibles!` : `Stock disponible: ${stock}`}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {distinctSizes.map(s => {
+                                    const combVar = (quickViewProduct.variants || []).find(v => v.color === currentColor && v.size === s);
+                                    const combStock = combVar ? (combVar.stock || 0) : 0;
+                                    const isSizeActive = currentSize === s;
+                                    return (
+                                      <button
+                                        key={s}
+                                        type="button"
+                                        disabled={combStock <= 0}
+                                        onClick={() => {
+                                          const varName = combVar ? combVar.name : `${currentColor} - ${s}`;
+                                          setQuickViewSelectedVar(varName);
+                                          setActiveVariants({
+                                            ...activeVariants,
+                                            [quickViewProduct.id]: {
+                                              color: currentColor,
+                                              size: s,
+                                              variantName: varName,
+                                              image: combVar?.image || quickViewProduct.image
+                                            }
+                                          });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                                          isSizeActive
+                                            ? 'border-[#FF2E93] bg-[#FF2E93] text-white shadow-xs ring-2 ring-pink-200'
+                                            : combStock <= 0
+                                            ? 'border-zinc-200 bg-zinc-100 text-zinc-300 line-through cursor-not-allowed'
+                                            : 'border-zinc-200 text-zinc-700 hover:border-[#FF2E93] bg-white'
+                                        }`}
+                                      >
+                                        <span>{s}</span>
+                                        {combStock > 0 && combStock <= 2 && (
+                                          <span className="text-[10px] ml-1 opacity-90">({combStock})</span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            /* SELECTOR SIMPLE DE TONOS/VARIANTES */
+                            <div className="mt-4 border-t pt-3 space-y-2">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-semibold text-zinc-700">{quickViewProduct.variant_label || 'Tono / Talla'}:</span>
+                                <span className={`text-[11px] font-bold ${
+                                  stock <= 0
+                                    ? 'text-red-500'
+                                    : stock <= 2
+                                    ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black animate-pulse'
+                                    : 'text-emerald-700'
+                                }`}>
+                                  {stock <= 0 ? 'Agotado' : stock <= 2 ? `🔥 ¡Solo ${stock} disponibles!` : `Stock disponible: ${stock}`}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                {(quickViewProduct.variants || []).map(v => (
+                                  <button
+                                    key={v.name}
+                                    disabled={v.stock <= 0}
+                                    onClick={() => {
+                                      setQuickViewSelectedVar(v.name);
+                                      setActiveVariants({
+                                        ...activeVariants,
+                                        [quickViewProduct.id]: { variantName: v.name, image: v.image || quickViewProduct.image }
+                                      });
+                                    }}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
+                                      currentVarName === v.name
+                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] ring-1 ring-[#FF2E93]'
+                                        : v.stock <= 0
+                                        ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through'
+                                        : 'border-zinc-200 hover:border-[#FF2E93]'
+                                    }`}
+                                  >
+                                    {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
+                                    <span>{v.name}</span>
+                                    {v.stock > 0 && v.stock <= 2 && (
+                                      <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <button

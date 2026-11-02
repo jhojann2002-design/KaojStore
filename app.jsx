@@ -265,6 +265,16 @@
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
+      ),
+      List: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      ),
+      Grid: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+        </svg>
       )
     };
 
@@ -902,15 +912,15 @@ ESTADO: ${status.toUpperCase()}
   <div class="no-print">
     <button class="btn" onclick="window.print()">🖨️ Imprimir Ticket 58mm</button>
   </div>
-  <script>
-    setTimeout(function() {
-      window.focus();
-      window.print();
-    }, 280);
-  </script>
 </body>
 </html>`);
       doc.close();
+      setTimeout(function() {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (e) {}
+      }, 350);
     }
 
     function downloadThermalTicketFile(order, settings) {
@@ -1162,16 +1172,15 @@ ESTADO: ${status.toUpperCase()}
     <p style="margin-top: 4px;">"No es un gasto, es una inversión en ti misma."</p>
     <p style="font-size: 10px; color: #999; margin-top: 8px;">Este documento es un comprobante de orden emitido por la plataforma oficial de Kaoj Store.</p>
   </div>
-
-  <script>
-    setTimeout(function() {
-      window.focus();
-      window.print();
-    }, 350);
-  </script>
 </body>
 </html>`);
       doc.close();
+      setTimeout(function() {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (e) {}
+      }, 350);
     }
 
     function printSalesNoteWindow(order, settings) {
@@ -1444,16 +1453,36 @@ ESTADO: ${status.toUpperCase()}
       <div class="sig-line">Recibido Conforme (Cliente / Transportista)</div>
     </div>
   </div>
-
-  <script>
-    setTimeout(function() {
-      window.focus();
-      window.print();
-    }, 350);
-  </script>
 </body>
 </html>`);
       doc.close();
+      setTimeout(function() {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (e) {}
+      }, 350);
+    }
+
+    function getOrderWhatsAppMessage(order) {
+      if (!order) return '';
+      const name = (order.customer_name || 'Clienta').trim().split(' ')[0];
+      const code = order.order_code;
+      const total = Number(order.total || 0).toFixed(2);
+      const status = (order.status || 'pendiente').toLowerCase();
+      const delivery = order.delivery_method || 'Envío';
+      const address = order.delivery_address || '';
+
+      if (status === 'pendiente') {
+        return `¡Hola ${name}! Te saludamos de Kaoj Store 💅. Hemos recibido tu orden *#${code}* por *$${total}*. Estamos a la espera de la confirmación de tu pago para proceder de inmediato con el alistamiento de tu paquete ✨.`;
+      } else if (status === 'verificado') {
+        return `¡Hola ${name}! 💖 Confirmamos la recepción de tu pago para el pedido *#${code}*. Ya tenemos tu orden en preparación en bodega con todo el cuidado y cariño de Kaoj Store 💅📦.`;
+      } else if (status === 'en_camino') {
+        return `¡Hola ${name}! 🚚 Tu pedido *#${code}* de Kaoj Store ya va en camino hacia: ${delivery}${address ? ` (${address})` : ''}. ¡Muy pronto estará en tus manos! ✨💅`;
+      } else if (status === 'entregado') {
+        return `¡Hola ${name}! ✨ Tu pedido *#${code}* ha sido entregado exitosamente. ¡Muchas gracias por preferir a Kaoj Store! Recuerda calificar tus prendas en la tienda para acumular más puntos VIP 💖💅.`;
+      }
+      return `¡Hola ${name}! Te saludamos de Kaoj Store 💅. Tu pedido *#${code}* se encuentra en estado: *${status.toUpperCase()}*.`;
     }
 
     // COMPONENTE PRINCIPAL APP
@@ -1916,11 +1945,57 @@ ESTADO: ${status.toUpperCase()}
       const [adminSearch, setAdminSearch] = useState('');
       const [adminFilterStatus, setAdminFilterStatus] = useState('todos');
       const [adminOrderSearch, setAdminOrderSearch] = useState('');
+      const [adminOrderDeliveryFilter, setAdminOrderDeliveryFilter] = useState('todos'); // 'todos', 'servientrega', 'cooperativa', 'domicilio', 'retiro'
+      const [adminOrderSort, setAdminOrderSort] = useState('recientes'); // 'recientes', 'pendientes_primero', 'monto_desc', 'antiguos'
+      const [adminOrderViewMode, setAdminOrderViewMode] = useState('tabla'); // 'tabla' | 'tarjetas'
+      const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+      const [expandedOrderIds, setExpandedOrderIds] = useState({});
+
+      // Estadísticas y métricas operativas de pedidos en tiempo real
+      const orderStats = useMemo(() => {
+        const totalCount = orders.length;
+        const pendingList = orders.filter(o => o.status === 'pendiente');
+        const verifiedList = orders.filter(o => o.status === 'verificado');
+        const enCaminoList = orders.filter(o => o.status === 'en_camino');
+        const deliveredList = orders.filter(o => o.status === 'entregado');
+        const cancelledList = orders.filter(o => o.status === 'cancelado');
+        const totalRevenue = orders.filter(o => o.status !== 'cancelado').reduce((acc, o) => acc + Number(o.total || 0), 0);
+        const pendingRevenue = pendingList.reduce((acc, o) => acc + Number(o.total || 0), 0);
+        const servientregaCount = orders.filter(o => (o.delivery_method || '').toLowerCase().includes('servientrega')).length;
+        const cooperativaCount = orders.filter(o => (o.delivery_method || '').toLowerCase().includes('cooperativa')).length;
+        const localCount = orders.filter(o => {
+          const m = (o.delivery_method || '').toLowerCase();
+          return m.includes('domicilio') || m.includes('retiro') || m.includes('personal');
+        }).length;
+
+        return {
+          totalCount,
+          totalRevenue,
+          pendingCount: pendingList.length,
+          pendingRevenue,
+          verifiedCount: verifiedList.length,
+          enCaminoCount: enCaminoList.length,
+          deliveredCount: deliveredList.length,
+          cancelledCount: cancelledList.length,
+          servientregaCount,
+          cooperativaCount,
+          localCount
+        };
+      }, [orders]);
 
       const filteredOrders = useMemo(() => {
-        return orders.filter(o => {
+        let list = orders.filter(o => {
           const matchesStatus = adminFilterStatus === 'todos' || o.status === adminFilterStatus;
           if (!matchesStatus) return false;
+
+          if (adminOrderDeliveryFilter !== 'todos') {
+            const method = (o.delivery_method || '').toLowerCase();
+            if (adminOrderDeliveryFilter === 'servientrega' && !method.includes('servientrega')) return false;
+            if (adminOrderDeliveryFilter === 'cooperativa' && !method.includes('cooperativa')) return false;
+            if (adminOrderDeliveryFilter === 'domicilio' && !method.includes('domicilio')) return false;
+            if (adminOrderDeliveryFilter === 'retiro' && (!method.includes('retiro') && !method.includes('personal'))) return false;
+          }
+
           if (!adminOrderSearch.trim()) return true;
           const q = adminOrderSearch.toLowerCase().trim();
           return (
@@ -1929,10 +2004,70 @@ ESTADO: ${status.toUpperCase()}
             (o.customer_phone && o.customer_phone.includes(q)) ||
             (o.customer_code && o.customer_code.toLowerCase().includes(q)) ||
             (o.customer_id_card && o.customer_id_card.includes(q)) ||
-            (o.delivery_address && o.delivery_address.toLowerCase().includes(q))
+            (o.delivery_address && o.delivery_address.toLowerCase().includes(q)) ||
+            (o.payment_method && o.payment_method.toLowerCase().includes(q))
           );
         });
-      }, [orders, adminFilterStatus, adminOrderSearch]);
+
+        const sorted = [...list];
+        if (adminOrderSort === 'pendientes_primero') {
+          sorted.sort((a, b) => {
+            if (a.status === 'pendiente' && b.status !== 'pendiente') return -1;
+            if (b.status === 'pendiente' && a.status !== 'pendiente') return 1;
+            return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+          });
+        } else if (adminOrderSort === 'monto_desc') {
+          sorted.sort((a, b) => Number(b.total || 0) - Number(a.total || 0));
+        } else if (adminOrderSort === 'antiguos') {
+          sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        } else {
+          // 'recientes'
+          sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        }
+
+        return sorted;
+      }, [orders, adminFilterStatus, adminOrderDeliveryFilter, adminOrderSearch, adminOrderSort]);
+
+      // Métodos para cambiar de estado órdenes individualmente o por lote
+      const handleUpdateOrderStatus = async (order, newStatus) => {
+        if (!order || !order.id) return;
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+        const { error } = await supabase.rpc('kaoj_admin_update_order_status', {
+          admin_pin: adminPin,
+          target_order_id: order.id,
+          new_status: newStatus
+        });
+        if (error) {
+          const { error: directErr } = await supabase
+            .from('kaoj_orders')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', order.id);
+          if (directErr && !directErr.message?.includes('row-level security')) {
+            return showToast('Error al actualizar estado: ' + error.message, 'error');
+          }
+        }
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: newStatus } : o));
+        showToast(`Pedido #${order.order_code}: Estado cambiado a ${newStatus.toUpperCase()}`);
+      };
+
+      const handleBatchUpdateOrderStatus = async (newStatus) => {
+        if (!selectedOrderIds || selectedOrderIds.length === 0) return;
+        const count = selectedOrderIds.length;
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
+        for (const orderId of selectedOrderIds) {
+          try {
+            await supabase.rpc('kaoj_admin_update_order_status', {
+              admin_pin: adminPin,
+              target_order_id: orderId,
+              new_status: newStatus
+            });
+            await supabase.from('kaoj_orders').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', orderId);
+          } catch (e) {}
+        }
+        setOrders(prev => prev.map(o => selectedOrderIds.includes(o.id) ? { ...o, status: newStatus } : o));
+        setSelectedOrderIds([]);
+        showToast(`¡${count} pedidos actualizados a ${newStatus.toUpperCase()}! ⚡`, 'success');
+      };
       const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
       const [adminInventorySection, setAdminInventorySection] = useState('TODOS');
       const [adminInventoryCategory, setAdminInventoryCategory] = useState('TODOS');
@@ -5853,202 +5988,796 @@ ESTADO: ${status.toUpperCase()}
                 </div>
               )}
 
-              {/* ADMIN TAB 4: PEDIDOS */}
+              {/* ADMIN TAB 4: PEDIDOS - PANEL DE GESTIÓN RÁPIDA Y DESPACHO */}
               {adminTab === 'orders' && (
                 <div className="space-y-4">
+
+                  {/* 1. TARJETAS KPI DE DESPACHO Y CONTROL RÁPIDO */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('todos')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'todos' ? 'border-[#FF2E93] bg-pink-50/70 ring-1 ring-[#FF2E93]' : 'border-zinc-200 bg-white hover:border-zinc-300'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-zinc-500">Total Pedidos</span>
+                        <Icon.Box className="w-3.5 h-3.5 text-zinc-400" />
+                      </div>
+                      <p className="text-lg font-black text-zinc-900 mt-1">{orderStats.totalCount}</p>
+                      <p className="text-[10px] text-zinc-500 font-bold truncate">${orderStats.totalRevenue.toFixed(2)} vendidos</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('pendiente')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'pendiente' ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-500' : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-amber-800">⏳ Por Verificar</span>
+                        {orderStats.pendingCount > 0 && (
+                          <span className="animate-pulse w-2 h-2 rounded-full bg-amber-500"></span>
+                        )}
+                      </div>
+                      <p className="text-lg font-black text-amber-900 mt-1">{orderStats.pendingCount}</p>
+                      <p className="text-[10px] text-amber-700 font-bold truncate">${orderStats.pendingRevenue.toFixed(2)} en espera</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('verificado')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'verificado' ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-500' : 'border-purple-200 bg-purple-50/30 hover:bg-purple-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-purple-800">📦 Por Empacar</span>
+                        <Icon.Check className="w-3.5 h-3.5 text-purple-600" />
+                      </div>
+                      <p className="text-lg font-black text-purple-900 mt-1">{orderStats.verifiedCount}</p>
+                      <p className="text-[10px] text-purple-700 font-bold truncate">Pagos listos para empaque</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('en_camino')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs ${adminFilterStatus === 'en_camino' ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-blue-200 bg-blue-50/30 hover:bg-blue-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-blue-800">🚚 En Camino</span>
+                        <Icon.Truck className="w-3.5 h-3.5 text-blue-600" />
+                      </div>
+                      <p className="text-lg font-black text-blue-900 mt-1">{orderStats.enCaminoCount}</p>
+                      <p className="text-[10px] text-blue-700 font-bold truncate">En ruta de entrega</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminFilterStatus('entregado')}
+                      className={`p-3 rounded-2xl border text-left transition shadow-2xs col-span-2 sm:col-span-1 ${adminFilterStatus === 'entregado' ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-zinc-200 bg-white hover:border-zinc-300'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-emerald-800">✓ Entregados</span>
+                        <Icon.Star className="w-3.5 h-3.5 text-emerald-500" />
+                      </div>
+                      <p className="text-lg font-black text-emerald-900 mt-1">{orderStats.deliveredCount}</p>
+                      <p className="text-[10px] text-emerald-700 font-bold truncate">Compras finalizadas</p>
+                    </button>
+                  </div>
+
+                  {/* 2. BARRA DE HERRAMIENTAS Y FILTRADO AVANZADO */}
                   <div className="bg-white p-4 rounded-3xl border border-zinc-200 shadow-xs space-y-3 text-xs">
-                    {/* Barra de Búsqueda de Pedidos */}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Buscar pedido por código (KAOJ-...), clienta, celular, cédula o dirección..."
-                        value={adminOrderSearch}
-                        onChange={e => setAdminOrderSearch(e.target.value)}
-                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl pl-10 pr-10 py-2.5 text-xs text-zinc-900 outline-none focus:border-[#FF2E93] focus:bg-white transition"
-                      />
-                      <Icon.Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3" />
-                      {adminOrderSearch && (
+                    
+                    {/* Búsqueda de Pedidos + Orden + Vista */}
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          placeholder="Buscar por código (#KAOJ-...), nombre de clienta, teléfono, cédula o dirección..."
+                          value={adminOrderSearch}
+                          onChange={e => setAdminOrderSearch(e.target.value)}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl pl-10 pr-10 py-2.5 text-xs text-zinc-900 outline-none focus:border-[#FF2E93] focus:bg-white transition"
+                        />
+                        <Icon.Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3" />
+                        {adminOrderSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setAdminOrderSearch('')}
+                            className="absolute right-3.5 top-2.5 text-zinc-400 hover:text-zinc-600 font-bold"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Selector de Orden */}
+                      <select
+                        value={adminOrderSort}
+                        onChange={e => setAdminOrderSort(e.target.value)}
+                        className="bg-zinc-50 border border-zinc-200 rounded-2xl px-3 py-2.5 text-xs font-bold text-zinc-700 outline-none focus:border-[#FF2E93]"
+                      >
+                        <option value="recientes">⏱️ Más recientes primero</option>
+                        <option value="pendientes_primero">⏳ Pendientes primero</option>
+                        <option value="monto_desc">💰 Mayor valor primero</option>
+                        <option value="antiguos">📅 Más antiguos primero</option>
+                      </select>
+
+                      {/* Selector de Vista: Tabla Compacta vs Tarjetas */}
+                      <div className="flex items-center bg-zinc-100 p-1 rounded-2xl shrink-0 self-end md:self-auto">
                         <button
                           type="button"
-                          onClick={() => setAdminOrderSearch('')}
-                          className="absolute right-3.5 top-2.5 text-zinc-400 hover:text-zinc-600 font-bold"
+                          onClick={() => setAdminOrderViewMode('tabla')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminOrderViewMode === 'tabla' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-800'}`}
+                          title="Vista de tabla compacta (ideal para muchos pedidos)"
                         >
-                          ✕
+                          <Icon.List className="w-3.5 h-3.5" />
+                          <span>Tabla</span>
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => setAdminOrderViewMode('tarjetas')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${adminOrderViewMode === 'tarjetas' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-500 hover:text-zinc-800'}`}
+                          title="Vista de tarjetas detalladas"
+                        >
+                          <Icon.Grid className="w-3.5 h-3.5" />
+                          <span>Tarjetas</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filtros de Métodos de Envío / Logística */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-zinc-100">
+                      <span className="text-[11px] font-bold text-zinc-400 shrink-0 mr-1">Logística:</span>
+                      <button
+                        type="button"
+                        onClick={() => setAdminOrderDeliveryFilter('todos')}
+                        className={`px-3 py-1 rounded-xl text-[11px] font-bold transition whitespace-nowrap ${adminOrderDeliveryFilter === 'todos' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}
+                      >
+                        Todos ({orders.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminOrderDeliveryFilter('servientrega')}
+                        className={`px-3 py-1 rounded-xl text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1 ${adminOrderDeliveryFilter === 'servientrega' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'}`}
+                      >
+                        <Icon.Box className="w-3 h-3" />
+                        <span>Solo Servientrega ({orderStats.servientregaCount})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminOrderDeliveryFilter('cooperativa')}
+                        className={`px-3 py-1 rounded-xl text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1 ${adminOrderDeliveryFilter === 'cooperativa' ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'}`}
+                      >
+                        <span>🚌 Solo Cooperativa ({orderStats.cooperativaCount})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminOrderDeliveryFilter('domicilio')}
+                        className={`px-3 py-1 rounded-xl text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1 ${adminOrderDeliveryFilter === 'domicilio' ? 'bg-purple-700 text-white' : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'}`}
+                      >
+                        <span>🛵 Solo Domicilio</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminOrderDeliveryFilter('retiro')}
+                        className={`px-3 py-1 rounded-xl text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1 ${adminOrderDeliveryFilter === 'retiro' ? 'bg-amber-700 text-white' : 'bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100'}`}
+                      >
+                        <span>📍 Solo Retiro en Punto</span>
+                      </button>
                     </div>
 
                     {/* Filtros de Estado */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap border-t pt-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap border-t border-zinc-100 pt-2.5">
                       <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                        <span className="text-[11px] font-bold text-zinc-400 shrink-0 self-center mr-1">Estado:</span>
                         {['todos', 'pendiente', 'verificado', 'en_camino', 'entregado', 'cancelado'].map(st => (
                           <button
                             key={st}
+                            type="button"
                             onClick={() => setAdminFilterStatus(st)}
-                            className={`px-3 py-1.5 rounded-xl font-bold uppercase tracking-wider text-[10px] whitespace-nowrap transition ${
+                            className={`px-3 py-1 rounded-xl font-bold uppercase tracking-wider text-[10px] whitespace-nowrap transition ${
                               adminFilterStatus === st
-                                ? (st === 'cancelado' ? 'bg-red-600 text-white' : 'bg-[#FF2E93] text-white')
-                                : (st === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-zinc-100 text-zinc-600')
+                                ? (st === 'cancelado' ? 'bg-red-600 text-white' : st === 'pendiente' ? 'bg-amber-500 text-white' : st === 'verificado' ? 'bg-purple-600 text-white' : st === 'en_camino' ? 'bg-blue-600 text-white' : st === 'entregado' ? 'bg-emerald-600 text-white' : 'bg-[#FF2E93] text-white')
+                                : (st === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200')
                             }`}
                           >
                             {st} ({st === 'todos' ? orders.length : orders.filter(o => o.status === st).length})
                           </button>
                         ))}
                       </div>
-                      <span className="text-[11px] text-zinc-400 font-medium">
+                      <span className="text-[11px] text-zinc-500 font-bold">
                         Mostrando {filteredOrders.length} {filteredOrders.length === 1 ? 'pedido' : 'pedidos'}
                       </span>
                     </div>
+
                   </div>
 
-                  <div className="space-y-3">
-                    {filteredOrders.length === 0 ? (
-                      <div className="bg-white rounded-2xl border border-zinc-200 p-8 text-center text-zinc-400 text-xs">
-                        <p className="font-semibold">No se encontraron pedidos con los filtros actuales.</p>
+                  {/* 3. BARRA DE ACCIONES MASIVAS EN LOTE (BULK ACTIONS) */}
+                  {selectedOrderIds.length > 0 && (
+                    <div className="bg-zinc-900 text-white rounded-2xl p-3 shadow-lg flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in slide-in-from-top-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-[#FF2E93] text-white font-bold px-2.5 py-0.5 rounded-full text-xs">
+                          {selectedOrderIds.length} seleccionados
+                        </span>
+                        <span className="text-zinc-300">Acción masiva para todos:</span>
                       </div>
-                    ) : (
-                      filteredOrders.map(order => (
-                        <div key={order.id || order.order_code} className={`bg-white rounded-2xl border shadow-xs p-5 space-y-4 ${order.status === 'cancelado' ? 'border-red-200 bg-red-50/20' : 'border-zinc-200'}`}>
-                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-3">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className={`font-extrabold text-base ${order.status === 'cancelado' ? 'text-red-600 line-through' : 'text-[#FF2E93]'}`}>{order.order_code}</span>
-                                <span className="bg-pink-50 text-[#FF2E93] px-2.5 py-0.5 rounded-full text-xs font-black">
-                                  VIP: {order.customer_code}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleBatchUpdateOrderStatus('verificado')}
+                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                        >
+                          <Icon.Check className="w-3.5 h-3.5" /> Validar Pagos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBatchUpdateOrderStatus('en_camino')}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                        >
+                          <Icon.Truck className="w-3.5 h-3.5" /> Marcar En Camino
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBatchUpdateOrderStatus('entregado')}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                        >
+                          <Icon.Check className="w-3.5 h-3.5" /> Marcar Entregados
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderIds([])}
+                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-xl transition"
+                        >
+                          Deseleccionar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4. LISTADO DE PEDIDOS SEGÚN MODO DE VISTA */}
+                  {filteredOrders.length === 0 ? (
+                    <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center text-zinc-400 text-xs space-y-2">
+                      <Icon.Box className="w-10 h-10 mx-auto text-zinc-300" />
+                      <p className="font-bold text-zinc-700 text-sm">No se encontraron pedidos con estos filtros</p>
+                      <p className="text-zinc-400">Intenta cambiar el estado, la búsqueda o el método de logística.</p>
+                      <button
+                        type="button"
+                        onClick={() => { setAdminFilterStatus('todos'); setAdminOrderDeliveryFilter('todos'); setAdminOrderSearch(''); }}
+                        className="mt-2 text-[#FF2E93] font-bold hover:underline"
+                      >
+                        Limpiar todos los filtros
+                      </button>
+                    </div>
+                  ) : adminOrderViewMode === 'tabla' ? (
+                    
+                    /* =======================================================
+                       VISTA 1: TABLA COMPACTA DE ALTA PRODUCTIVIDAD
+                       ======================================================= */
+                    <div className="bg-white rounded-3xl border border-zinc-200 shadow-xs overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-zinc-100/80 border-b border-zinc-200 text-zinc-600 uppercase text-[10px] font-extrabold tracking-wider">
+                              <th className="p-3.5 w-10 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedOrderIds.length > 0 && selectedOrderIds.length === filteredOrders.length}
+                                  onChange={e => {
+                                    if (e.target.checked) {
+                                      setSelectedOrderIds(filteredOrders.map(o => o.id));
+                                    } else {
+                                      setSelectedOrderIds([]);
+                                    }
+                                  }}
+                                  className="rounded text-[#FF2E93] w-4 h-4 cursor-pointer"
+                                  title="Seleccionar todos"
+                                />
+                              </th>
+                              <th className="p-3.5">Código / Fecha</th>
+                              <th className="p-3.5">Clienta</th>
+                              <th className="p-3.5">Logística / Entrega</th>
+                              <th className="p-3.5">Total & Pago</th>
+                              <th className="p-3.5 text-center">Prendas</th>
+                              <th className="p-3.5">Estado & Avance</th>
+                              <th className="p-3.5 text-right">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {filteredOrders.map(order => {
+                              const methodStr = (order.delivery_method || '').toLowerCase();
+                              const isServientrega = methodStr.includes('servientrega');
+                              const isCooperativa = methodStr.includes('cooperativa');
+                              const isDomicilio = methodStr.includes('domicilio');
+                              const isRetiro = methodStr.includes('retiro') || methodStr.includes('personal');
+                              const isCancelled = order.status === 'cancelado';
+                              const isSelected = selectedOrderIds.includes(order.id);
+
+                              return (
+                                <tr
+                                  key={order.id || order.order_code}
+                                  className={`hover:bg-pink-50/20 transition ${isSelected ? 'bg-pink-50/40' : ''} ${isCancelled ? 'bg-red-50/20 opacity-75' : ''}`}
+                                >
+                                  {/* Checkbox */}
+                                  <td className="p-3.5 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={e => {
+                                        if (e.target.checked) {
+                                          setSelectedOrderIds(prev => [...prev, order.id]);
+                                        } else {
+                                          setSelectedOrderIds(prev => prev.filter(id => id !== order.id));
+                                        }
+                                      }}
+                                      className="rounded text-[#FF2E93] w-4 h-4 cursor-pointer"
+                                    />
+                                  </td>
+
+                                  {/* Código y Fecha */}
+                                  <td className="p-3.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`font-mono font-black text-xs ${isCancelled ? 'line-through text-zinc-400' : 'text-[#FF2E93]'}`}>
+                                        {order.order_code}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(order.order_code, 'Código')}
+                                        className="text-zinc-400 hover:text-zinc-700 p-0.5"
+                                        title="Copiar código"
+                                      >
+                                        <Icon.Copy className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <span className="text-[10px] text-zinc-400 block mt-0.5">
+                                      {new Date(order.created_at || Date.now()).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </td>
+
+                                  {/* Clienta */}
+                                  <td className="p-3.5">
+                                    <p className="font-bold text-zinc-900 truncate max-w-[140px]">{order.customer_name}</p>
+                                    <p className="text-[11px] text-zinc-500 font-mono">{order.customer_phone}</p>
+                                    <span className="text-[9px] font-bold text-[#FF2E93] bg-pink-50 px-1.5 py-0.5 rounded-full inline-block mt-0.5">
+                                      VIP: {order.customer_code}
+                                    </span>
+                                  </td>
+
+                                  {/* Logística & Entrega */}
+                                  <td className="p-3.5">
+                                    {isServientrega && (
+                                      <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                        <Icon.Box className="w-3 h-3" /> Servientrega
+                                      </span>
+                                    )}
+                                    {isCooperativa && (
+                                      <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                        🚌 Cooperativa
+                                      </span>
+                                    )}
+                                    {isDomicilio && (
+                                      <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                        🛵 Domicilio
+                                      </span>
+                                    )}
+                                    {isRetiro && (
+                                      <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                        📍 Retiro
+                                      </span>
+                                    )}
+                                    <p className="text-[11px] text-zinc-500 truncate max-w-[160px] mt-1" title={order.delivery_address || order.delivery_method}>
+                                      {order.delivery_address || order.delivery_method}
+                                    </p>
+                                  </td>
+
+                                  {/* Total & Pago */}
+                                  <td className="p-3.5">
+                                    <p className="font-black text-sm text-zinc-900">${Number(order.total).toFixed(2)}</p>
+                                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                      {(order.payment_method || '').toLowerCase().includes('deuna') && <img src={PAYMENT_ICONS.deuna} className="w-3.5 h-3.5 rounded object-contain" alt="Deuna" />}
+                                      {(order.payment_method || '').toLowerCase().includes('payphone') && <img src={PAYMENT_ICONS.payphone} className="w-3.5 h-3.5 rounded object-contain" alt="Payphone" />}
+                                      {(order.payment_method || '').toLowerCase().includes('pichincha') && <img src={PAYMENT_ICONS.pichincha} className="w-3.5 h-3.5 rounded object-cover" alt="Pichincha" />}
+                                      {((order.payment_method || '').toLowerCase().includes('guayaquil') || ((order.payment_method || '').toLowerCase().includes('transferencia') && !(order.payment_method || '').toLowerCase().includes('pichincha'))) && <img src={PAYMENT_ICONS.guayaquil} className="w-3.5 h-3.5 rounded object-cover" alt="Guayaquil" />}
+                                      <span className="text-[10px] text-zinc-600 truncate max-w-[90px]">{order.payment_method}</span>
+                                    </div>
+                                    {order.receipt_url && order.receipt_url.startsWith('http') && (
+                                      <a
+                                        href={order.receipt_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] text-[#FF2E93] font-bold underline block mt-0.5"
+                                      >
+                                        📎 Ver Comprobante
+                                      </a>
+                                    )}
+                                  </td>
+
+                                  {/* Prendas */}
+                                  <td className="p-3.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedOrderIds(prev => ({ ...prev, [order.id]: !prev[order.id] }))}
+                                      className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-[11px] font-bold transition inline-flex items-center gap-1"
+                                      title="Ver detalle de prendas"
+                                    >
+                                      <span>{(order.items || []).length} items</span>
+                                      <span className="text-[9px]">{expandedOrderIds[order.id] ? '▲' : '▼'}</span>
+                                    </button>
+                                  </td>
+
+                                  {/* Estado & Avance Rápido */}
+                                  <td className="p-3.5">
+                                    {!isCancelled ? (
+                                      <div className="space-y-1.5">
+                                        <select
+                                          value={order.status || 'pendiente'}
+                                          onChange={e => handleUpdateOrderStatus(order, e.target.value)}
+                                          className={`text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
+                                            order.status === 'pendiente' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                            order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                            order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                            'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          }`}
+                                        >
+                                          <option value="pendiente">⏳ Pendiente</option>
+                                          <option value="verificado">✓ Verificado</option>
+                                          <option value="en_camino">🚚 En Camino</option>
+                                          <option value="entregado">✓ Entregado</option>
+                                        </select>
+
+                                        {/* Botón de 1 Clic para avanzar rápido al siguiente paso */}
+                                        {order.status === 'pendiente' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateOrderStatus(order, 'verificado')}
+                                            className="block text-[10px] bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-0.5 rounded-md transition shadow-2xs"
+                                            title="Confirmar pago y pasar a bodega para empaque"
+                                          >
+                                            ✓ Validar Pago
+                                          </button>
+                                        )}
+                                        {order.status === 'verificado' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateOrderStatus(order, 'en_camino')}
+                                            className="block text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-0.5 rounded-md transition shadow-2xs"
+                                            title="Marcar paquete como despachado y en camino"
+                                          >
+                                            🚚 Despachar
+                                          </button>
+                                        )}
+                                        {order.status === 'en_camino' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateOrderStatus(order, 'entregado')}
+                                            className="block text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded-md transition shadow-2xs"
+                                            title="Marcar como entregado a la clienta"
+                                          >
+                                            ✓ Entregar
+                                          </button>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] font-black uppercase text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded-md">
+                                        Cancelado
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Acciones */}
+                                  <td className="p-3.5 text-right">
+                                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                      {/* WhatsApp Inteligente */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const cleanPhone = formatWhatsAppPhone(order.customer_phone);
+                                          const msg = getOrderWhatsAppMessage(order);
+                                          window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                                        }}
+                                        className="p-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-lg transition shadow-2xs"
+                                        title="Notificar por WhatsApp con mensaje inteligente según estado"
+                                      >
+                                        <Icon.WhatsApp className="w-3.5 h-3.5 text-white" />
+                                      </button>
+
+                                      {/* Nota de Venta */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setAdminSalesNoteModal(order)}
+                                        className="p-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg transition"
+                                        title="Nota de Venta & Despacho"
+                                      >
+                                        <Icon.Document className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                      </button>
+
+                                      {/* Ticket 58mm */}
+                                      <button
+                                        type="button"
+                                        onClick={() => setAdminThermalTicketModal(order)}
+                                        className="p-1.5 bg-zinc-800 hover:bg-black text-amber-300 rounded-lg transition"
+                                        title="Imprimir Ticket Térmico 58mm POS"
+                                      >
+                                        <Icon.Printer className="w-3.5 h-3.5 text-amber-400" />
+                                      </button>
+
+                                      {/* GUÍA SERVIENTREGA: SÓLO Y EXCLUSIVAMENTE SI ES SERVIENTREGA */}
+                                      {isServientrega && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setServientregaOrder(order)}
+                                          className="p-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition shadow-2xs"
+                                          title="Imprimir Guía Oficial Servientrega"
+                                        >
+                                          <Icon.Box className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+
+                                      {/* Cancelar */}
+                                      {!isCancelled && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCancelOrder(order)}
+                                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
+                                          title="Cancelar pedido y revertir stock al inventario"
+                                        >
+                                          <Icon.Close className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                  ) : (
+
+                    /* =======================================================
+                       VISTA 2: TARJETAS DETALLADAS CON COLAPSO DE PRENDAS
+                       ======================================================= */
+                    <div className="space-y-3">
+                      {filteredOrders.map(order => {
+                        const methodStr = (order.delivery_method || '').toLowerCase();
+                        const isServientrega = methodStr.includes('servientrega');
+                        const isCooperativa = methodStr.includes('cooperativa');
+                        const isDomicilio = methodStr.includes('domicilio');
+                        const isRetiro = methodStr.includes('retiro') || methodStr.includes('personal');
+                        const isCancelled = order.status === 'cancelado';
+                        const isExpanded = expandedOrderIds[order.id] !== false; // Abierto por defecto si no se ha colapsado
+
+                        return (
+                          <div
+                            key={order.id || order.order_code}
+                            className={`bg-white rounded-3xl border shadow-xs p-5 space-y-4 transition ${isCancelled ? 'border-red-200 bg-red-50/20' : 'border-zinc-200'}`}
+                          >
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-zinc-100 pb-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`font-mono font-black text-base ${isCancelled ? 'text-red-600 line-through' : 'text-[#FF2E93]'}`}>
+                                    {order.order_code}
+                                  </span>
+                                  <span className="bg-pink-50 text-[#FF2E93] px-2.5 py-0.5 rounded-full text-xs font-black">
+                                    VIP: {order.customer_code}
+                                  </span>
+                                  {isServientrega && (
+                                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                      📦 Servientrega
+                                    </span>
+                                  )}
+                                  {isCooperativa && (
+                                    <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                      🚌 Cooperativa
+                                    </span>
+                                  )}
+                                  {isDomicilio && (
+                                    <span className="bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                      🛵 Domicilio Local
+                                    </span>
+                                  )}
+                                  {isRetiro && (
+                                    <span className="bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                      📍 Retiro en Punto
+                                    </span>
+                                  )}
+                                  {isCancelled && (
+                                    <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">
+                                      Cancelado
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-zinc-700">
+                                  <b>{order.customer_name}</b> ({order.customer_phone}) {order.customer_id_card && `• Cédula: ${order.customer_id_card}`}
+                                </p>
+                                <p className="text-xs text-zinc-500">
+                                  {order.delivery_method} {order.delivery_address && `| ${order.delivery_address}`}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className={`text-xl font-black ${isCancelled ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>
+                                  ${Number(order.total).toFixed(2)}
                                 </span>
-                                {order.status === 'cancelado' && (
-                                  <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-black uppercase">
-                                    Cancelado
+
+                                {!isCancelled ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={order.status || 'pendiente'}
+                                      onChange={e => handleUpdateOrderStatus(order, e.target.value)}
+                                      className={`text-xs font-bold px-3 py-2 rounded-xl border outline-none ${
+                                        order.status === 'pendiente' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                        order.status === 'verificado' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                        order.status === 'en_camino' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                        'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      }`}
+                                    >
+                                      <option value="pendiente">⏳ Pendiente</option>
+                                      <option value="verificado">✓ Verificado</option>
+                                      <option value="en_camino">🚚 En Camino</option>
+                                      <option value="entregado">✓ Entregado</option>
+                                    </select>
+
+                                    {/* Botón rápido 1-clic */}
+                                    {order.status === 'pendiente' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOrderStatus(order, 'verificado')}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-2 rounded-xl text-xs transition shadow-2xs"
+                                        title="Validar pago de inmediato"
+                                      >
+                                        ✓ Validar Pago
+                                      </button>
+                                    )}
+                                    {order.status === 'verificado' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOrderStatus(order, 'en_camino')}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-xl text-xs transition shadow-2xs"
+                                        title="Marcar despachado de bodega"
+                                      >
+                                        🚚 Despachar
+                                      </button>
+                                    )}
+                                    {order.status === 'en_camino' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateOrderStatus(order, 'entregado')}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs transition shadow-2xs"
+                                      >
+                                        ✓ Entregar
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs font-black px-3 py-1.5 rounded-xl bg-red-100 text-red-800">
+                                    Venta Cancelada
                                   </span>
                                 )}
                               </div>
-                              <p className="text-xs text-zinc-700">
-                                <b>{order.customer_name}</b> ({order.customer_phone}) {order.customer_id_card && `• Cédula: ${order.customer_id_card}`}
-                              </p>
-                              <p className="text-xs text-zinc-500">
-                                {order.delivery_method} {order.delivery_address && `| ${order.delivery_address}`}
-                              </p>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              <span className={`text-xl font-black ${order.status === 'cancelado' ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>${Number(order.total).toFixed(2)}</span>
-                              {order.status !== 'cancelado' ? (
-                                <select
-                                  value={order.status || 'pendiente'}
-                                  onChange={async e => {
-                                    const n = e.target.value;
-                                    const adminPin = sessionStorage.getItem('kaoj_admin_pin') || '';
-                                    const { error } = await supabase.rpc('kaoj_admin_update_order_status', {
-                                      admin_pin: adminPin,
-                                      target_order_id: order.id,
-                                      new_status: n
-                                    });
-                                    if (error) {
-                                      console.warn('kaoj_admin_update_order_status error, intentando directo:', error.message);
-                                      const { error: directErr } = await supabase.from('kaoj_orders').update({ status: n, updated_at: new Date().toISOString() }).eq('id', order.id);
-                                      if (directErr && !directErr.message?.includes('row-level security')) {
-                                        return showToast('Error al actualizar: ' + error.message, 'error');
-                                      }
-                                    }
-                                    setOrders(orders.map(o => o.id === order.id ? { ...o, status: n } : o));
-                                    showToast(`Estado del pedido ${order.order_code} actualizado a ${n.toUpperCase()}`);
-                                  }}
-                                  className="text-xs font-bold px-3 py-2 rounded-xl border bg-pink-50 text-[#FF2E93]"
-                                >
-                                  <option value="pendiente">Pendiente</option>
-                                  <option value="verificado">Verificado</option>
-                                  <option value="en_camino">En Camino</option>
-                                  <option value="entregado">Entregado</option>
-                                </select>
-                              ) : (
-                                <span className="text-xs font-black px-3 py-1.5 rounded-xl bg-red-100 text-red-800">
-                                  Venta Cancelada
+                            {/* LISTA COLAPSIBLE DE PRODUCTOS */}
+                            <div className="bg-zinc-50/80 rounded-2xl p-3.5 text-xs space-y-2 border border-zinc-200/60">
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold text-zinc-700 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>📦 Prendas compradas:</span>
+                                  <span className="bg-white border border-zinc-200 px-2 py-0.5 rounded-full text-zinc-900 font-extrabold">
+                                    {(order.items || []).length} productos
+                                  </span>
                                 </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* LISTA DE PRODUCTOS DE LA ORDEN */}
-                          <div className="bg-zinc-50/80 rounded-xl p-3 text-xs space-y-1.5">
-                            <p className="font-bold text-zinc-700 text-[11px] uppercase tracking-wider">Detalle de productos comprados:</p>
-                            <div className="space-y-1 divide-y divide-zinc-200/50">
-                              {(order.items || []).map((it, idx) => (
-                                <div key={idx} className="flex justify-between items-center text-zinc-700 pt-1">
-                                  <span>• {it.qty}x <b>{it.name}</b> ({it.variant})</span>
-                                  <span className="font-bold">${((it.price || 0) * (it.qty || 1)).toFixed(2)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {order.status === 'cancelado' && (
-                            <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-2.5 text-xs font-bold flex items-center justify-between gap-2">
-                              <span>⚠️ VENTA CANCELADA: El stock de los productos fue devuelto automáticamente al inventario.</span>
-                            </div>
-                          )}
-
-                          {order.admin_notes && order.admin_notes.includes('[AUTO-VALIDADO POR CORREO') && (
-                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3 py-2 text-[11px] font-bold flex items-center gap-2">
-                              <span>⚡</span>
-                              <span>Pago validado automáticamente por correo en <code>kaoj.store.ecu@gmail.com</code></span>
-                            </div>
-                          )}
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                            <span className="text-xs text-zinc-500 inline-flex items-center gap-1.5 flex-wrap">
-                              <span>Pago:</span>
-                              {(order.payment_method || '').toLowerCase().includes('deuna') && <img src={PAYMENT_ICONS.deuna} className="w-4 h-4 rounded object-contain inline-block" alt="Deuna" />}
-                              {(order.payment_method || '').toLowerCase().includes('payphone') && <img src={PAYMENT_ICONS.payphone} className="w-4 h-4 rounded object-contain inline-block" alt="Payphone" />}
-                              {(order.payment_method || '').toLowerCase().includes('pichincha') && <img src={PAYMENT_ICONS.pichincha} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Pichincha" />}
-                              {((order.payment_method || '').toLowerCase().includes('guayaquil') || ((order.payment_method || '').toLowerCase().includes('transferencia') && !(order.payment_method || '').toLowerCase().includes('pichincha'))) && <img src={PAYMENT_ICONS.guayaquil} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Guayaquil" />}
-                              <b className="capitalize">{order.payment_method}</b>
-                              {order.receipt_url && order.receipt_url.startsWith('http') && (
-                                <a href={order.receipt_url} target="_blank" rel="noreferrer" className="text-[#FF2E93] underline ml-2 font-bold">Ver Comprobante</a>
-                              )}
-                            </span>
-
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {order.status !== 'cancelado' && (
                                 <button
                                   type="button"
-                                  onClick={() => handleCancelOrder(order)}
-                                  className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-3 py-1.5 rounded-xl border border-red-200 shadow-2xs flex items-center gap-1.5 transition"
-                                  title="Devolver existencias al inventario y cancelar venta"
+                                  onClick={() => setExpandedOrderIds(prev => ({ ...prev, [order.id]: !isExpanded }))}
+                                  className="text-[11px] text-[#FF2E93] font-bold hover:underline"
                                 >
-                                  <Icon.Close className="w-3.5 h-3.5 text-red-600" /> Cancelar / Revertir
+                                  {isExpanded ? 'Ocultar prendas ▲' : 'Ver prendas ▼'}
                                 </button>
+                              </div>
+
+                              {isExpanded && (
+                                <div className="space-y-1.5 divide-y divide-zinc-200/50 pt-1">
+                                  {(order.items || []).map((it, idx) => (
+                                    <div key={idx} className="flex justify-between items-center text-zinc-700 pt-1.5">
+                                      <div>
+                                        <p className="font-bold text-zinc-900">• {it.qty}x {it.name}</p>
+                                        {it.variant && <p className="text-[11px] text-zinc-500 pl-3">Tono / Talla: {it.variant}</p>}
+                                      </div>
+                                      <span className="font-bold">${((it.price || 0) * (it.qty || 1)).toFixed(2)}</span>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => setAdminSalesNoteModal(order)}
-                                className="text-xs bg-white border border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50 text-zinc-800 font-bold px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 transition"
-                                title="Ver, imprimir y descargar Nota de Venta"
-                              >
-                                <Icon.Document className="w-3.5 h-3.5 text-[#FF2E93]" /> Nota de Venta
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setAdminThermalTicketModal(order)}
-                                className="text-xs bg-zinc-800 hover:bg-black text-amber-300 font-bold px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
-                                title="Imprimir ticket para impresora térmica POS de 58mm"
-                              >
-                                <Icon.Printer className="w-3.5 h-3.5 text-amber-400" /> Ticket 58mm
-                              </button>
-                              <button onClick={() => setServientregaOrder(order)} className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                                <Icon.Box className="w-3.5 h-3.5" /> Servientrega
-                              </button>
-                              <button onClick={() => {
-                                const cleanWhatsAppNumber = formatWhatsAppPhone(order.customer_phone);
-                                window.open(`https://wa.me/${cleanWhatsAppNumber}?text=${encodeURIComponent(`Hola ${order.customer_name}! Te saludamos de Kaoj Store 💅. Tu pedido ${order.order_code} se encuentra en estado: ${order.status.toUpperCase()}.`)}`, '_blank');
-                              }} className="text-xs bg-zinc-900 hover:bg-black text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                                <Icon.WhatsApp className="w-3.5 h-3.5 text-emerald-400" /> WhatsApp
-                              </button>
+                            </div>
+
+                            {order.admin_notes && (
+                              <div className="bg-amber-50/70 border border-amber-200 text-amber-900 rounded-xl px-3 py-2 text-[11px]">
+                                <b>Notas del pedido:</b> {order.admin_notes}
+                              </div>
+                            )}
+
+                            {/* BARRA DE PAGO Y ACCIONES INFERIOR */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-zinc-100">
+                              <span className="text-xs text-zinc-500 inline-flex items-center gap-1.5 flex-wrap">
+                                <span>Pago:</span>
+                                {(order.payment_method || '').toLowerCase().includes('deuna') && <img src={PAYMENT_ICONS.deuna} className="w-4 h-4 rounded object-contain inline-block" alt="Deuna" />}
+                                {(order.payment_method || '').toLowerCase().includes('payphone') && <img src={PAYMENT_ICONS.payphone} className="w-4 h-4 rounded object-contain inline-block" alt="Payphone" />}
+                                {(order.payment_method || '').toLowerCase().includes('pichincha') && <img src={PAYMENT_ICONS.pichincha} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Pichincha" />}
+                                {((order.payment_method || '').toLowerCase().includes('guayaquil') || ((order.payment_method || '').toLowerCase().includes('transferencia') && !(order.payment_method || '').toLowerCase().includes('pichincha'))) && <img src={PAYMENT_ICONS.guayaquil} className="w-4 h-4 rounded object-cover inline-block" alt="Banco Guayaquil" />}
+                                <b className="capitalize text-zinc-900">{order.payment_method}</b>
+                                {order.receipt_url && order.receipt_url.startsWith('http') && (
+                                  <a href={order.receipt_url} target="_blank" rel="noreferrer" className="text-[#FF2E93] underline ml-1 font-bold">
+                                    📎 Ver Comprobante
+                                  </a>
+                                )}
+                              </span>
+
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {!isCancelled && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelOrder(order)}
+                                    className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-3 py-1.5 rounded-xl border border-red-200 transition"
+                                    title="Devolver existencias al inventario y cancelar venta"
+                                  >
+                                    <Icon.Close className="w-3.5 h-3.5 text-red-600 inline mr-1" />
+                                    <span>Cancelar</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => setAdminSalesNoteModal(order)}
+                                  className="text-xs bg-white border border-zinc-300 hover:border-zinc-400 text-zinc-800 font-bold px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 transition"
+                                  title="Ver, imprimir y descargar Nota de Venta"
+                                >
+                                  <Icon.Document className="w-3.5 h-3.5 text-[#FF2E93]" />
+                                  <span>Nota de Venta</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setAdminThermalTicketModal(order)}
+                                  className="text-xs bg-zinc-800 hover:bg-black text-amber-300 font-bold px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                                  title="Imprimir ticket para impresora térmica POS de 58mm"
+                                >
+                                  <Icon.Printer className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Ticket 58mm</span>
+                                </button>
+
+                                {/* GUÍA SERVIENTREGA: SÓLO SE MUESTRA SI ES SERVIENTREGA */}
+                                {isServientrega && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setServientregaOrder(order)}
+                                    className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                                    title="Imprimir guía oficial de Servientrega"
+                                  >
+                                    <Icon.Box className="w-3.5 h-3.5" />
+                                    <span>Guía Servientrega</span>
+                                  </button>
+                                )}
+
+                                {/* WhatsApp Inteligente con mensaje adaptado al estado */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cleanPhone = formatWhatsAppPhone(order.customer_phone);
+                                    const msg = getOrderWhatsAppMessage(order);
+                                    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                                  }}
+                                  className="text-xs bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition"
+                                  title="Enviar notificación contextual a WhatsApp"
+                                >
+                                  <Icon.WhatsApp className="w-3.5 h-3.5 text-white" />
+                                  <span>WhatsApp</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                 </div>
               )}
 

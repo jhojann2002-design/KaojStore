@@ -1,15 +1,20 @@
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v15)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v16)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v15';
+const CACHE_NAME = 'kaoj-store-v16';
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './admin.html',
   './app.js',
   './manifest.json',
+  './manifest-admin.json',
   './icons/favicon.png',
   './icons/apple-touch-icon.png',
+  './icons/apple-touch-admin.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-admin-192.png',
+  './icons/icon-admin-512.png',
   './icons/payment-deuna.png',
   './icons/payment-payphone.png',
   './icons/payment-pichincha.png',
@@ -55,6 +60,23 @@ self.addEventListener('activate', event => {
     })
   );
   self.clients.claim();
+});
+
+// Manejo de clic en notificaciones push de nuevos pedidos (apertura / foco del panel de administración)
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      for (let client of windowClients) {
+        if (client.url.includes('admin.html') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('./admin.html#/admin/orders');
+      }
+    })
+  );
 });
 
 // Intercepción de peticiones

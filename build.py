@@ -55,36 +55,38 @@ def compile_app():
     print(proc.stdout.strip())
     print(f"Archivo de producción listo: {js_path}")
 
-    # Sincronizar automáticamente dentro de index.html
-    if os.path.exists(html_path):
-        with open(js_path, 'r', encoding='utf-8') as f:
-            compiled_js = f.read().strip()
+    # Sincronizar automáticamente dentro de index.html y admin.html
+    html_targets = [html_path, os.path.join(root_dir, 'admin.html')]
+    with open(js_path, 'r', encoding='utf-8') as f:
+        compiled_js = f.read().strip()
 
-        # Quitar únicamente la llamada final ReactDOM.createRoot(...).render(...) sin truncar ninguna otra línea
-        compiled_js = re.sub(
-            r'ReactDOM\.createRoot\(document\.getElementById\([\'"]root[\'"]\)\)\.render\([^;]+\);?\s*$',
-            '',
-            compiled_js
-        ).strip()
+    # Quitar únicamente la llamada final ReactDOM.createRoot(...).render(...) sin truncar ninguna otra línea
+    compiled_js = re.sub(
+        r'ReactDOM\.createRoot\(document\.getElementById\([\'"]root[\'"]\)\)\.render\([^;]+\);?\s*$',
+        '',
+        compiled_js
+    ).strip()
 
-        lines = compiled_js.splitlines()
-        indented_js = '\n'.join(('    ' + line if line.strip() else '') for line in lines)
+    lines = compiled_js.splitlines()
+    indented_js = '\n'.join(('    ' + line if line.strip() else '') for line in lines)
 
-        with open(html_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
+    start_marker = "      return;\n    }\n"
+    end_marker = "\n    // Montaje infalible de React 18 / 17"
 
-        start_marker = "      return;\n    }\n"
-        end_marker = "\n    // Montaje infalible de React 18 / 17"
+    for target in html_targets:
+        if os.path.exists(target):
+            with open(target, 'r', encoding='utf-8') as f:
+                html_content = f.read()
 
-        if start_marker in html_content and end_marker in html_content:
-            before = html_content.split(start_marker, 1)[0] + start_marker + "\n"
-            after = end_marker + html_content.split(end_marker, 1)[1]
-            updated_html = before + indented_js + after
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(updated_html)
-            print(f"Bundle inyectado y sincronizado en: {html_path}")
-        else:
-            print("Advertencia: marcadores de script no encontrados en index.html")
+            if start_marker in html_content and end_marker in html_content:
+                before = html_content.split(start_marker, 1)[0] + start_marker + "\n"
+                after = end_marker + html_content.split(end_marker, 1)[1]
+                updated_html = before + indented_js + after
+                with open(target, 'w', encoding='utf-8') as f:
+                    f.write(updated_html)
+                print(f"Bundle inyectado y sincronizado en: {target}")
+            else:
+                print(f"Advertencia: marcadores de script no encontrados en {target}")
 
 if __name__ == '__main__':
     compile_app()

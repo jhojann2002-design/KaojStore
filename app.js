@@ -3645,6 +3645,12 @@ function App() {
   // Animación fluida de revelación al hacer scroll inspirada en LiveLARQ (.anim-reveal)
   useEffect(() => {
     const setupReveal = () => {
+      document.querySelectorAll('.anim-reveal').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top < window.innerHeight + 150) {
+          el.classList.add('is-revealed');
+        }
+      });
       if (!('IntersectionObserver' in window)) {
         document.querySelectorAll('.anim-reveal').forEach(el => el.classList.add('is-revealed'));
         return;
@@ -3657,16 +3663,17 @@ function App() {
           }
         });
       }, {
-        threshold: 0.08,
-        rootMargin: '0px 0px -20px 0px'
+        threshold: 0.05,
+        rootMargin: '50px 0px 50px 0px'
       });
       document.querySelectorAll('.anim-reveal:not(.is-revealed)').forEach(el => {
         observer.observe(el);
       });
     };
-    const timer = setTimeout(setupReveal, 100);
+    setupReveal();
+    const timer = setTimeout(setupReveal, 60);
     return () => clearTimeout(timer);
-  }, [selectedSection, selectedSubcategory, products]);
+  }, [selectedSection, selectedSubcategory, selectedColorFilter, selectedSizeFilter, searchQuery, sortBy, products]);
 
   // =======================================================================
   // 1. CARGA INICIAL SEGURA (Solo productos, ajustes públicos y reseñas aprobadas)
@@ -6402,7 +6409,7 @@ function App() {
     const cardImages = getProductImages(prod);
     return /*#__PURE__*/React.createElement("div", {
       key: prod.id,
-      className: "flex flex-col h-full min-w-0 group anim-reveal"
+      className: "flex flex-col h-full min-w-0 group"
     }, /*#__PURE__*/React.createElement("div", {
       className: "relative aspect-[4/5] bg-[#F5F6F8] rounded-[24px] overflow-hidden cursor-pointer flex items-center justify-center p-3 sm:p-5 transition-all duration-300 group-hover:bg-[#ECEEF2]",
       onClick: () => {

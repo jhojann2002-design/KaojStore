@@ -2373,13 +2373,20 @@ ESTADO: ${status.toUpperCase()}
       }, [isCartOpen]);
 
       // Consulta automática de pedidos para clientas logeadas o por código/celular (RLS Seguro)
+      const isFetchingOrdersRef = useRef(false);
+
       const fetchMyOrders = async (identifier) => {
-        const targetId = identifier || trackingCode.trim() || customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : null);
-        if (!targetId) {
+        const rawInput = String(identifier !== undefined ? identifier : (trackingCode.trim() || customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : ''))).trim();
+        if (!rawInput) {
           setTrackedOrders([]);
+          setTrackingLoading(false);
           return;
         }
+
+        if (isFetchingOrdersRef.current) return;
+        isFetchingOrdersRef.current = true;
         setTrackingLoading(true);
+
         try {
           if (user?.id) {
             const { data, error } = await supabase
@@ -2389,13 +2396,41 @@ ESTADO: ${status.toUpperCase()}
               .order('created_at', { ascending: false });
             setTrackedOrders(!error && data ? data : []);
           } else {
-            const { data, error } = await supabase.rpc('kaoj_track_orders', {
-              lookup_query: String(targetId).trim()
-            });
-            if (!error && data && data.length > 0) {
-              setTrackedOrders(data);
-              const lastOrder = data[0];
-              const validOrders = data.filter(o => o.status !== 'cancelado' && o.status !== 'eliminado' && o.status !== 'cancelado_eliminado');
+            // Variantes inteligentes de búsqueda (M5054, 5054, KAOJ-501809, 501809, celular)
+            const cleanCode = rawInput.replace(/[^a-zA-Z0-9]/g, '');
+            const queriesToTry = [rawInput];
+            if (cleanCode && cleanCode !== rawInput) queriesToTry.push(cleanCode);
+            if (/^\d{6}$/.test(cleanCode)) queriesToTry.push(`KAOJ-${cleanCode}`);
+            if (/^\d{4}$/.test(cleanCode)) {
+              if (customerProfile?.customer_code && customerProfile.customer_code.endsWith(cleanCode)) {
+                queriesToTry.unshift(customerProfile.customer_code);
+              }
+              if (customer?.phone && customer.phone.endsWith(cleanCode)) {
+                queriesToTry.unshift(customer.phone);
+              }
+              ['M', 'J', 'C', 'A', 'K', 'V', 'D', 'E', 'L', 'P', 'S'].forEach(l => queriesToTry.push(`${l}${cleanCode}`));
+            }
+            if (cleanCode.length >= 9 && cleanCode.startsWith('593')) {
+              queriesToTry.push('0' + cleanCode.slice(3));
+            } else if (cleanCode.length === 9 && cleanCode.startsWith('9')) {
+              queriesToTry.push('0' + cleanCode);
+            }
+
+            let foundOrders = null;
+            for (const q of queriesToTry) {
+              const { data, error } = await supabase.rpc('kaoj_track_orders', {
+                lookup_query: q
+              });
+              if (!error && data && data.length > 0) {
+                foundOrders = data;
+                break;
+              }
+            }
+
+            if (foundOrders && foundOrders.length > 0) {
+              setTrackedOrders(foundOrders);
+              const lastOrder = foundOrders[0];
+              const validOrders = foundOrders.filter(o => o.status !== 'cancelado' && o.status !== 'eliminado' && o.status !== 'cancelado_eliminado');
               const netPoints = Math.max(0, validOrders.reduce((acc, o) => acc + Number(o.points_earned || 0) - Number(o.points_redeemed || 0), 0));
               const vipCode = lastOrder.customer_code || generateCustomerCode(lastOrder.customer_name || '', lastOrder.customer_phone || '');
               const prof = {
@@ -2404,14 +2439,19 @@ ESTADO: ${status.toUpperCase()}
                 phone: lastOrder.customer_phone,
                 points: netPoints
               };
-              setCustomerProfile(prof);
+              setCustomerProfile(prev => {
+                if (prev && prev.customer_code === vipCode && prev.points === netPoints && prev.phone === lastOrder.customer_phone) {
+                  return prev;
+                }
+                return prof;
+              });
               try {
                 localStorage.setItem('kaoj_customer_profile', JSON.stringify(prof));
                 localStorage.setItem('kaoj_customer_phone', lastOrder.customer_phone);
                 localStorage.setItem('kaoj_last_customer_code', vipCode);
               } catch (_) {}
             } else {
-              setTrackedOrders(!error && data ? data : []);
+              setTrackedOrders([]);
             }
           }
         } catch (err) {
@@ -2419,6 +2459,7 @@ ESTADO: ${status.toUpperCase()}
           setTrackedOrders([]);
         } finally {
           setTrackingLoading(false);
+          isFetchingOrdersRef.current = false;
         }
       };
 
@@ -2529,10 +2570,10 @@ ESTADO: ${status.toUpperCase()}
         showToast('Solicitud eliminada de la lista', 'info');
       }
 
-      // Disparador automático al abrir el modal Mis Pedidos
+      // Disparador automático al abrir el modal Mis Pedidos (solo al abrir o cambiar usuario para evitar bucles infinitos)
       useEffect(() => {
         if (isTrackingOpen) {
-          const autoId = customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : null);
+          const autoId = trackingCode.trim() || customerProfile?.customer_code || user?.id || localStorage.getItem('kaoj_last_customer_code') || (customer.phone && customer.phone.length >= 8 ? customer.phone : null);
           if (autoId) {
             if (!trackingCode && customerProfile?.customer_code) {
               setTrackingCode(customerProfile.customer_code);
@@ -2540,7 +2581,7 @@ ESTADO: ${status.toUpperCase()}
             fetchMyOrders(autoId);
           }
         }
-      }, [isTrackingOpen, user, customerProfile]);
+      }, [isTrackingOpen, user]);
 
       // Cupones disponibles
       const availableCoupons = useMemo(() => {
@@ -12450,7 +12491,12 @@ ESTADO: ${status.toUpperCase()}
                 {/* BUSCADOR DE PEDIDOS POR CELULAR O CÓDIGO */}
                 <form onSubmit={e => {
                   e.preventDefault();
-                  fetchMyOrders(trackingCode);
+                  const q = trackingCode.trim();
+                  if (!q) {
+                    showToast('Ingresa tu número de WhatsApp, código VIP o pedido', 'info');
+                    return;
+                  }
+                  fetchMyOrders(q);
                 }} className="flex gap-2">
                   <input
                     type="text"

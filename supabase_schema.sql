@@ -446,7 +446,7 @@ DECLARE
     clean_q TEXT := TRIM(lookup_query);
     digits TEXT := REGEXP_REPLACE(clean_q, '\D', '', 'g');
 BEGIN
-    IF LENGTH(clean_q) < 3 THEN
+    IF LENGTH(clean_q) = 0 THEN
         RETURN;
     END IF;
 
@@ -454,9 +454,10 @@ BEGIN
     SELECT *
     FROM public.kaoj_orders
     WHERE 
-        order_code ILIKE clean_q
-        OR (LENGTH(digits) >= 8 AND (customer_phone ILIKE '%' || RIGHT(digits, 8) || '%'))
-        OR (LENGTH(clean_q) >= 4 AND customer_code ILIKE clean_q)
+        order_code ILIKE '%' || clean_q || '%'
+        OR (LENGTH(digits) >= 4 AND (customer_phone ILIKE '%' || digits || '%'))
+        OR (LENGTH(clean_q) >= 2 AND customer_code ILIKE '%' || clean_q || '%')
+        OR (LENGTH(clean_q) >= 3 AND customer_name ILIKE '%' || clean_q || '%')
     ORDER BY created_at DESC
     LIMIT 20;
 END;

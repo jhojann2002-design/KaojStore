@@ -1,12 +1,35 @@
 
     const { useState, useEffect, useMemo, useRef } = window.React;
 
-    // Registro PWA silencioso
+    // Registro PWA inteligente con detección y auto-actualización inmediata sin caché vieja
     if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').then(reg => {
+        navigator.serviceWorker.register('./sw.js?v=26').then(reg => {
+          // Forzar comprobación de actualización en el servidor
           reg.update().catch(() => {});
+
+          reg.onupdatefound = () => {
+            const installing = reg.installing;
+            if (installing) {
+              installing.onstatechange = () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                  // Si un nuevo worker se instaló habiendo ya uno previo, recargar suavemente
+                  console.log('[Kaoj Store] Nueva versión detectada. Aplicando actualización...');
+                  window.location.reload();
+                }
+              };
+            }
+          };
         }).catch(() => {});
+      });
+
+      // Recarga automática garantizada cuando el nuevo Service Worker toma el control
+      let isRefreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!isRefreshing) {
+          isRefreshing = true;
+          window.location.reload();
+        }
       });
     }
 
@@ -289,6 +312,11 @@
       Store: ({ className = "w-4 h-4" }) => (
         <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M3 9l1-5h16l1 5M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0M3 9v11a1 1 0 001 1h16a1 1 0 001-1V9" />
+        </svg>
+      ),
+      Refresh: ({ className = "w-4 h-4" }) => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       )
     };
@@ -15017,25 +15045,53 @@ ESTADO: ${status.toUpperCase()}
                 </div>
               </div>
 
-              {/* BARRA INFERIOR DE COPYRIGHT */}
+              {/* BARRA INFERIOR DE COPYRIGHT Y UTILIDADES */}
               <div className="pt-8 border-t border-zinc-200/80 flex flex-col sm:flex-row justify-between items-center gap-3 text-zinc-400 text-[11px]">
                 <p>© 2026 KAOJ STORE. Todos los derechos reservados.</p>
 
-                {/* ACCESO DISCRETO ADMINISTRADOR */}
-                <button
-                  onClick={() => {
-                    if (sessionStorage.getItem('kaoj_admin_authenticated') === 'true') {
-                      window.location.href = 'admin.html#/admin/orders';
-                    } else {
-                      setShowPinModal(true);
-                    }
-                  }}
-                  className="text-zinc-400 hover:text-zinc-700 transition flex items-center gap-1 opacity-50 hover:opacity-100"
-                  title="Gestión interna"
-                >
-                  <Icon.Lock className="w-3 h-3" />
-                  <span>Gestión interna</span>
-                </button>
+                <div className="flex items-center gap-4">
+                  {/* BOTÓN FORZAR ACTUALIZACIÓN DE TIENDA */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if ('caches' in window) {
+                        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(() => {
+                          if ('serviceWorker' in navigator) {
+                            navigator.serviceWorker.getRegistrations().then(regs => {
+                              regs.forEach(r => r.unregister());
+                            });
+                          }
+                          setTimeout(() => {
+                            window.location.reload(true);
+                          }, 250);
+                        });
+                      } else {
+                        window.location.reload(true);
+                      }
+                    }}
+                    className="text-zinc-400 hover:text-[#FF2E93] transition flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer"
+                    title="Actualizar y descargar última versión de la tienda"
+                  >
+                    <Icon.Refresh className="w-3 h-3" />
+                    <span>Recargar versión reciente</span>
+                  </button>
+
+                  {/* ACCESO DISCRETO ADMINISTRADOR */}
+                  <button
+                    onClick={() => {
+                      if (sessionStorage.getItem('kaoj_admin_authenticated') === 'true') {
+                        window.location.href = 'admin.html#/admin/orders';
+                      } else {
+                        setShowPinModal(true);
+                      }
+                    }}
+                    className="text-zinc-400 hover:text-zinc-700 transition flex items-center gap-1 opacity-50 hover:opacity-100 cursor-pointer"
+                    title="Gestión interna"
+                  >
+                    <Icon.Lock className="w-3 h-3" />
+                    <span>Gestión interna</span>
+                  </button>
+                </div>
               </div>
 
             </div>

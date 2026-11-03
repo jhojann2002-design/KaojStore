@@ -1,6 +1,6 @@
-// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v25)
+// SERVICE WORKER - KAOJ STORE PWA (Cache Optimizado & Resiliente v26)
 // =========================================================================
-const CACHE_NAME = 'kaoj-store-v25';
+const CACHE_NAME = 'kaoj-store-v26_1793678720';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -56,13 +56,13 @@ self.addEventListener('activate', event => {
       return Promise.all(
         keys.map(key => {
           if (key !== CACHE_NAME) {
+            console.log('[SW] Purgando caché obsoleta:', key);
             return caches.delete(key);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // Manejo de clic en notificaciones push de nuevos pedidos (apertura / foco del panel de administración)
@@ -95,10 +95,20 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Navegación principal (cargar index.html de la boutique): Network First
-  if (event.request.mode === 'navigate') {
+  // 1. NAVEGACIÓN Y CÓDIGO DE LA APLICACIÓN: NETWORK FIRST (Siempre trae la última versión online)
+  // Aplica a la página principal, HTML, app.js y manifests.
+  const isAppCode = event.request.mode === 'navigate' ||
+                    url.endsWith('/index.html') ||
+                    url.endsWith('/admin.html') ||
+                    url.endsWith('/app.js') ||
+                    url.includes('/app.js?') ||
+                    url.endsWith('/manifest.json') ||
+                    url.endsWith('/manifest-admin.json') ||
+                    url.endsWith('/');
+
+  if (isAppCode) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-cache' })
         .then(response => {
           if (response && response.status === 200) {
             const clone = response.clone();
@@ -117,7 +127,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Recursos CDN: Cache First con fallback a Network
+  // 2. Recursos CDN: Cache First con actualización en segundo plano
   if (
     url.includes('cdn.jsdelivr.net') ||
     url.includes('unpkg.com') ||
@@ -140,16 +150,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Demás assets estáticos locales (imágenes, iconos, json)
+  // 3. Demás assets estáticos locales (imágenes, iconos, json): Stale-While-Revalidate
   event.respondWith(
     caches.match(event.request).then(cached => {
-      return cached || fetch(event.request).then(response => {
+      const fetchPromise = fetch(event.request).then(response => {
         if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
         }
         return response;
       }).catch(() => cached);
+
+      return cached || fetchPromise;
     })
   );
 });

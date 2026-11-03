@@ -88,5 +88,17 @@ def compile_app():
             else:
                 print(f"Advertencia: marcadores de script no encontrados en {target}")
 
+    # Invalidate cache: actualizar automáticamente versión única en sw.js
+    import time
+    sw_path = os.path.join(root_dir, 'sw.js')
+    if os.path.exists(sw_path):
+        with open(sw_path, 'r', encoding='utf-8') as f:
+            sw_code = f.read()
+        new_version = f"kaoj-store-v26_{int(time.time())}"
+        sw_code = re.sub(r"const CACHE_NAME = ['\"][^'\"]+['\"];", f"const CACHE_NAME = '{new_version}';", sw_code)
+        with open(sw_path, 'w', encoding='utf-8') as f:
+            f.write(sw_code)
+        print(f"Service Worker actualizado con nueva versión de caché: {new_version}")
+
 if __name__ == '__main__':
     compile_app()

@@ -1754,6 +1754,93 @@ ESTADO: ${status.toUpperCase()}
       return `¡Hola ${name}! Te saludamos de Kaoj Store 💅. Tu pedido *#${code}* se encuentra en estado: *${status.toUpperCase()}*.`;
     }
 
+    // =========================================================================
+    // COMPONENTE: GESTOR DE MÚLTIPLES FOTOS POR VARIANTE / COLOR
+    // =========================================================================
+    function VariantImagesUploader({ images, image, onChange, uploadFile, label = 'Fotos' }) {
+      const [isUploading, setIsUploading] = useState(false);
+      const list = (Array.isArray(images) && images.length > 0)
+        ? images.filter(Boolean)
+        : (image && typeof image === 'string' && image.trim() ? [image.trim()] : []);
+
+      const handleFiles = async (e) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const files = Array.from(e.target.files);
+        setIsUploading(true);
+        const updated = [...list];
+        for (const f of files) {
+          const url = await uploadFile(f, 'products');
+          if (url && !updated.includes(url)) {
+            updated.push(url);
+          }
+        }
+        setIsUploading(false);
+        onChange(updated);
+        e.target.value = '';
+      };
+
+      const handleRemove = (idxToRemove) => {
+        const updated = list.filter((_, i) => i !== idxToRemove);
+        onChange(updated);
+      };
+
+      return (
+        <div className="space-y-1.5 pt-1.5 border-t border-zinc-100">
+          <div className="flex items-center justify-between text-[10.5px]">
+            <span className="font-bold text-zinc-700 flex items-center gap-1">
+              <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
+              <span>{label} ({list.length})</span>
+            </span>
+            <span className="text-zinc-400 text-[10px]">Puedes subir varias fotos (frente, espalda, detalle)</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {list.map((url, idx) => (
+              <div key={idx} className="relative w-11 h-11 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-white group shadow-2xs">
+                <img src={url} alt="" className="w-full h-full object-contain p-0.5" />
+                {idx === 0 && (
+                  <span className="absolute bottom-0 inset-x-0 bg-black/75 text-white text-[7px] font-black text-center leading-tight">
+                    1ª
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(idx)}
+                  className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-bl flex items-center justify-center text-[8px] font-bold transition"
+                  title="Quitar esta foto"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            <label className={`h-11 px-2.5 rounded-lg border border-dashed flex items-center justify-center gap-1 cursor-pointer transition shrink-0 text-[11px] font-bold ${
+              isUploading
+                ? 'border-amber-300 bg-amber-50 text-amber-700 animate-pulse'
+                : 'border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-100/60 text-[#FF2E93]'
+            }`}>
+              {isUploading ? (
+                <span className="text-[10px]">Subiendo...</span>
+              ) : (
+                <>
+                  <Icon.Plus className="w-3.5 h-3.5" />
+                  <span>{list.length > 0 ? '+ Otra foto' : '+ Subir fotos'}</span>
+                </>
+              )}
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                disabled={isUploading}
+                className="hidden"
+                onChange={handleFiles}
+              />
+            </label>
+          </div>
+        </div>
+      );
+    }
+
     // COMPONENTE PRINCIPAL APP
     // =========================================================================
     function App() {
@@ -2195,8 +2282,15 @@ ESTADO: ${status.toUpperCase()}
           });
         }
 
-        // 4. Fotos de variantes o tonos (secundarias para flechitas o al tocar el tono)
+        // 4. Fotos de variantes o tonos (incluye todas las fotos de cada variante)
         (product.variants || []).forEach(v => {
+          if (Array.isArray(v.images)) {
+            v.images.forEach(img => {
+              if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
+                list.push(img.trim());
+              }
+            });
+          }
           if (v.image && typeof v.image === 'string' && v.image.trim() && !isVideoUrl(v.image) && !list.includes(v.image.trim())) {
             list.push(v.image.trim());
           }
@@ -4368,17 +4462,39 @@ ESTADO: ${status.toUpperCase()}
         const cloned = JSON.parse(JSON.stringify(prod));
         cloned.images = getProductImages(cloned);
         cloned.video = getProductVideo(cloned);
+
+        // Garantizar que cada variante tenga su array images: []
+        if (Array.isArray(cloned.variants)) {
+          cloned.variants = cloned.variants.map(v => ({
+            ...v,
+            images: (Array.isArray(v.images) && v.images.length > 0)
+              ? v.images.filter(Boolean)
+              : (v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : [])
+          }));
+        }
+
         const hasColorSize = (cloned.variants || []).some(v => v.color && v.size);
         if (hasColorSize) {
           setEditVariantMode('color_size');
           const colorMap = new Map();
           (cloned.variants || []).forEach(v => {
-            if (v.color && !colorMap.has(v.color)) {
-              colorMap.set(v.color, v.image || '');
+            if (v.color) {
+              const existing = colorMap.get(v.color) || [];
+              const vImgs = (Array.isArray(v.images) && v.images.length > 0)
+                ? v.images.filter(Boolean)
+                : (v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : []);
+              vImgs.forEach(img => {
+                if (img && !existing.includes(img)) existing.push(img);
+              });
+              colorMap.set(v.color, existing);
             }
           });
-          const colorsList = Array.from(colorMap.entries()).map(([name, image]) => ({ name, image }));
-          setEditColors(colorsList.length > 0 ? colorsList : [{ name: 'Color 1', image: '' }]);
+          const colorsList = Array.from(colorMap.entries()).map(([name, imgs]) => ({
+            name,
+            image: imgs[0] || '',
+            images: imgs
+          }));
+          setEditColors(colorsList.length > 0 ? colorsList : [{ name: 'Color 1', image: '', images: [] }]);
 
           const sizeSet = new Set();
           (cloned.variants || []).forEach(v => {
@@ -4396,7 +4512,7 @@ ESTADO: ${status.toUpperCase()}
           setEditMatrixStock(stockMap);
         } else {
           setEditVariantMode('simple');
-          setEditColors([{ name: 'Negro', image: '' }, { name: 'Blanco', image: '' }]);
+          setEditColors([{ name: 'Negro', image: '', images: [] }, { name: 'Blanco', image: '', images: [] }]);
           setEditSizes(['S', 'M', 'L']);
           setEditMatrixStock({});
         }
@@ -4415,6 +4531,9 @@ ESTADO: ${status.toUpperCase()}
           editColors.forEach(c => {
             const colName = (c.name || '').trim();
             if (!colName) return;
+            const colImgs = (Array.isArray(c.images) && c.images.length > 0)
+              ? c.images.filter(Boolean)
+              : (c.image && typeof c.image === 'string' && c.image.trim() ? [c.image.trim()] : []);
             editSizes.forEach(s => {
               const sizeName = (s || '').trim();
               if (!sizeName) return;
@@ -4425,7 +4544,8 @@ ESTADO: ${status.toUpperCase()}
                 color: colName,
                 size: sizeName,
                 stock: parseInt(st !== undefined && st !== '' ? st : (editBulkStock || 5), 10),
-                image: c.image || editingProduct.image || ''
+                image: colImgs[0] || c.image || editingProduct.image || '',
+                images: colImgs
               });
             });
           });
@@ -4435,8 +4555,17 @@ ESTADO: ${status.toUpperCase()}
           }
         } else {
           finalVariants = (editingProduct.variants && editingProduct.variants.length > 0)
-            ? editingProduct.variants
-            : [{ name: 'Único', stock: 5, image: '' }];
+            ? editingProduct.variants.map(v => {
+                const vImgs = (Array.isArray(v.images) && v.images.length > 0)
+                  ? v.images.filter(Boolean)
+                  : (v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : []);
+                return {
+                  ...v,
+                  image: vImgs[0] || v.image || '',
+                  images: vImgs
+                };
+              })
+            : [{ name: 'Único', stock: 5, image: '', images: [] }];
         }
 
         const prodImages = (editingProduct.images && editingProduct.images.length > 0)
@@ -4505,6 +4634,9 @@ ESTADO: ${status.toUpperCase()}
           newProdColors.forEach(c => {
             const colName = (c.name || '').trim();
             if (!colName) return;
+            const colImgs = (Array.isArray(c.images) && c.images.length > 0)
+              ? c.images.filter(Boolean)
+              : (c.image && typeof c.image === 'string' && c.image.trim() ? [c.image.trim()] : []);
             newProdSizes.forEach(s => {
               const sizeName = (s || '').trim();
               if (!sizeName) return;
@@ -4515,7 +4647,8 @@ ESTADO: ${status.toUpperCase()}
                 color: colName,
                 size: sizeName,
                 stock: parseInt(st !== undefined && st !== '' ? st : (newProdBulkStock || 5), 10),
-                image: c.image || newProd.image || ''
+                image: colImgs[0] || c.image || newProd.image || '',
+                images: colImgs
               });
             });
           });
@@ -4524,7 +4657,18 @@ ESTADO: ${status.toUpperCase()}
             return showToast('Debes configurar al menos 1 color y 1 talla', 'error');
           }
         } else {
-          finalVariants = newProd.variants.length > 0 ? newProd.variants : [{ name: 'Único', stock: 5, image: '' }];
+          finalVariants = newProd.variants.length > 0
+            ? newProd.variants.map(v => {
+                const vImgs = (Array.isArray(v.images) && v.images.length > 0)
+                  ? v.images.filter(Boolean)
+                  : (v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : []);
+                return {
+                  ...v,
+                  image: vImgs[0] || v.image || '',
+                  images: vImgs
+                };
+              })
+            : [{ name: 'Único', stock: 5, image: '', images: [] }];
         }
 
         const prodImages = (newProd.images && newProd.images.length > 0)
@@ -6746,52 +6890,23 @@ ESTADO: ${status.toUpperCase()}
                                   </button>
                                 </div>
 
-                                {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
-                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    {v.image ? (
-                                      <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                                        <img src={v.image} alt="" className="w-full h-full object-contain" />
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setNewProd({ ...newProd, variants: newProd.variants.map((item, i) => i === idx ? { ...item, image: '' } : item) });
-                                          }}
-                                          className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                          title="Quitar foto"
-                                        >✕</button>
-                                      </div>
-                                    ) : (
-                                      <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
-                                        <Icon.Photo className="w-4 h-4" />
-                                      </div>
-                                    )}
-
-                                    <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                      <Icon.Photo className="w-3 h-3 text-[#FF2E93]" />
-                                      <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={async e => {
-                                          if (e.target.files[0]) {
-                                            const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                            if (url) {
-                                              setNewProd({ ...newProd, variants: newProd.variants.map((item, i) => i === idx ? { ...item, image: url } : item) });
-                                            }
-                                          }
-                                        }}
-                                      />
-                                    </label>
-                                  </div>
-
-                                  {v.image && (
-                                    <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                      <Icon.Check className="w-3 h-3" /> Foto lista
-                                    </span>
-                                  )}
-                                </div>
+                                {/* GESTOR DE FOTOS DE ESTA VARIANTE (SUBIR 1 O MÁS FOTOS) */}
+                                <VariantImagesUploader
+                                  images={v.images}
+                                  image={v.image}
+                                  label="Fotos de esta variante"
+                                  uploadFile={uploadFileToSupabase}
+                                  onChange={imgs => {
+                                    setNewProd({
+                                      ...newProd,
+                                      variants: newProd.variants.map((item, i) => i === idx ? {
+                                        ...item,
+                                        image: imgs[0] || '',
+                                        images: imgs
+                                      } : item)
+                                    });
+                                  }}
+                                />
                               </div>
                             ))}
                           </div>
@@ -6860,51 +6975,20 @@ ESTADO: ${status.toUpperCase()}
                                     )}
                                   </div>
 
-                                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      {col.image ? (
-                                        <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                                          <img src={col.image} alt="" className="w-full h-full object-contain" />
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setNewProdColors(newProdColors.map((col, i) => i === cIdx ? { ...col, image: '' } : col));
-                                            }}
-                                            className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                            title="Quitar foto"
-                                          >✕</button>
-                                        </div>
-                                      ) : (
-                                        <div className="w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0">
-                                          <Icon.Photo className="w-3.5 h-3.5" />
-                                        </div>
-                                      )}
-
-                                      <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                        <Icon.Photo className="w-3 h-3 text-[#FF2E93]" />
-                                        <span>{col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'}</span>
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="hidden"
-                                          onChange={async e => {
-                                            if (e.target.files[0]) {
-                                              const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                              if (url) {
-                                                setNewProdColors(newProdColors.map((col, i) => i === cIdx ? { ...col, image: url } : col));
-                                              }
-                                            }
-                                          }}
-                                        />
-                                      </label>
-                                    </div>
-
-                                    {col.image && (
-                                      <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                        <Icon.Check className="w-3 h-3" /> Foto lista
-                                      </span>
-                                    )}
-                                  </div>
+                                  {/* GESTOR DE FOTOS DE ESTE COLOR (SUBIR 1 O MÁS FOTOS) */}
+                                  <VariantImagesUploader
+                                    images={col.images}
+                                    image={col.image}
+                                    label="Fotos de este color"
+                                    uploadFile={uploadFileToSupabase}
+                                    onChange={imgs => {
+                                      setNewProdColors(newProdColors.map((c, i) => i === cIdx ? {
+                                        ...c,
+                                        image: imgs[0] || '',
+                                        images: imgs
+                                      } : c));
+                                    }}
+                                  />
                                 </div>
                               ))}
                             </div>
@@ -9420,52 +9504,23 @@ ESTADO: ${status.toUpperCase()}
                               </button>
                             </div>
 
-                            {/* SUBIR FOTO DE VARIANTE DESDE DISPOSITIVO */}
-                            <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {v.image ? (
-                                  <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                                    <img src={v.image} alt="" className="w-full h-full object-contain" />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingProduct({ ...editingProduct, variants: (editingProduct.variants || []).map((item, i) => i === idx ? { ...item, image: '' } : item) });
-                                      }}
-                                      className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                      title="Quitar foto"
-                                    >✕</button>
-                                  </div>
-                                ) : (
-                                  <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0">
-                                    <Icon.Photo className="w-4 h-4" />
-                                  </div>
-                                )}
-
-                                <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                  <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
-                                  <span>{v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'}</span>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={async e => {
-                                      if (e.target.files[0]) {
-                                        const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                        if (url) {
-                                          setEditingProduct({ ...editingProduct, variants: (editingProduct.variants || []).map((item, i) => i === idx ? { ...item, image: url } : item) });
-                                        }
-                                      }
-                                    }}
-                                  />
-                                </label>
-                              </div>
-
-                              {v.image && (
-                                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                  <Icon.Check className="w-3 h-3" /> Foto lista
-                                </span>
-                              )}
-                            </div>
+                            {/* GESTOR DE FOTOS DE ESTA VARIANTE (SUBIR 1 O MÁS FOTOS) */}
+                            <VariantImagesUploader
+                              images={v.images}
+                              image={v.image}
+                              label="Fotos de esta variante"
+                              uploadFile={uploadFileToSupabase}
+                              onChange={imgs => {
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  variants: (editingProduct.variants || []).map((item, i) => i === idx ? {
+                                    ...item,
+                                    image: imgs[0] || '',
+                                    images: imgs
+                                  } : item)
+                                });
+                              }}
+                            />
                           </div>
                         ))}
                       </div>
@@ -9534,51 +9589,20 @@ ESTADO: ${status.toUpperCase()}
                                 )}
                               </div>
 
-                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-100">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {col.image ? (
-                                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center">
-                                      <img src={col.image} alt="" className="w-full h-full object-contain" />
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditColors(editColors.map((col, i) => i === cIdx ? { ...col, image: '' } : col));
-                                        }}
-                                        className="absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold"
-                                        title="Quitar foto"
-                                      >✕</button>
-                                    </div>
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0">
-                                      <Icon.Photo className="w-3.5 h-3.5" />
-                                    </div>
-                                  )}
-
-                                  <label className="cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition">
-                                    <Icon.Photo className="w-3.5 h-3.5 text-[#FF2E93]" />
-                                    <span>{col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'}</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={async e => {
-                                        if (e.target.files[0]) {
-                                          const url = await uploadFileToSupabase(e.target.files[0], 'products');
-                                          if (url) {
-                                            setEditColors(editColors.map((col, i) => i === cIdx ? { ...col, image: url } : col));
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-
-                                {col.image && (
-                                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0">
-                                    <Icon.Check className="w-3 h-3" /> Foto lista
-                                  </span>
-                                )}
-                              </div>
+                              {/* GESTOR DE FOTOS DE ESTE COLOR (SUBIR 1 O MÁS FOTOS) */}
+                              <VariantImagesUploader
+                                images={col.images}
+                                image={col.image}
+                                label="Fotos de este color"
+                                uploadFile={uploadFileToSupabase}
+                                onChange={imgs => {
+                                  setEditColors(editColors.map((c, i) => i === cIdx ? {
+                                    ...c,
+                                    image: imgs[0] || '',
+                                    images: imgs
+                                  } : c));
+                                }}
+                              />
                             </div>
                           ))}
                         </div>
@@ -11843,7 +11867,10 @@ ESTADO: ${status.toUpperCase()}
                     const url = targetMedia.url.trim();
 
                     if (hasColorAndSize) {
-                      const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+                      const matchedVar = (quickViewProduct.variants || []).find(v =>
+                        (v.image && v.image.trim() === url) ||
+                        (Array.isArray(v.images) && v.images.some(img => img && img.trim() === url))
+                      );
                       if (matchedVar && matchedVar.color) {
                         const newColor = matchedVar.color;
                         const matchingSizeVar = (quickViewProduct.variants || []).find(v => v.color === newColor && v.size === currentSize && v.stock > 0)
@@ -11858,20 +11885,23 @@ ESTADO: ${status.toUpperCase()}
                             color: newColor,
                             size: nextSize,
                             variantName: nextVarName,
-                            image: matchingSizeVar.image || matchedVar.image,
+                            image: (Array.isArray(matchingSizeVar.images) && matchingSizeVar.images[0]) || matchingSizeVar.image || matchedVar.image,
                             userSelected: true
                           }
                         }));
                       }
                     } else {
-                      const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+                      const matchedVar = (quickViewProduct.variants || []).find(v =>
+                        (v.image && v.image.trim() === url) ||
+                        (Array.isArray(v.images) && v.images.some(img => img && img.trim() === url))
+                      );
                       if (matchedVar) {
                         setQuickViewSelectedVar(matchedVar.name);
                         setActiveVariants(prev => ({
                           ...prev,
                           [quickViewProduct.id]: {
                             variantName: matchedVar.name,
-                            image: matchedVar.image,
+                            image: (Array.isArray(matchedVar.images) && matchedVar.images[0]) || matchedVar.image || quickViewProduct.image,
                             userSelected: true
                           }
                         }));
@@ -11882,8 +11912,14 @@ ESTADO: ${status.toUpperCase()}
                   // Identificar variante que corresponde a la foto actual (si aplica)
                   const matchingVariantForActiveMedia = activeMedia.type === 'image' && (
                     hasColorAndSize
-                      ? (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.color
-                      : (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.name
+                      ? (quickViewProduct.variants || []).find(v =>
+                          (v.image && v.image.trim() === activeMedia.url.trim()) ||
+                          (Array.isArray(v.images) && v.images.some(img => img && img.trim() === activeMedia.url.trim()))
+                        )?.color
+                      : (quickViewProduct.variants || []).find(v =>
+                          (v.image && v.image.trim() === activeMedia.url.trim()) ||
+                          (Array.isArray(v.images) && v.images.some(img => img && img.trim() === activeMedia.url.trim()))
+                        )?.name
                   );
 
                   return (
@@ -12054,7 +12090,7 @@ ESTADO: ${status.toUpperCase()}
                                           const nextSize = matchedVar ? matchedVar.size : currentSize;
                                           const nextVarName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
                                           setQuickViewSelectedVar(nextVarName);
-                                          const nextImg = (matchedVar?.image || colorVar?.image || '').trim();
+                                          const nextImg = (matchedVar?.images?.[0] || matchedVar?.image || colorVar?.images?.[0] || colorVar?.image || '').trim();
                                           if (nextImg) {
                                             const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === nextImg);
                                             if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
@@ -12065,7 +12101,7 @@ ESTADO: ${status.toUpperCase()}
                                               color: c,
                                               size: nextSize,
                                               variantName: nextVarName,
-                                              image: matchedVar?.image || colorVar?.image || quickViewProduct.image,
+                                              image: nextImg || quickViewProduct.image,
                                               userSelected: true
                                             }
                                           });
@@ -12078,8 +12114,8 @@ ESTADO: ${status.toUpperCase()}
                                             : 'border-zinc-200 bg-white hover:border-zinc-950 text-zinc-700'
                                         }`}
                                       >
-                                        {colorVar?.image ? (
-                                          <img src={colorVar.image} alt="" className="w-5 h-5 rounded-lg object-contain border border-zinc-200 bg-white" />
+                                        {(colorVar?.images?.[0] || colorVar?.image) ? (
+                                          <img src={colorVar.images?.[0] || colorVar.image} alt="" className="w-5 h-5 rounded-lg object-contain border border-zinc-200 bg-white" />
                                         ) : (
                                           <span className="w-3.5 h-3.5 rounded-full bg-zinc-300"></span>
                                         )}
@@ -12163,36 +12199,39 @@ ESTADO: ${status.toUpperCase()}
                               </div>
 
                               <div className="flex flex-wrap gap-1.5 p-1">
-                                {(quickViewProduct.variants || []).map(v => (
-                                  <button
-                                    key={v.name}
-                                    disabled={v.stock <= 0}
-                                    onClick={() => {
-                                      setQuickViewSelectedVar(v.name);
-                                      if (v.image && v.image.trim()) {
-                                        const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === v.image.trim());
-                                        if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
-                                      }
-                                      setActiveVariants({
-                                        ...activeVariants,
-                                        [quickViewProduct.id]: { variantName: v.name, image: v.image || quickViewProduct.image, userSelected: true }
-                                      });
-                                    }}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-1.5 ${
-                                      currentVarName === v.name
-                                        ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
-                                        : v.stock <= 0
-                                        ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
-                                        : 'border-zinc-200 bg-white hover:border-[#FF2E93] text-zinc-700'
-                                    }`}
-                                  >
-                                    {v.image && <img src={v.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />}
-                                    <span>{v.name}</span>
-                                    {v.stock > 0 && v.stock <= 2 && (
-                                      <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
-                                    )}
-                                  </button>
-                                ))}
+                                {(quickViewProduct.variants || []).map(v => {
+                                  const varCover = (Array.isArray(v.images) && v.images[0]) || v.image;
+                                  return (
+                                    <button
+                                      key={v.name}
+                                      disabled={v.stock <= 0}
+                                      onClick={() => {
+                                        setQuickViewSelectedVar(v.name);
+                                        if (varCover && varCover.trim()) {
+                                          const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === varCover.trim());
+                                          if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
+                                        }
+                                        setActiveVariants({
+                                          ...activeVariants,
+                                          [quickViewProduct.id]: { variantName: v.name, image: varCover || quickViewProduct.image, userSelected: true }
+                                        });
+                                      }}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-1.5 ${
+                                        currentVarName === v.name
+                                          ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs'
+                                          : v.stock <= 0
+                                          ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed'
+                                          : 'border-zinc-200 bg-white hover:border-[#FF2E93] text-zinc-700'
+                                      }`}
+                                    >
+                                      {varCover && <img src={varCover} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200" />}
+                                      <span>{v.name}</span>
+                                      {v.stock > 0 && v.stock <= 2 && (
+                                        <span className="text-[10px] text-amber-700 font-bold ml-0.5">({v.stock})</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}

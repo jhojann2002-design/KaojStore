@@ -2351,6 +2351,79 @@ window.IS_ADMIN_APP = true;
       return `¡Hola ${name}! Te saludamos de Kaoj Store 💅. Tu pedido *#${code}* se encuentra en estado: *${status.toUpperCase()}*.`;
     }
 
+    // =========================================================================
+    // COMPONENTE: GESTOR DE MÚLTIPLES FOTOS POR VARIANTE / COLOR
+    // =========================================================================
+    function VariantImagesUploader({
+      images,
+      image,
+      onChange,
+      uploadFile,
+      label = 'Fotos'
+    }) {
+      const [isUploading, setIsUploading] = useState(false);
+      const list = Array.isArray(images) && images.length > 0 ? images.filter(Boolean) : image && typeof image === 'string' && image.trim() ? [image.trim()] : [];
+      const handleFiles = async e => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const files = Array.from(e.target.files);
+        setIsUploading(true);
+        const updated = [...list];
+        for (const f of files) {
+          const url = await uploadFile(f, 'products');
+          if (url && !updated.includes(url)) {
+            updated.push(url);
+          }
+        }
+        setIsUploading(false);
+        onChange(updated);
+        e.target.value = '';
+      };
+      const handleRemove = idxToRemove => {
+        const updated = list.filter((_, i) => i !== idxToRemove);
+        onChange(updated);
+      };
+      return /*#__PURE__*/React.createElement("div", {
+        className: "space-y-1.5 pt-1.5 border-t border-zinc-100"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between text-[10.5px]"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "font-bold text-zinc-700 flex items-center gap-1"
+      }, /*#__PURE__*/React.createElement(Icon.Photo, {
+        className: "w-3.5 h-3.5 text-[#FF2E93]"
+      }), /*#__PURE__*/React.createElement("span", null, label, " (", list.length, ")")), /*#__PURE__*/React.createElement("span", {
+        className: "text-zinc-400 text-[10px]"
+      }, "Puedes subir varias fotos (frente, espalda, detalle)")), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar"
+      }, list.map((url, idx) => /*#__PURE__*/React.createElement("div", {
+        key: idx,
+        className: "relative w-11 h-11 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-white group shadow-2xs"
+      }, /*#__PURE__*/React.createElement("img", {
+        src: url,
+        alt: "",
+        className: "w-full h-full object-contain p-0.5"
+      }), idx === 0 && /*#__PURE__*/React.createElement("span", {
+        className: "absolute bottom-0 inset-x-0 bg-black/75 text-white text-[7px] font-black text-center leading-tight"
+      }, "1ª"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => handleRemove(idx),
+        className: "absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-bl flex items-center justify-center text-[8px] font-bold transition",
+        title: "Quitar esta foto"
+      }, "✕"))), /*#__PURE__*/React.createElement("label", {
+        className: `h-11 px-2.5 rounded-lg border border-dashed flex items-center justify-center gap-1 cursor-pointer transition shrink-0 text-[11px] font-bold ${isUploading ? 'border-amber-300 bg-amber-50 text-amber-700 animate-pulse' : 'border-pink-300 hover:border-[#FF2E93] bg-pink-50/50 hover:bg-pink-100/60 text-[#FF2E93]'}`
+      }, isUploading ? /*#__PURE__*/React.createElement("span", {
+        className: "text-[10px]"
+      }, "Subiendo...") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Icon.Plus, {
+        className: "w-3.5 h-3.5"
+      }), /*#__PURE__*/React.createElement("span", null, list.length > 0 ? '+ Otra foto' : '+ Subir fotos')), /*#__PURE__*/React.createElement("input", {
+        type: "file",
+        multiple: true,
+        accept: "image/*",
+        disabled: isUploading,
+        className: "hidden",
+        onChange: handleFiles
+      }))));
+    }
+
     // COMPONENTE PRINCIPAL APP
     // =========================================================================
     function App() {
@@ -2807,8 +2880,15 @@ window.IS_ADMIN_APP = true;
           });
         }
 
-        // 4. Fotos de variantes o tonos (secundarias para flechitas o al tocar el tono)
+        // 4. Fotos de variantes o tonos (incluye todas las fotos de cada variante)
         (product.variants || []).forEach(v => {
+          if (Array.isArray(v.images)) {
+            v.images.forEach(img => {
+              if (img && typeof img === 'string' && img.trim() && !isVideoUrl(img) && !list.includes(img.trim())) {
+                list.push(img.trim());
+              }
+            });
+          }
           if (v.image && typeof v.image === 'string' && v.image.trim() && !isVideoUrl(v.image) && !list.includes(v.image.trim())) {
             list.push(v.image.trim());
           }
@@ -5007,22 +5087,37 @@ window.IS_ADMIN_APP = true;
         const cloned = JSON.parse(JSON.stringify(prod));
         cloned.images = getProductImages(cloned);
         cloned.video = getProductVideo(cloned);
+
+        // Garantizar que cada variante tenga su array images: []
+        if (Array.isArray(cloned.variants)) {
+          cloned.variants = cloned.variants.map(v => ({
+            ...v,
+            images: Array.isArray(v.images) && v.images.length > 0 ? v.images.filter(Boolean) : v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : []
+          }));
+        }
         const hasColorSize = (cloned.variants || []).some(v => v.color && v.size);
         if (hasColorSize) {
           setEditVariantMode('color_size');
           const colorMap = new Map();
           (cloned.variants || []).forEach(v => {
-            if (v.color && !colorMap.has(v.color)) {
-              colorMap.set(v.color, v.image || '');
+            if (v.color) {
+              const existing = colorMap.get(v.color) || [];
+              const vImgs = Array.isArray(v.images) && v.images.length > 0 ? v.images.filter(Boolean) : v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : [];
+              vImgs.forEach(img => {
+                if (img && !existing.includes(img)) existing.push(img);
+              });
+              colorMap.set(v.color, existing);
             }
           });
-          const colorsList = Array.from(colorMap.entries()).map(([name, image]) => ({
+          const colorsList = Array.from(colorMap.entries()).map(([name, imgs]) => ({
             name,
-            image
+            image: imgs[0] || '',
+            images: imgs
           }));
           setEditColors(colorsList.length > 0 ? colorsList : [{
             name: 'Color 1',
-            image: ''
+            image: '',
+            images: []
           }]);
           const sizeSet = new Set();
           (cloned.variants || []).forEach(v => {
@@ -5041,10 +5136,12 @@ window.IS_ADMIN_APP = true;
           setEditVariantMode('simple');
           setEditColors([{
             name: 'Negro',
-            image: ''
+            image: '',
+            images: []
           }, {
             name: 'Blanco',
-            image: ''
+            image: '',
+            images: []
           }]);
           setEditSizes(['S', 'M', 'L']);
           setEditMatrixStock({});
@@ -5061,6 +5158,7 @@ window.IS_ADMIN_APP = true;
           editColors.forEach(c => {
             const colName = (c.name || '').trim();
             if (!colName) return;
+            const colImgs = Array.isArray(c.images) && c.images.length > 0 ? c.images.filter(Boolean) : c.image && typeof c.image === 'string' && c.image.trim() ? [c.image.trim()] : [];
             editSizes.forEach(s => {
               const sizeName = (s || '').trim();
               if (!sizeName) return;
@@ -5071,7 +5169,8 @@ window.IS_ADMIN_APP = true;
                 color: colName,
                 size: sizeName,
                 stock: parseInt(st !== undefined && st !== '' ? st : editBulkStock || 5, 10),
-                image: c.image || editingProduct.image || ''
+                image: colImgs[0] || c.image || editingProduct.image || '',
+                images: colImgs
               });
             });
           });
@@ -5079,10 +5178,18 @@ window.IS_ADMIN_APP = true;
             return showToast('Debes configurar al menos 1 color y 1 talla', 'error');
           }
         } else {
-          finalVariants = editingProduct.variants && editingProduct.variants.length > 0 ? editingProduct.variants : [{
+          finalVariants = editingProduct.variants && editingProduct.variants.length > 0 ? editingProduct.variants.map(v => {
+            const vImgs = Array.isArray(v.images) && v.images.length > 0 ? v.images.filter(Boolean) : v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : [];
+            return {
+              ...v,
+              image: vImgs[0] || v.image || '',
+              images: vImgs
+            };
+          }) : [{
             name: 'Único',
             stock: 5,
-            image: ''
+            image: '',
+            images: []
           }];
         }
         const prodImages = editingProduct.images && editingProduct.images.length > 0 ? editingProduct.images.filter(Boolean) : editingProduct.image ? [editingProduct.image] : [];
@@ -5151,6 +5258,7 @@ window.IS_ADMIN_APP = true;
           newProdColors.forEach(c => {
             const colName = (c.name || '').trim();
             if (!colName) return;
+            const colImgs = Array.isArray(c.images) && c.images.length > 0 ? c.images.filter(Boolean) : c.image && typeof c.image === 'string' && c.image.trim() ? [c.image.trim()] : [];
             newProdSizes.forEach(s => {
               const sizeName = (s || '').trim();
               if (!sizeName) return;
@@ -5161,7 +5269,8 @@ window.IS_ADMIN_APP = true;
                 color: colName,
                 size: sizeName,
                 stock: parseInt(st !== undefined && st !== '' ? st : newProdBulkStock || 5, 10),
-                image: c.image || newProd.image || ''
+                image: colImgs[0] || c.image || newProd.image || '',
+                images: colImgs
               });
             });
           });
@@ -5169,10 +5278,18 @@ window.IS_ADMIN_APP = true;
             return showToast('Debes configurar al menos 1 color y 1 talla', 'error');
           }
         } else {
-          finalVariants = newProd.variants.length > 0 ? newProd.variants : [{
+          finalVariants = newProd.variants.length > 0 ? newProd.variants.map(v => {
+            const vImgs = Array.isArray(v.images) && v.images.length > 0 ? v.images.filter(Boolean) : v.image && typeof v.image === 'string' && v.image.trim() ? [v.image.trim()] : [];
+            return {
+              ...v,
+              image: vImgs[0] || v.image || '',
+              images: vImgs
+            };
+          }) : [{
             name: 'Único',
             stock: 5,
-            image: ''
+            image: '',
+            images: []
           }];
         }
         const prodImages = newProd.images && newProd.images.length > 0 ? newProd.images.filter(Boolean) : newProd.image ? [newProd.image] : [];
@@ -6996,60 +7113,22 @@ window.IS_ADMIN_APP = true;
           },
           className: "text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition",
           title: "Eliminar variante"
-        }, "✕")), /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center justify-between gap-2 pt-1 border-t border-zinc-100"
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2 min-w-0"
-        }, v.image ? /*#__PURE__*/React.createElement("div", {
-          className: "relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center"
-        }, /*#__PURE__*/React.createElement("img", {
-          src: v.image,
-          alt: "",
-          className: "w-full h-full object-contain"
-        }), /*#__PURE__*/React.createElement("button", {
-          type: "button",
-          onClick: () => {
+        }, "✕")), /*#__PURE__*/React.createElement(VariantImagesUploader, {
+          images: v.images,
+          image: v.image,
+          label: "Fotos de esta variante",
+          uploadFile: uploadFileToSupabase,
+          onChange: imgs => {
             setNewProd({
               ...newProd,
               variants: newProd.variants.map((item, i) => i === idx ? {
                 ...item,
-                image: ''
+                image: imgs[0] || '',
+                images: imgs
               } : item)
             });
-          },
-          className: "absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold",
-          title: "Quitar foto"
-        }, "✕")) : /*#__PURE__*/React.createElement("div", {
-          className: "w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0"
-        }, /*#__PURE__*/React.createElement(Icon.Photo, {
-          className: "w-4 h-4"
-        })), /*#__PURE__*/React.createElement("label", {
-          className: "cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition"
-        }, /*#__PURE__*/React.createElement(Icon.Photo, {
-          className: "w-3 h-3 text-[#FF2E93]"
-        }), /*#__PURE__*/React.createElement("span", null, v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'), /*#__PURE__*/React.createElement("input", {
-          type: "file",
-          accept: "image/*",
-          className: "hidden",
-          onChange: async e => {
-            if (e.target.files[0]) {
-              const url = await uploadFileToSupabase(e.target.files[0], 'products');
-              if (url) {
-                setNewProd({
-                  ...newProd,
-                  variants: newProd.variants.map((item, i) => i === idx ? {
-                    ...item,
-                    image: url
-                  } : item)
-                });
-              }
-            }
           }
-        }))), v.image && /*#__PURE__*/React.createElement("span", {
-          className: "text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0"
-        }, /*#__PURE__*/React.createElement(Icon.Check, {
-          className: "w-3 h-3"
-        }), " Foto lista")))))) :
+        }))))) :
         /*#__PURE__*/
         /* GESTOR DE TALLAS Y COLORES SEPARADOS */
         React.createElement("div", {
@@ -7112,54 +7191,19 @@ window.IS_ADMIN_APP = true;
           onClick: () => setNewProdColors(newProdColors.filter((_, i) => i !== cIdx)),
           className: "text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition",
           title: "Eliminar este color"
-        }, "✕")), /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center justify-between gap-2 pt-1 border-t border-zinc-100"
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2 min-w-0"
-        }, col.image ? /*#__PURE__*/React.createElement("div", {
-          className: "relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center"
-        }, /*#__PURE__*/React.createElement("img", {
-          src: col.image,
-          alt: "",
-          className: "w-full h-full object-contain"
-        }), /*#__PURE__*/React.createElement("button", {
-          type: "button",
-          onClick: () => {
-            setNewProdColors(newProdColors.map((col, i) => i === cIdx ? {
-              ...col,
-              image: ''
-            } : col));
-          },
-          className: "absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold",
-          title: "Quitar foto"
-        }, "✕")) : /*#__PURE__*/React.createElement("div", {
-          className: "w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0"
-        }, /*#__PURE__*/React.createElement(Icon.Photo, {
-          className: "w-3.5 h-3.5"
-        })), /*#__PURE__*/React.createElement("label", {
-          className: "cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition"
-        }, /*#__PURE__*/React.createElement(Icon.Photo, {
-          className: "w-3 h-3 text-[#FF2E93]"
-        }), /*#__PURE__*/React.createElement("span", null, col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'), /*#__PURE__*/React.createElement("input", {
-          type: "file",
-          accept: "image/*",
-          className: "hidden",
-          onChange: async e => {
-            if (e.target.files[0]) {
-              const url = await uploadFileToSupabase(e.target.files[0], 'products');
-              if (url) {
-                setNewProdColors(newProdColors.map((col, i) => i === cIdx ? {
-                  ...col,
-                  image: url
-                } : col));
-              }
-            }
+        }, "✕")), /*#__PURE__*/React.createElement(VariantImagesUploader, {
+          images: col.images,
+          image: col.image,
+          label: "Fotos de este color",
+          uploadFile: uploadFileToSupabase,
+          onChange: imgs => {
+            setNewProdColors(newProdColors.map((c, i) => i === cIdx ? {
+              ...c,
+              image: imgs[0] || '',
+              images: imgs
+            } : c));
           }
-        }))), col.image && /*#__PURE__*/React.createElement("span", {
-          className: "text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0"
-        }, /*#__PURE__*/React.createElement(Icon.Check, {
-          className: "w-3 h-3"
-        }), " Foto lista")))))), /*#__PURE__*/React.createElement("div", {
+        }))))), /*#__PURE__*/React.createElement("div", {
           className: "space-y-2 pt-2 border-t border-pink-100"
         }, /*#__PURE__*/React.createElement("div", {
           className: "flex justify-between items-center"
@@ -9339,60 +9383,22 @@ window.IS_ADMIN_APP = true;
         },
         className: "text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition",
         title: "Eliminar variante"
-      }, "✕")), /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center justify-between gap-2 pt-1 border-t border-zinc-100"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center gap-2 min-w-0"
-      }, v.image ? /*#__PURE__*/React.createElement("div", {
-        className: "relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center"
-      }, /*#__PURE__*/React.createElement("img", {
-        src: v.image,
-        alt: "",
-        className: "w-full h-full object-contain"
-      }), /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        onClick: () => {
+      }, "✕")), /*#__PURE__*/React.createElement(VariantImagesUploader, {
+        images: v.images,
+        image: v.image,
+        label: "Fotos de esta variante",
+        uploadFile: uploadFileToSupabase,
+        onChange: imgs => {
           setEditingProduct({
             ...editingProduct,
             variants: (editingProduct.variants || []).map((item, i) => i === idx ? {
               ...item,
-              image: ''
+              image: imgs[0] || '',
+              images: imgs
             } : item)
           });
-        },
-        className: "absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold",
-        title: "Quitar foto"
-      }, "✕")) : /*#__PURE__*/React.createElement("div", {
-        className: "w-8 h-8 rounded-lg bg-zinc-100 border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 shrink-0"
-      }, /*#__PURE__*/React.createElement(Icon.Photo, {
-        className: "w-4 h-4"
-      })), /*#__PURE__*/React.createElement("label", {
-        className: "cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition"
-      }, /*#__PURE__*/React.createElement(Icon.Photo, {
-        className: "w-3.5 h-3.5 text-[#FF2E93]"
-      }), /*#__PURE__*/React.createElement("span", null, v.image ? 'Cambiar foto' : 'Subir foto desde dispositivo'), /*#__PURE__*/React.createElement("input", {
-        type: "file",
-        accept: "image/*",
-        className: "hidden",
-        onChange: async e => {
-          if (e.target.files[0]) {
-            const url = await uploadFileToSupabase(e.target.files[0], 'products');
-            if (url) {
-              setEditingProduct({
-                ...editingProduct,
-                variants: (editingProduct.variants || []).map((item, i) => i === idx ? {
-                  ...item,
-                  image: url
-                } : item)
-              });
-            }
-          }
         }
-      }))), v.image && /*#__PURE__*/React.createElement("span", {
-        className: "text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0"
-      }, /*#__PURE__*/React.createElement(Icon.Check, {
-        className: "w-3 h-3"
-      }), " Foto lista")))))) :
+      }))))) :
       /*#__PURE__*/
       /* GESTOR DE TALLAS Y COLORES SEPARADOS EN EDICIÓN */
       React.createElement("div", {
@@ -9455,54 +9461,19 @@ window.IS_ADMIN_APP = true;
         onClick: () => setEditColors(editColors.filter((_, i) => i !== cIdx)),
         className: "text-zinc-400 hover:text-red-500 font-bold p-1 rounded transition",
         title: "Eliminar este color"
-      }, "✕")), /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center justify-between gap-2 pt-1 border-t border-zinc-100"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center gap-2 min-w-0"
-      }, col.image ? /*#__PURE__*/React.createElement("div", {
-        className: "relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-50 flex items-center justify-center"
-      }, /*#__PURE__*/React.createElement("img", {
-        src: col.image,
-        alt: "",
-        className: "w-full h-full object-contain"
-      }), /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        onClick: () => {
-          setEditColors(editColors.map((col, i) => i === cIdx ? {
-            ...col,
-            image: ''
-          } : col));
-        },
-        className: "absolute top-0 right-0 w-3.5 h-3.5 bg-black/70 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[8px] font-bold",
-        title: "Quitar foto"
-      }, "✕")) : /*#__PURE__*/React.createElement("div", {
-        className: "w-8 h-8 rounded-lg bg-pink-50 border border-dashed border-pink-200 flex items-center justify-center text-[#FF2E93] shrink-0"
-      }, /*#__PURE__*/React.createElement(Icon.Photo, {
-        className: "w-3.5 h-3.5"
-      })), /*#__PURE__*/React.createElement("label", {
-        className: "cursor-pointer bg-zinc-50 hover:bg-pink-50 border border-zinc-200 hover:border-[#FF2E93] text-zinc-700 hover:text-[#FF2E93] px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition"
-      }, /*#__PURE__*/React.createElement(Icon.Photo, {
-        className: "w-3.5 h-3.5 text-[#FF2E93]"
-      }), /*#__PURE__*/React.createElement("span", null, col.image ? 'Cambiar foto de este color' : 'Subir foto de este color'), /*#__PURE__*/React.createElement("input", {
-        type: "file",
-        accept: "image/*",
-        className: "hidden",
-        onChange: async e => {
-          if (e.target.files[0]) {
-            const url = await uploadFileToSupabase(e.target.files[0], 'products');
-            if (url) {
-              setEditColors(editColors.map((col, i) => i === cIdx ? {
-                ...col,
-                image: url
-              } : col));
-            }
-          }
+      }, "✕")), /*#__PURE__*/React.createElement(VariantImagesUploader, {
+        images: col.images,
+        image: col.image,
+        label: "Fotos de este color",
+        uploadFile: uploadFileToSupabase,
+        onChange: imgs => {
+          setEditColors(editColors.map((c, i) => i === cIdx ? {
+            ...c,
+            image: imgs[0] || '',
+            images: imgs
+          } : c));
         }
-      }))), col.image && /*#__PURE__*/React.createElement("span", {
-        className: "text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 shrink-0"
-      }, /*#__PURE__*/React.createElement(Icon.Check, {
-        className: "w-3 h-3"
-      }), " Foto lista")))))), /*#__PURE__*/React.createElement("div", {
+      }))))), /*#__PURE__*/React.createElement("div", {
         className: "space-y-2 pt-2 border-t border-pink-100"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex justify-between items-center"
@@ -11326,7 +11297,7 @@ window.IS_ADMIN_APP = true;
           if (!targetMedia || targetMedia.type !== 'image' || !targetMedia.url) return;
           const url = targetMedia.url.trim();
           if (hasColorAndSize) {
-            const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+            const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url || Array.isArray(v.images) && v.images.some(img => img && img.trim() === url));
             if (matchedVar && matchedVar.color) {
               const newColor = matchedVar.color;
               const matchingSizeVar = (quickViewProduct.variants || []).find(v => v.color === newColor && v.size === currentSize && v.stock > 0) || (quickViewProduct.variants || []).find(v => v.color === newColor && v.stock > 0) || matchedVar;
@@ -11339,20 +11310,20 @@ window.IS_ADMIN_APP = true;
                   color: newColor,
                   size: nextSize,
                   variantName: nextVarName,
-                  image: matchingSizeVar.image || matchedVar.image,
+                  image: Array.isArray(matchingSizeVar.images) && matchingSizeVar.images[0] || matchingSizeVar.image || matchedVar.image,
                   userSelected: true
                 }
               }));
             }
           } else {
-            const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url);
+            const matchedVar = (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === url || Array.isArray(v.images) && v.images.some(img => img && img.trim() === url));
             if (matchedVar) {
               setQuickViewSelectedVar(matchedVar.name);
               setActiveVariants(prev => ({
                 ...prev,
                 [quickViewProduct.id]: {
                   variantName: matchedVar.name,
-                  image: matchedVar.image,
+                  image: Array.isArray(matchedVar.images) && matchedVar.images[0] || matchedVar.image || quickViewProduct.image,
                   userSelected: true
                 }
               }));
@@ -11361,7 +11332,7 @@ window.IS_ADMIN_APP = true;
         };
 
         // Identificar variante que corresponde a la foto actual (si aplica)
-        const matchingVariantForActiveMedia = activeMedia.type === 'image' && (hasColorAndSize ? (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.color : (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim())?.name);
+        const matchingVariantForActiveMedia = activeMedia.type === 'image' && (hasColorAndSize ? (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim() || Array.isArray(v.images) && v.images.some(img => img && img.trim() === activeMedia.url.trim()))?.color : (quickViewProduct.variants || []).find(v => v.image && v.image.trim() === activeMedia.url.trim() || Array.isArray(v.images) && v.images.some(img => img && img.trim() === activeMedia.url.trim()))?.name);
         return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
           className: "md:w-1/2 flex flex-col bg-gradient-to-b from-zinc-50 to-pink-50/20 border-b md:border-b-0 md:border-r border-zinc-100"
         }, /*#__PURE__*/React.createElement("div", {
@@ -11483,7 +11454,7 @@ window.IS_ADMIN_APP = true;
               const nextSize = matchedVar ? matchedVar.size : currentSize;
               const nextVarName = matchedVar ? matchedVar.name : `${c} - ${nextSize}`;
               setQuickViewSelectedVar(nextVarName);
-              const nextImg = (matchedVar?.image || colorVar?.image || '').trim();
+              const nextImg = (matchedVar?.images?.[0] || matchedVar?.image || colorVar?.images?.[0] || colorVar?.image || '').trim();
               if (nextImg) {
                 const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === nextImg);
                 if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
@@ -11494,14 +11465,14 @@ window.IS_ADMIN_APP = true;
                   color: c,
                   size: nextSize,
                   variantName: nextVarName,
-                  image: matchedVar?.image || colorVar?.image || quickViewProduct.image,
+                  image: nextImg || quickViewProduct.image,
                   userSelected: true
                 }
               });
             },
             className: `px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-2 border-2 ${isColActive ? 'border-[#FF007F] bg-pink-50 text-[#FF007F] font-bold shadow-xs' : colorStock <= 0 ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed opacity-60' : 'border-zinc-200 bg-white hover:border-zinc-950 text-zinc-700'}`
-          }, colorVar?.image ? /*#__PURE__*/React.createElement("img", {
-            src: colorVar.image,
+          }, colorVar?.images?.[0] || colorVar?.image ? /*#__PURE__*/React.createElement("img", {
+            src: colorVar.images?.[0] || colorVar.image,
             alt: "",
             className: "w-5 h-5 rounded-lg object-contain border border-zinc-200 bg-white"
           }) : /*#__PURE__*/React.createElement("span", {
@@ -11556,32 +11527,35 @@ window.IS_ADMIN_APP = true;
           className: `text-[11px] font-bold ${stock <= 0 ? 'text-red-500' : stock <= 2 ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-black animate-pulse' : 'text-emerald-700'}`
         }, stock <= 0 ? 'Agotado' : stock <= 2 ? `🔥 ¡Solo ${stock} disponibles!` : `Stock disponible: ${stock}`)), /*#__PURE__*/React.createElement("div", {
           className: "flex flex-wrap gap-1.5 p-1"
-        }, (quickViewProduct.variants || []).map(v => /*#__PURE__*/React.createElement("button", {
-          key: v.name,
-          disabled: v.stock <= 0,
-          onClick: () => {
-            setQuickViewSelectedVar(v.name);
-            if (v.image && v.image.trim()) {
-              const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === v.image.trim());
-              if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
-            }
-            setActiveVariants({
-              ...activeVariants,
-              [quickViewProduct.id]: {
-                variantName: v.name,
-                image: v.image || quickViewProduct.image,
-                userSelected: true
+        }, (quickViewProduct.variants || []).map(v => {
+          const varCover = Array.isArray(v.images) && v.images[0] || v.image;
+          return /*#__PURE__*/React.createElement("button", {
+            key: v.name,
+            disabled: v.stock <= 0,
+            onClick: () => {
+              setQuickViewSelectedVar(v.name);
+              if (varCover && varCover.trim()) {
+                const targetIdx = allMedia.findIndex(m => m.url && m.url.trim() === varCover.trim());
+                if (targetIdx !== -1) setQuickViewActiveImageIndex(targetIdx);
               }
-            });
-          },
-          className: `px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-1.5 ${currentVarName === v.name ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs' : v.stock <= 0 ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed' : 'border-zinc-200 bg-white hover:border-[#FF2E93] text-zinc-700'}`
-        }, v.image && /*#__PURE__*/React.createElement("img", {
-          src: v.image,
-          alt: "",
-          className: "w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200"
-        }), /*#__PURE__*/React.createElement("span", null, v.name), v.stock > 0 && v.stock <= 2 && /*#__PURE__*/React.createElement("span", {
-          className: "text-[10px] text-amber-700 font-bold ml-0.5"
-        }, "(", v.stock, ")")))))), stock <= 0 ? /*#__PURE__*/React.createElement("div", {
+              setActiveVariants({
+                ...activeVariants,
+                [quickViewProduct.id]: {
+                  variantName: v.name,
+                  image: varCover || quickViewProduct.image,
+                  userSelected: true
+                }
+              });
+            },
+            className: `px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition flex items-center gap-1.5 ${currentVarName === v.name ? 'border-[#FF2E93] bg-pink-50 text-[#FF2E93] font-black shadow-xs' : v.stock <= 0 ? 'border-zinc-200 bg-zinc-100 text-zinc-400 line-through cursor-not-allowed' : 'border-zinc-200 bg-white hover:border-[#FF2E93] text-zinc-700'}`
+          }, varCover && /*#__PURE__*/React.createElement("img", {
+            src: varCover,
+            alt: "",
+            className: "w-3.5 h-3.5 rounded-full object-cover shrink-0 border border-zinc-200"
+          }), /*#__PURE__*/React.createElement("span", null, v.name), v.stock > 0 && v.stock <= 2 && /*#__PURE__*/React.createElement("span", {
+            className: "text-[10px] text-amber-700 font-bold ml-0.5"
+          }, "(", v.stock, ")"));
+        })))), stock <= 0 ? /*#__PURE__*/React.createElement("div", {
           className: "space-y-2 pt-1"
         }, /*#__PURE__*/React.createElement("button", {
           type: "button",

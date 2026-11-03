@@ -2623,7 +2623,7 @@ ESTADO: ${status.toUpperCase()}
       // =========================================================================
       // VERIFICACIÓN Y CONCILIACIÓN DEUNA! (GMAIL: notificaciones@deunaapp.com)
       // =========================================================================
-      const handleVerifyDeunaTx = async (txIdToVerify) => {
+      const handleVerifyDeunaTx = async (txIdToVerify, autoSubmit = true) => {
         const cleanTx = (txIdToVerify || customer.receiptRef || '').replace(/\D/g, '');
         if (cleanTx.length < 6) {
           showToast('Ingresa los 12 dígitos de tu transacción DeUna', 'error');
@@ -2666,13 +2666,19 @@ ESTADO: ${status.toUpperCase()}
           }
 
           if (verifiedData) {
-            setCustomer(prev => ({
-              ...prev,
+            const updatedCust = {
+              ...customer,
               receiptRef: cleanTx,
               deunaVerified: true,
               deunaData: verifiedData
-            }));
-            showToast(`✓ ¡Pago DeUna de $${Number(verifiedData.amount).toFixed(2)} verificado con éxito! (${verifiedData.sender_name || 'Titular verificado'})`, 'success');
+            };
+            setCustomer(updatedCust);
+            showToast(`✓ ¡Pago DeUna de $${Number(verifiedData.amount).toFixed(2)} verificado con éxito! Finalizando tu orden...`, 'success');
+
+            if (autoSubmit) {
+              // Finalización automática e instantánea del pedido: no permite modificar carrito ni deja cabos sueltos
+              return await handleCheckoutSubmit(null, updatedCust);
+            }
           } else if (!isDuplicate && !isMismatch) {
             setCustomer(prev => ({
               ...prev,
@@ -3650,8 +3656,9 @@ ESTADO: ${status.toUpperCase()}
       // =======================================================================
       // 4. CHECKOUT SEGURO & DESCUENTO ATÓMICO DE STOCK (FASE 1)
       // =======================================================================
-      async function handleCheckoutSubmit(e) {
-        e.preventDefault();
+      async function handleCheckoutSubmit(e, customCustomer = null) {
+        if (e && e.preventDefault) e.preventDefault();
+        const activeCust = customCustomer || customer;
         if (cart.length === 0) return showToast('El carrito está vacío', 'error');
         if (!validateCheckoutStep1()) {
           setCheckoutStep(1);
@@ -3663,23 +3670,24 @@ ESTADO: ${status.toUpperCase()}
         }
 
         // Validación de pago en Paso 3
-        if (customer.paymentMethod === 'payphone') {
-          if (!customer.payphoneRef.trim() && !customer.receiptUrl) {
+        if (activeCust.paymentMethod === 'payphone') {
+          if (!activeCust.payphoneRef?.trim() && !activeCust.receiptUrl) {
             return showToast('Ingresa el número de referencia/autorización o sube la captura de tu pago en Payphone.', 'error');
           }
-        } else if (customer.paymentMethod === 'deuna') {
-          const cleanTx = (customer.receiptRef || '').replace(/\D/g, '');
+        } else if (activeCust.paymentMethod === 'deuna') {
+          const cleanTx = (activeCust.receiptRef || '').replace(/\D/g, '');
           if (!cleanTx) {
             return showToast('Ingresa el número de transacción de 12 dígitos de tu pago en Deuna!.', 'error');
           }
-          if (customer.deunaVerified !== true || !customer.deunaData) {
-            return showToast('❌ Tu pago con Deuna! aún no ha sido verificado. Ingresa los 12 dígitos de tu transacción y pulsa en "Verificar" para validar la compra.', 'error');
+          if (activeCust.deunaVerified !== true || !activeCust.deunaData) {
+            // Si el cliente no ha verificado aún, verificamos y enviamos automáticamente en un solo paso
+            return handleVerifyDeunaTx(cleanTx, true);
           }
-          if (Number(customer.deunaData.amount || 0) < (total - 0.05)) {
+          if (Number(activeCust.deunaData.amount || 0) < (total - 0.05)) {
             setCustomer(prev => ({ ...prev, deunaVerified: false }));
-            return showToast(`⚠️ El monto verificado en DeUna ($${Number(customer.deunaData.amount || 0).toFixed(2)}) es menor al total actual del pedido ($${total.toFixed(2)}). Verifica el pago por el monto completo.`, 'error');
+            return showToast(`⚠️ El monto verificado en DeUna ($${Number(activeCust.deunaData.amount || 0).toFixed(2)}) es menor al total actual del pedido ($${total.toFixed(2)}). Verifica el pago por el monto completo.`, 'error');
           }
-        } else if (!customer.receiptUrl) {
+        } else if (!activeCust.receiptUrl) {
           return showToast('Sube la captura del comprobante de transferencia bancaria para validar tu pedido.', 'error');
         }
 
@@ -3720,30 +3728,30 @@ ESTADO: ${status.toUpperCase()}
         const orderCode = `KAOJ-${Math.floor(100000 + Math.random() * 900000)}`;
 
         const formattedFullAddress = [
-          customer.city ? `Ciudad: ${customer.city.trim()}` : '',
-          customer.address ? customer.address.trim() : '',
-          customer.deliveryNotes ? `Nota: ${customer.deliveryNotes.trim()}` : ''
+          activeCust.city ? `Ciudad: ${activeCust.city.trim()}` : '',
+          activeCust.address ? activeCust.address.trim() : '',
+          activeCust.deliveryNotes ? `Nota: ${activeCust.deliveryNotes.trim()}` : ''
         ].filter(Boolean).join(' | ');
 
         const adminNotesParts = [];
-        if (customer.receiptRef && customer.receiptRef.trim()) adminNotesParts.push(`Comprobante #: ${customer.receiptRef.trim()}`);
+        if (activeCust.receiptRef && activeCust.receiptRef.trim()) adminNotesParts.push(`Comprobante #: ${activeCust.receiptRef.trim()}`);
         if (appliedCoupon) adminNotesParts.push(`Cupón: ${appliedCoupon.code} (-$${couponDiscountAmount.toFixed(2)})`);
         if (pointsToRedeemNow > 0) adminNotesParts.push(`Canje VIP: ${pointsToRedeemNow} pts (-$${pointsDiscountAmount.toFixed(2)})`);
         if (payphoneSurchargeAmount > 0) adminNotesParts.push(`Recargo Tarjeta Payphone (${payphoneSurchargePercent}%): +$${payphoneSurchargeAmount.toFixed(2)}`);
 
         // Verificación anti-fraude y anti-duplicados de comprobante Banco Pichincha / DeUna
-        if (customer.receiptQrData?.isDuplicate) {
+        if (activeCust.receiptQrData?.isDuplicate) {
           setIsSubmittingOrder(false);
-          return showToast(`Este comprobante ya fue utilizado en el pedido #${customer.receiptQrData.duplicateOrder}. Debes realizar una transferencia nueva.`, 'error');
+          return showToast(`Este comprobante ya fue utilizado en el pedido #${activeCust.receiptQrData.duplicateOrder}. Debes realizar una transferencia nueva.`, 'error');
         }
 
         // Doble comprobación en tiempo real en la base de datos (solo si la referencia tiene >= 5 caracteres o hay QR)
-        if ((customer.receiptRef && customer.receiptRef.trim().length >= 5) || customer.receiptQrData?.uuid || customer.receiptQrData?.hash) {
+        if ((activeCust.receiptRef && activeCust.receiptRef.trim().length >= 5) || activeCust.receiptQrData?.uuid || activeCust.receiptQrData?.hash) {
           try {
             const { data: serverCheck } = await supabase.rpc('kaoj_check_receipt_duplicate', {
-              check_ref: (customer.receiptRef && customer.receiptRef.trim().length >= 5) ? customer.receiptRef.trim() : '',
-              check_uuid: customer.receiptQrData?.uuid || '',
-              check_hash: customer.receiptQrData?.hash || ''
+              check_ref: (activeCust.receiptRef && activeCust.receiptRef.trim().length >= 5) ? activeCust.receiptRef.trim() : '',
+              check_uuid: activeCust.receiptQrData?.uuid || '',
+              check_hash: activeCust.receiptQrData?.hash || ''
             });
             if (serverCheck && serverCheck.is_duplicate) {
               setIsSubmittingOrder(false);
@@ -3753,8 +3761,8 @@ ESTADO: ${status.toUpperCase()}
         }
 
         let initialStatus = 'pendiente';
-        if (customer.receiptQrData && !customer.receiptQrData.isDuplicate) {
-          const qr = customer.receiptQrData;
+        if (activeCust.receiptQrData && !activeCust.receiptQrData.isDuplicate) {
+          const qr = activeCust.receiptQrData;
           adminNotesParts.push(
             `[QR PICHINCHA VERIFICADO: $${Number(qr.amount).toFixed(2)} | Emisor: ${qr.senderName} | Ref: ${qr.secuencial || qr.uuid} | Dest: ${qr.receiverName} (${qr.receiverAcc})]`
           );
@@ -3774,24 +3782,24 @@ ESTADO: ${status.toUpperCase()}
         }
 
         // Verificación de DeUna! automática al confirmar
-        if (customer.paymentMethod === 'deuna') {
-          if (customer.deunaVerified === true && customer.deunaData) {
+        if (activeCust.paymentMethod === 'deuna') {
+          if (activeCust.deunaVerified === true && activeCust.deunaData) {
             initialStatus = 'verificado';
             adminNotesParts.push(
-              `[DEUNA AUTO-VERIFICADO: $${Number(customer.deunaData.amount || total).toFixed(2)} | Tx: ${customer.receiptRef || customer.deunaData.transaction_id} | Emisor: ${customer.deunaData.sender_name || 'Confirmado'}]`
+              `[DEUNA AUTO-VERIFICADO: $${Number(activeCust.deunaData.amount || total).toFixed(2)} | Tx: ${activeCust.receiptRef || activeCust.deunaData.transaction_id} | Emisor: ${activeCust.deunaData.sender_name || 'Confirmado'}]`
             );
-          } else if (customer.receiptRef) {
-            adminNotesParts.push(`[Tx DeUna: ${customer.receiptRef.trim()}]`);
+          } else if (activeCust.receiptRef) {
+            adminNotesParts.push(`[Tx DeUna: ${activeCust.receiptRef.trim()}]`);
           }
         }
 
         const orderData = {
           order_code: orderCode,
           customer_code: activeCustomerCode,
-          customer_name: customer.name.trim(),
-          customer_phone: customer.phone.trim(),
-          customer_id_card: customer.idCard.trim(),
-          customer_email: customer.email || user?.email || '',
+          customer_name: activeCust.name.trim(),
+          customer_phone: activeCust.phone.trim(),
+          customer_id_card: activeCust.idCard.trim(),
+          customer_email: activeCust.email || user?.email || '',
           user_id: user?.id || null,
           delivery_method: deliveryObj.label + (qualifiesFreeShipping ? ' (Envío Gratis)' : ''),
           delivery_address: formattedFullAddress || 'Retiro Personal',
@@ -3802,10 +3810,10 @@ ESTADO: ${status.toUpperCase()}
           points_earned: pointsEarnedWithOrder,
           points_redeemed: pointsToRedeemNow,
           payment_method:
-            customer.paymentMethod === 'deuna' ? `Deuna!${customer.receiptRef ? ` (Comp: ${customer.receiptRef.trim()})` : ''}` :
-            customer.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${customer.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` :
-            `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${customer.receiptRef ? ` • Comp: ${customer.receiptRef.trim()}` : ''})`,
-          receipt_url: customer.receiptUrl || (customer.paymentMethod === 'deuna' ? `Deuna! Tx: ${(customer.receiptRef || '').trim()}` : `Payphone Ref: ${customer.payphoneRef}`),
+            activeCust.paymentMethod === 'deuna' ? `Deuna!${activeCust.receiptRef ? ` (Comp: ${activeCust.receiptRef.trim()})` : ''}` :
+            activeCust.paymentMethod === 'payphone' ? `Tarjeta Payphone (Ref: ${activeCust.payphoneRef || 'Comprobante'} | +$${payphoneSurchargeAmount.toFixed(2)} recargo)` :
+            `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'}${activeCust.receiptRef ? ` • Comp: ${activeCust.receiptRef.trim()}` : ''})`,
+          receipt_url: activeCust.receiptUrl || (activeCust.paymentMethod === 'deuna' ? `Deuna! Tx: ${(activeCust.receiptRef || '').trim()}` : `Payphone Ref: ${activeCust.payphoneRef}`),
           items: cart,
           status: initialStatus,
           admin_notes: adminNotesParts.join(' • ')
@@ -3829,10 +3837,10 @@ ESTADO: ${status.toUpperCase()}
           });
 
           // Si pagó con DeUna y tiene N° de transacción, conciliar en kaoj_deuna_payments
-          if (customer.paymentMethod === 'deuna' && customer.receiptRef) {
+          if (activeCust.paymentMethod === 'deuna' && activeCust.receiptRef) {
             try {
               await supabase.rpc('kaoj_verify_deuna_payment', {
-                p_tx_id: customer.receiptRef.replace(/\D/g, ''),
+                p_tx_id: activeCust.receiptRef.replace(/\D/g, ''),
                 p_expected_amount: total,
                 p_order_code: orderCode
               });
@@ -3844,10 +3852,10 @@ ESTADO: ${status.toUpperCase()}
           // 4. Actualizar puntos del cliente en kaoj_customers de forma atómica y sin colisiones
           const { data: custRes } = await supabase.rpc('kaoj_save_customer_order', {
             cust_code: activeCustomerCode,
-            cust_name: customer.name.trim(),
-            cust_phone: customer.phone.trim(),
-            cust_email: customer.email || user?.email || '',
-            cust_id_card: customer.idCard.trim(),
+            cust_name: activeCust.name.trim(),
+            cust_phone: activeCust.phone.trim(),
+            cust_email: activeCust.email || user?.email || '',
+            cust_id_card: activeCust.idCard.trim(),
             cust_address: formattedFullAddress,
             cust_user_id: user?.id || null,
             points_to_add: pointsEarnedWithOrder,
@@ -3862,8 +3870,8 @@ ESTADO: ${status.toUpperCase()}
             setCustomerProfile(prev => ({
               ...(prev || {}),
               customer_code: activeCustomerCode,
-              name: customer.name.trim(),
-              phone: customer.phone.trim(),
+              name: activeCust.name.trim(),
+              phone: activeCust.phone.trim(),
               points: updatedPts
             }));
           }
@@ -3881,17 +3889,17 @@ ESTADO: ${status.toUpperCase()}
         const officialWhatsApp = formatWhatsAppPhone(settings.whatsapp_number);
         const itemsListText = cart.map(i => `• ${i.qty}x *${i.name}* (${i.variant}) - $${(i.price * i.qty).toFixed(2)}`).join('\n');
         const paymentLabel =
-          customer.paymentMethod === 'deuna' ? 'Deuna! (Sin recargo)' :
-          customer.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${customer.payphoneRef || 'Adjunto'})` :
+          activeCust.paymentMethod === 'deuna' ? 'Deuna! (Sin recargo)' :
+          activeCust.paymentMethod === 'payphone' ? `Tarjeta / Payphone (Ref: ${activeCust.payphoneRef || 'Adjunto'})` :
           `Transferencia Bancaria (${selectedTransferBank === 'pichincha' ? 'Banco Pichincha' : 'Banco Guayaquil'})`;
 
         const whatsappMsg =
           `*NUEVO PEDIDO KAOJ STORE*\n\n` +
           `*Orden:* ${orderCode}\n` +
           `*Código VIP Cliente:* *${activeCustomerCode}*\n` +
-          `*Cliente:* ${customer.name}\n` +
-          `*Celular:* ${customer.phone}\n` +
-          (customer.idCard ? `*Cédula/RUC:* ${customer.idCard}\n` : '') +
+          `*Cliente:* ${activeCust.name}\n` +
+          `*Celular:* ${activeCust.phone}\n` +
+          (activeCust.idCard ? `*Cédula/RUC:* ${activeCust.idCard}\n` : '') +
           `*Modalidad de Envío:* ${deliveryObj.label}\n` +
           (formattedFullAddress ? `*Destino / Dirección:* ${formattedFullAddress}\n` : '') +
           `*Forma de Pago:* ${paymentLabel}\n\n` +
@@ -3902,9 +3910,9 @@ ESTADO: ${status.toUpperCase()}
           `*Envío:* ${finalShippingAfterCoupon === 0 ? 'GRATIS ($0.00)' : '$' + finalShippingAfterCoupon.toFixed(2)}\n` +
           (payphoneSurchargeAmount > 0 ? `*Recargo Tarjeta Payphone (${payphoneSurchargePercent}%):* +$${payphoneSurchargeAmount.toFixed(2)}\n` : '') +
           `*TOTAL PAGADO:* *$${total.toFixed(2)}*\n` +
-          (customer.receiptRef ? `*N° Comprobante Bancario:* ${customer.receiptRef.trim()}\n` : '') +
+          (activeCust.receiptRef ? `*N° Comprobante Bancario:* ${activeCust.receiptRef.trim()}\n` : '') +
           `*Puntos Kaoj Ganados:* +${pointsEarnedWithOrder} pts (Cada 50 pts = $5.00 OFF)\n\n` +
-          (customer.receiptUrl ? `*Comprobante:* \n${customer.receiptUrl}\n\n` : '') +
+          (activeCust.receiptUrl ? `*Comprobante:* \n${activeCust.receiptUrl}\n\n` : '') +
           `Hola Kaoj Store, acabo de realizar mi pedido en la tienda online.`;
 
         const whatsappUrl = `https://wa.me/${officialWhatsApp}?text=${encodeURIComponent(whatsappMsg)}`;
@@ -3915,12 +3923,12 @@ ESTADO: ${status.toUpperCase()}
           order_code: orderCode,
           customerCode: activeCustomerCode,
           customer_code: activeCustomerCode,
-          customerName: customer.name.trim(),
-          customer_name: customer.name.trim(),
-          customerPhone: customer.phone.trim(),
-          customer_phone: customer.phone.trim(),
-          customerIdCard: customer.idCard.trim(),
-          customer_id_card: customer.idCard.trim(),
+          customerName: activeCust.name.trim(),
+          customer_name: activeCust.name.trim(),
+          customerPhone: activeCust.phone.trim(),
+          customer_phone: activeCust.phone.trim(),
+          customerIdCard: activeCust.idCard.trim(),
+          customer_id_card: activeCust.idCard.trim(),
           deliveryAddress: formattedFullAddress || 'Retiro Personal',
           delivery_address: formattedFullAddress || 'Retiro Personal',
           deliveryMethod: deliveryObj.label,
@@ -3950,7 +3958,7 @@ ESTADO: ${status.toUpperCase()}
         // Persistir último código y teléfono para auto-rastreo sin login manual
         try {
           localStorage.setItem('kaoj_last_customer_code', activeCustomerCode);
-          if (customer.phone) localStorage.setItem('kaoj_last_customer_phone', customer.phone);
+          if (activeCust.phone) localStorage.setItem('kaoj_last_customer_phone', activeCust.phone);
         } catch (e) {}
 
         // Limpiar carrito y reiniciar al Paso 1
@@ -4769,7 +4777,7 @@ ESTADO: ${status.toUpperCase()}
           </div>
 
           {/* HEADER / NAVBAR PRINCIPAL */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-[100] w-full">
+          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-[150] w-full">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO OFICIAL KAOJ STORE */}
@@ -4882,7 +4890,7 @@ ESTADO: ${status.toUpperCase()}
                     <span className="hidden sm:inline">Ingresar</span>
                   </button>
                 ) : (
-                  <div className="relative z-[100]">
+                  <div className="relative z-[160]">
                     <button
                       onClick={() => setIsProfileOpen(!isProfileOpen)}
                       className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 p-1.5 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-zinc-800 transition"
@@ -4909,10 +4917,10 @@ ESTADO: ${status.toUpperCase()}
                     {isProfileOpen && (
                       <>
                         <div
-                          className="fixed inset-0 z-[105]"
+                          className="fixed inset-0 z-[165]"
                           onClick={() => setIsProfileOpen(false)}
                         />
-                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-[110] text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
+                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-[170] text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
                           <div className="border-b border-zinc-100 pb-3 flex items-center gap-3">
                             {user.user_metadata?.avatar_url ? (
                               <img src={user.user_metadata.avatar_url} alt="User" className="w-10 h-10 rounded-full border-2 border-[#FF007F] shadow-2xs" />
@@ -11045,16 +11053,16 @@ ESTADO: ${status.toUpperCase()}
                                       />
                                       <button
                                         type="button"
-                                        onClick={() => handleVerifyDeunaTx(customer.receiptRef)}
+                                        onClick={() => handleVerifyDeunaTx(customer.receiptRef, true)}
                                         disabled={isVerifyingDeuna || !customer.receiptRef?.trim()}
                                         className="px-3.5 py-2 bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-xs transition shrink-0"
                                       >
                                         {isVerifyingDeuna ? (
-                                          <span className="animate-pulse">Verificando...</span>
+                                          <span className="animate-pulse">Validando...</span>
                                         ) : (
                                           <>
                                             <Icon.Check className="w-3.5 h-3.5" />
-                                            <span>Verificar</span>
+                                            <span>Validar y Finalizar</span>
                                           </>
                                         )}
                                       </button>
@@ -11091,15 +11099,15 @@ ESTADO: ${status.toUpperCase()}
                                                 showToast(parsed.message || 'El texto pegado no corresponde a un pago válido hacia Kaoj Store', 'error');
                                               } else if (parsed && parsed.transactionId) {
                                                 setCustomer(prev => ({ ...prev, receiptRef: parsed.transactionId }));
-                                                handleVerifyDeunaTx(parsed.transactionId);
                                                 setShowDeunaPasteBox(false);
+                                                handleVerifyDeunaTx(parsed.transactionId, true);
                                               } else {
                                                 showToast('No se encontró un número de transacción de 12 dígitos en el texto pegado', 'warning');
                                               }
                                             }}
                                             className="w-full py-1.5 bg-purple-800 hover:bg-purple-900 text-white rounded-lg font-bold text-[10.5px] transition"
                                           >
-                                            Procesar y Extraer Transacción
+                                            Procesar, Validar y Finalizar Pedido
                                           </button>
                                         </div>
                                       )}
@@ -11671,8 +11679,8 @@ ESTADO: ${status.toUpperCase()}
                             </>
                           ) : customer.paymentMethod === 'deuna' && customer.deunaVerified !== true ? (
                             <>
-                              <span>🔒</span>
-                              <span>Verificar Transacción Deuna! para Confirmar (${total.toFixed(2)})</span>
+                              <span>⚡</span>
+                              <span>Validar Pago Deuna! y Finalizar Pedido (${total.toFixed(2)})</span>
                             </>
                           ) : (
                             <>

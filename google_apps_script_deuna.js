@@ -30,12 +30,11 @@ var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
  * Solo procesa correos NO LEÍDOS de dinero recibido ("Recibiste").
  */
 function procesarPagosDeuna() {
-  // Búsqueda precisa: remitente oficial de Deuna + palabra clave "Recibiste" + no leído
-  var query = 'from:notificaciones@deunaapp.com ("Recibiste" OR "recibiste") is:unread';
+  // Búsqueda instantánea de correos no leídos de Deuna
+  var query = 'from:notificaciones@deunaapp.com is:unread';
   var threads = GmailApp.search(query, 0, 15);
   
   if (!threads || threads.length === 0) {
-    Logger.log('No hay nuevos correos de pagos entrantes de Deuna pendientes.');
     return;
   }
 
@@ -46,7 +45,8 @@ function procesarPagosDeuna() {
     var thread = threads[i];
     var messages = thread.getMessages();
 
-    for (var j = 0; j < messages.length; j++) {
+    // Recorrer SIEMPRE del más reciente al más antiguo
+    for (var j = messages.length - 1; j >= 0; j--) {
       var msg = messages[j];
       if (msg.isUnread()) {
         var body = msg.getPlainBody() || msg.getBody();
@@ -62,7 +62,8 @@ function procesarPagosDeuna() {
             Logger.log('✓ Pago entrante Tx #' + parsed.transactionId + ' registrado y marcado como verificado.');
           }
         } else {
-          Logger.log('Mensaje ignorado (no es un pago entrante válido para la cuenta ******0164).');
+          // Si es un pago saliente ('Pagaste') o no es cobro, marcar como leído para no repetir el escaneo
+          msg.markRead();
         }
       }
     }
@@ -181,21 +182,22 @@ function registrarPagoEnSupabase(parsed, rawBody) {
 }
 
 /**
- * IMPORTAR HISTORIAL DE PAGOS RECIBIDOS (Últimos 30 días)
+ * IMPORTAR HISTORIAL DE PAGOS RECIBIDOS (Prioriza los más recientes)
  * Ejecuta esta función manualmente desde el editor de Google Apps Script
- * si deseas importar pagos recibidos en las últimas semanas que ya fueron leídos.
+ * si deseas importar pagos recibidos en los últimos días que ya fueron leídos.
  */
 function sincronizarHistoricoDeuna() {
-  var query = 'from:notificaciones@deunaapp.com ("Recibiste" OR "recibiste") newer_than:30d';
-  var threads = GmailApp.search(query, 0, 40);
-  Logger.log('Analizando ' + threads.length + ' conversaciones históricas de DeUna...');
+  var query = 'from:notificaciones@deunaapp.com newer_than:30d';
+  var threads = GmailApp.search(query, 0, 50);
+  Logger.log('Analizando ' + threads.length + ' conversaciones de DeUna...');
 
   var importados = 0;
   var label = obtenerOCrearEtiqueta('Kaoj/Deuna_Verificado');
 
   for (var i = 0; i < threads.length; i++) {
     var messages = threads[i].getMessages();
-    for (var j = 0; j < messages.length; j++) {
+    // Siempre del MÁS RECIENTE al más antiguo
+    for (var j = messages.length - 1; j >= 0; j--) {
       var msg = messages[j];
       var body = msg.getPlainBody() || msg.getBody();
       var parsed = parsearCorreoDeuna(body);
@@ -208,7 +210,7 @@ function sincronizarHistoricoDeuna() {
       }
     }
   }
-  Logger.log('🎉 Sincronización histórica finalizada. Se procesaron ' + importados + ' pagos recibidos.');
+  Logger.log('🎉 Sincronización finalizada. Se procesaron ' + importados + ' pagos recibidos.');
 }
 
 /**

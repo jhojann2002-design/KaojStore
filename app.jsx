@@ -2697,7 +2697,7 @@ ESTADO: ${status.toUpperCase()}
         try {
           const { data, error } = await supabase.rpc('kaoj_admin_get_deuna_payments', {
             admin_pin: adminPin,
-            p_limit: 50
+            p_limit: 100
           });
           if (!error && data) {
             setAdminDeunaPayments(data);
@@ -2705,8 +2705,8 @@ ESTADO: ${status.toUpperCase()}
             const { data: directData } = await supabase
               .from('kaoj_deuna_payments')
               .select('*')
-              .order('created_at', { ascending: false })
-              .limit(50);
+              .order('id', { ascending: false })
+              .limit(100);
             if (directData) setAdminDeunaPayments(directData);
           }
         } catch (err) {
@@ -13774,11 +13774,32 @@ ESTADO: ${status.toUpperCase()}
                     )}
 
                     {!adminDeunaLoading && adminDeunaPayments.length > 0 && (() => {
+                      const parseDeunaDate = (str, fallback) => {
+                        if (str && typeof str === 'string') {
+                          const months = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5, jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11 };
+                          const m = str.match(/([0-9]{1,2})\s+([a-zA-Z]{3})\s+([0-9]{4})(?:\s*-\s*([0-9]{1,2})h([0-9]{2}))?/i);
+                          if (m) {
+                            const d = parseInt(m[1], 10);
+                            const mo = months[m[2].toLowerCase()] ?? 0;
+                            const yr = parseInt(m[3], 10);
+                            const hr = m[4] ? parseInt(m[4], 10) : 0;
+                            const mn = m[5] ? parseInt(m[5], 10) : 0;
+                            return new Date(yr, mo, d, hr, mn).getTime();
+                          }
+                        }
+                        return fallback ? new Date(fallback).getTime() : 0;
+                      };
+
                       const displayedList = adminDeunaPayments.filter(p => {
                         if (adminDeunaFilter === 'disponibles') return p.status === 'disponible';
                         if (adminDeunaFilter === 'conciliados') return p.status === 'conciliado';
                         if (adminDeunaFilter === 'anulados') return p.status === 'anulado';
                         return p.status !== 'anulado';
+                      }).sort((a, b) => {
+                        const timeA = parseDeunaDate(a.payment_date, a.created_at);
+                        const timeB = parseDeunaDate(b.payment_date, b.created_at);
+                        if (timeB !== timeA) return timeB - timeA;
+                        return Number(b.id || 0) - Number(a.id || 0);
                       });
 
                       if (displayedList.length === 0) {

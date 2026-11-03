@@ -1523,7 +1523,7 @@ BEGIN
     RETURN QUERY
     SELECT *
     FROM public.kaoj_deuna_payments
-    ORDER BY created_at DESC
+    ORDER BY id DESC
     LIMIT LEAST(p_limit, 200);
 END;
 $$;

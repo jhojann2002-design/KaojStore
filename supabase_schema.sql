@@ -620,6 +620,7 @@ DECLARE
     cur_variants JSONB;
     updated_variants JSONB;
     cust RECORD;
+    clean_phone TEXT;
     items_restored INT := 0;
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
@@ -627,7 +628,7 @@ BEGIN
     END IF;
 
     SELECT * INTO ord FROM public.kaoj_orders WHERE id = target_order_id;
-    IF ord IS NULL THEN
+    IF ord.id IS NULL THEN
         RAISE EXCEPTION 'Orden no encontrada';
     END IF;
 
@@ -662,17 +663,27 @@ BEGIN
     END LOOP;
 
     -- 2. Revertir puntos y total de la clienta
-    IF ord.customer_phone IS NOT NULL AND ord.customer_phone != '' THEN
-        SELECT * INTO cust FROM public.kaoj_customers WHERE phone = ord.customer_phone OR customer_code = ord.customer_code LIMIT 1;
-        IF cust IS NOT NULL THEN
-            UPDATE public.kaoj_customers
-            SET
-                points = GREATEST(0, cust.points - COALESCE(ord.points_earned, 0) + COALESCE(ord.points_redeemed, 0)),
-                total_spent = GREATEST(0, cust.total_spent - ord.total),
-                orders_count = GREATEST(0, cust.orders_count - 1),
-                updated_at = NOW()
-            WHERE id = cust.id;
-        END IF;
+    clean_phone := REGEXP_REPLACE(COALESCE(ord.customer_phone, ''), '\D', '', 'g');
+    IF clean_phone LIKE '593%' AND LENGTH(clean_phone) = 12 THEN
+        clean_phone := '0' || SUBSTRING(clean_phone FROM 4);
+    END IF;
+
+    SELECT * INTO cust FROM public.kaoj_customers 
+    WHERE (clean_phone != '' AND phone = clean_phone)
+       OR phone = ord.customer_phone 
+       OR customer_code = ord.customer_code 
+       OR (ord.user_id IS NOT NULL AND user_id = ord.user_id)
+    LIMIT 1;
+
+    IF cust.id IS NOT NULL THEN
+        UPDATE public.kaoj_customers
+        SET
+            points = GREATEST(0, cust.points - COALESCE(ord.points_earned, 0) + COALESCE(ord.points_redeemed, 0)),
+            lifetime_points = GREATEST(0, COALESCE(cust.lifetime_points, cust.points) - COALESCE(ord.points_earned, 0)),
+            total_spent = GREATEST(0, cust.total_spent - ord.total),
+            orders_count = GREATEST(0, cust.orders_count - 1),
+            updated_at = NOW()
+        WHERE id = cust.id;
     END IF;
 
     -- 3. Si tenía un pago DeUna conciliado, liberarlo para que vuelva a estar disponible
@@ -699,9 +710,17 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
+DECLARE
+    ord RECORD;
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
         RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    SELECT * INTO ord FROM public.kaoj_orders WHERE id = target_order_id;
+    IF ord.id IS NOT NULL AND ord.status != 'cancelado' THEN
+        -- Si no estaba cancelado aún, cancelar primero para devolver stock y revertir puntos
+        PERFORM public.kaoj_admin_cancel_order(admin_pin, target_order_id);
     END IF;
 
     DELETE FROM public.kaoj_orders
@@ -769,12 +788,89 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
+DECLARE
+    cust RECORD;
+    v_total_spent NUMERIC;
+    v_orders_count INT;
+    v_points INT;
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
         RAISE EXCEPTION 'PIN de administrador no válido';
     END IF;
 
+    -- Sincronizar dinámicamente métricas reales de órdenes para cada cliente
+    FOR cust IN SELECT * FROM public.kaoj_customers LOOP
+        SELECT 
+            COALESCE(SUM(total), 0.00),
+            COUNT(*),
+            GREATEST(0, COALESCE(SUM(points_earned), 0) - COALESCE(SUM(points_redeemed), 0))
+        INTO v_total_spent, v_orders_count, v_points
+        FROM public.kaoj_orders
+        WHERE (customer_phone = cust.phone OR customer_code = cust.customer_code OR (cust.user_id IS NOT NULL AND user_id = cust.user_id))
+          AND status != 'cancelado' 
+          AND status != 'eliminado'
+          AND status != 'cancelado_eliminado';
+
+        UPDATE public.kaoj_customers
+        SET
+            points = v_points,
+            lifetime_points = v_points,
+            total_spent = v_total_spent,
+            orders_count = v_orders_count,
+            updated_at = NOW()
+        WHERE id = cust.id;
+    END LOOP;
+
     RETURN QUERY SELECT * FROM public.kaoj_customers ORDER BY total_spent DESC;
+END;
+$$;
+
+-- 9.9.1 Sincronizar y Auditar Puntos de Clientes VIP (Solo Administrador Autorizado)
+CREATE OR REPLACE FUNCTION public.kaoj_admin_sync_customer_metrics(admin_pin TEXT, target_phone TEXT DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    cust RECORD;
+    v_total_spent NUMERIC;
+    v_orders_count INT;
+    v_points INT;
+    sync_count INT := 0;
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    FOR cust IN 
+        SELECT * FROM public.kaoj_customers 
+        WHERE (target_phone IS NULL OR phone = target_phone OR customer_code = target_phone)
+    LOOP
+        SELECT 
+            COALESCE(SUM(total), 0.00),
+            COUNT(*),
+            GREATEST(0, COALESCE(SUM(points_earned), 0) - COALESCE(SUM(points_redeemed), 0))
+        INTO v_total_spent, v_orders_count, v_points
+        FROM public.kaoj_orders
+        WHERE (customer_phone = cust.phone OR customer_code = cust.customer_code OR (cust.user_id IS NOT NULL AND user_id = cust.user_id))
+          AND status != 'cancelado' 
+          AND status != 'eliminado'
+          AND status != 'cancelado_eliminado';
+
+        UPDATE public.kaoj_customers
+        SET
+            points = v_points,
+            lifetime_points = v_points,
+            total_spent = v_total_spent,
+            orders_count = v_orders_count,
+            updated_at = NOW()
+        WHERE id = cust.id;
+
+        sync_count := sync_count + 1;
+    END LOOP;
+
+    RETURN jsonb_build_object('success', true, 'customers_synced', sync_count);
 END;
 $$;
 

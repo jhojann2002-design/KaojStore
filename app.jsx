@@ -2193,8 +2193,7 @@ ESTADO: ${status.toUpperCase()}
       async function handlePhoneLookup(phoneVal) {
         const clean = (phoneVal || '').replace(/\D/g, '');
         if (clean.length < 9) return;
-        if (customerProfile && customerProfile.phone === clean && customerProfile.points !== undefined) return;
-        if (user && customerProfile) return; // Si ya inició sesión con Google y tiene perfil cargado
+        if (user && customerProfile?.user_id) return; // Si ya inició sesión con Google y tiene perfil cargado
 
         try {
           const { data: ordersData } = await supabase.rpc('kaoj_track_orders', {
@@ -2203,7 +2202,7 @@ ESTADO: ${status.toUpperCase()}
 
           if (ordersData && ordersData.length > 0) {
             const lastOrder = ordersData[0];
-            const validOrders = ordersData.filter(o => o.status !== 'cancelado');
+            const validOrders = ordersData.filter(o => o.status !== 'cancelado' && o.status !== 'eliminado' && o.status !== 'cancelado_eliminado');
             const netPoints = Math.max(0, validOrders.reduce((acc, o) => acc + Number(o.points_earned || 0) - Number(o.points_redeemed || 0), 0));
             const firstName = lastOrder.customer_name ? lastOrder.customer_name.split(' ')[0] : 'Clienta';
             const vipCode = lastOrder.customer_code || generateCustomerCode(lastOrder.customer_name || customer.name, clean);
@@ -4003,8 +4002,46 @@ ESTADO: ${status.toUpperCase()}
           const updatedNotes = order.admin_notes ? `${order.admin_notes} | ${cancelNote}` : cancelNote;
 
           setOrders(orders.map(o => o.id === order.id ? { ...o, status: 'cancelado', admin_notes: updatedNotes } : o));
+
+          // Revertir puntos y total en customersList
+          const pointsEarned = Number(order.points_earned || 0);
+          const pointsRedeemed = Number(order.points_redeemed || 0);
+          const orderTotal = Number(order.total || 0);
+
+          setCustomersList(prev => prev.map(c => {
+            const matchesPhone = c.phone && order.customer_phone && (
+              order.customer_phone.replace(/\D/g, '') === c.phone.replace(/\D/g, '') ||
+              order.customer_phone.replace(/\D/g, '').endsWith(c.phone.replace(/\D/g, '').slice(-8))
+            );
+            const matchesCode = c.customer_code && order.customer_code === c.customer_code;
+            if (matchesPhone || matchesCode) {
+              return {
+                ...c,
+                points: Math.max(0, (c.points || 0) - pointsEarned + pointsRedeemed),
+                total_spent: Math.max(0, Number(c.total_spent || 0) - orderTotal),
+                orders_count: Math.max(0, (c.orders_count || 1) - 1)
+              };
+            }
+            return c;
+          }));
+
+          // Si la clienta está activa en este navegador, actualizar su saldo inmediatamente
+          if (customerProfile) {
+            const matchesPhone = customerProfile.phone && order.customer_phone && (
+              order.customer_phone.replace(/\D/g, '') === customerProfile.phone.replace(/\D/g, '') ||
+              order.customer_phone.replace(/\D/g, '').endsWith(customerProfile.phone.replace(/\D/g, '').slice(-8))
+            );
+            const matchesCode = customerProfile.customer_code && order.customer_code === customerProfile.customer_code;
+            if (matchesPhone || matchesCode) {
+              setCustomerProfile(prev => ({
+                ...prev,
+                points: Math.max(0, (prev.points || 0) - pointsEarned + pointsRedeemed)
+              }));
+            }
+          }
+
           setUploading(false);
-          showToast(`¡Venta #${order.order_code} cancelada exitosamente! Se devolvieron ${restoredItems} producto(s) al inventario.`, 'success');
+          showToast(`¡Venta #${order.order_code} cancelada exitosamente! Se devolvieron ${restoredItems} producto(s) al inventario y se ajustaron los puntos.`, 'success');
           fetchInitialData();
         } catch (err) {
           setUploading(false);
@@ -8218,9 +8255,33 @@ ESTADO: ${status.toUpperCase()}
               {/* ADMIN TAB 6: CLIENTES VIP */}
               {adminTab === 'customers' && (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-xs space-y-4">
-                  <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
-                    <Icon.User className="w-4 h-4 text-[#FF2E93]" /> Directorio de Clientes VIP
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+                    <div>
+                      <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
+                        <Icon.User className="w-4 h-4 text-[#FF2E93]" /> Directorio de Clientes VIP ({customersList.length})
+                      </h3>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">
+                        Puntos calculados exclusivamente sobre compras válidas (excluye canceladas o pruebas eliminadas).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+                        showToast('Auditando y sincronizando saldo de puntos...', 'info');
+                        try {
+                          await supabase.rpc('kaoj_admin_sync_customer_metrics', { admin_pin: adminPin });
+                        } catch (_) {}
+                        fetchInitialData();
+                        showToast('✓ Puntos y totales de clientes sincronizados con órdenes activas.', 'success');
+                      }}
+                      className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FF2E93] border border-pink-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs self-start sm:self-auto"
+                      title="Recalcular puntos exclusivamente de compras válidas no canceladas"
+                    >
+                      <span>🔄</span>
+                      <span>Auditar y Sincronizar Puntos</span>
+                    </button>
+                  </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
@@ -8230,21 +8291,43 @@ ESTADO: ${status.toUpperCase()}
                           <th className="p-3">Nombre</th>
                           <th className="p-3">Celular</th>
                           <th className="p-3">Email Google</th>
-                          <th className="p-3">Puntos Actuales</th>
+                          <th className="p-3 text-center">Compras Activas</th>
+                          <th className="p-3">Puntos Reales</th>
                           <th className="p-3">Total Comprado</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {customersList.map(c => (
-                          <tr key={c.id || c.customer_code} className="hover:bg-zinc-50">
-                            <td className="p-3 font-bold text-[#FF2E93]">{c.customer_code}</td>
-                            <td className="p-3 font-semibold">{c.name}</td>
-                            <td className="p-3">{c.phone}</td>
-                            <td className="p-3 text-zinc-500">{c.email}</td>
-                            <td className="p-3 font-bold">{c.points || 0} pts</td>
-                            <td className="p-3 font-bold text-zinc-800">${Number(c.total_spent || 0).toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {customersList.map(c => {
+                          const cleanCustPhone = (c.phone || '').replace(/\D/g, '').slice(-8);
+                          const custOrders = orders.filter(o => 
+                            o.status !== 'cancelado' && o.status !== 'eliminado' && o.status !== 'cancelado_eliminado' &&
+                            ((cleanCustPhone && (o.customer_phone || '').replace(/\D/g, '').endsWith(cleanCustPhone)) ||
+                             (c.customer_code && o.customer_code === c.customer_code))
+                          );
+                          const realPoints = custOrders.length > 0 
+                            ? Math.max(0, custOrders.reduce((acc, o) => acc + Number(o.points_earned || 0) - Number(o.points_redeemed || 0), 0))
+                            : Number(c.points || 0);
+                          const realSpent = custOrders.length > 0
+                            ? custOrders.reduce((acc, o) => acc + Number(o.total || 0), 0)
+                            : Number(c.total_spent || 0);
+                          const realOrdersCount = custOrders.length > 0 ? custOrders.length : Number(c.orders_count || 0);
+
+                          return (
+                            <tr key={c.id || c.customer_code} className="hover:bg-zinc-50">
+                              <td className="p-3 font-bold text-[#FF2E93] font-mono">{c.customer_code}</td>
+                              <td className="p-3 font-semibold">{c.name}</td>
+                              <td className="p-3 font-mono">{c.phone}</td>
+                              <td className="p-3 text-zinc-500">{c.email || '—'}</td>
+                              <td className="p-3 text-center font-bold text-zinc-700">{realOrdersCount} orden(es)</td>
+                              <td className="p-3 font-bold text-emerald-700">
+                                <span className="bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                  {realPoints} pts
+                                </span>
+                              </td>
+                              <td className="p-3 font-black text-zinc-900">${realSpent.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

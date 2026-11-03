@@ -2191,6 +2191,24 @@
       if (!rawText || typeof rawText !== 'string') return null;
       const text = rawText.trim();
 
+      // REGLA ANTI-PAGOS SALIENTES:
+      // Si el comprobante dice "Pagaste", "Nombre del beneficiario" o la cuenta de origen es la de Alisson (0164),
+      // descartar porque es un pago que tú realizaste a otra persona/empresa, no un pago recibido de una clienta.
+      if (/pagaste\s+\$/i.test(text) || /pagaste\s+a\b/i.test(text) || /nombre\s+del\s+beneficiario/i.test(text)) {
+        return {
+          error: 'saliente',
+          message: 'Este texto corresponde a un pago saliente realizado por el titular ("Pagaste"), no a un cobro recibido.'
+        };
+      }
+      const origMatch = text.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
+      const origAccount = origMatch ? origMatch[1].trim() : '';
+      if (origAccount.includes('0164')) {
+        return {
+          error: 'saliente',
+          message: 'La cuenta de origen es la propia cuenta terminada en 0164 (pago saliente del titular).'
+        };
+      }
+
       // 1. Número de transacción DeUna (10 a 18 dígitos numéricos)
       const txMatch = text.match(/(?:n[uú]mero\s+de\s+transacci[oó]n|transacci[oó]n|nro\s+tx)\s*[:\t ]*([0-9]{8,18})/i) || text.match(/\b([0-9]{12})\b/);
 
@@ -2205,20 +2223,24 @@
 
       // 4. Cuentas y fecha
       const destMatch = text.match(/cuenta\s+de\s+destino\s*[:\t ]*([^\n\r]+)/i);
-      const origMatch = text.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
       const dateMatch = text.match(/fecha\s*[:\t ]*([^\n\r]+)/i);
       const transactionId = txMatch ? txMatch[1].trim() : '';
       const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : 0;
       const senderName = senderMatch ? senderMatch[1].trim() : '';
       const destAccount = destMatch ? destMatch[1].trim() : '';
-      const origAccount = origMatch ? origMatch[1].trim() : '';
       const paymentDate = dateMatch ? dateMatch[1].trim() : '';
+      if (destAccount && !destAccount.includes('0164')) {
+        return {
+          error: 'destino_invalido',
+          message: 'La cuenta de destino (' + destAccount + ') no corresponde a la cuenta de Kaoj Store (0164).'
+        };
+      }
       if (!transactionId && !amount) return null;
       return {
         transactionId,
         amount,
         senderName,
-        destAccount,
+        destAccount: destAccount || '******0164',
         origAccount,
         paymentDate,
         raw: text
@@ -2602,6 +2624,7 @@
       const [showDeunaPasteBox, setShowDeunaPasteBox] = useState(false);
       const [deunaPasteInput, setDeunaPasteInput] = useState('');
       const [adminDeunaPayments, setAdminDeunaPayments] = useState([]);
+      const [adminDeunaFilter, setAdminDeunaFilter] = useState('todos');
       const [adminDeunaLoading, setAdminDeunaLoading] = useState(false);
       const [adminDeunaManualText, setAdminDeunaManualText] = useState('');
       const [rememberAdminPin, setRememberAdminPin] = useState(true);
@@ -3330,8 +3353,12 @@
           return;
         }
         const parsed = parseDeunaNotificationEmail(adminDeunaManualText);
+        if (parsed && parsed.error) {
+          showToast(parsed.message || '⚠️ El texto pegado es un pago saliente realizado por el titular ("Pagaste"), no un pago recibido de una clienta.', 'error');
+          return;
+        }
         if (!parsed || !parsed.transactionId || parsed.amount <= 0) {
-          showToast('No se detectó un número de transacción o monto válido en el texto', 'error');
+          showToast('No se detectó un número de transacción o monto válido en el texto de dinero recibido', 'error');
           return;
         }
         try {
@@ -3343,7 +3370,7 @@
             p_amount: parsed.amount,
             p_sender: parsed.senderName || '',
             p_orig_acc: parsed.origAccount || '',
-            p_dest_acc: parsed.destAccount || '',
+            p_dest_acc: parsed.destAccount || '******0164',
             p_payment_date: parsed.paymentDate || '',
             p_raw_email: parsed.raw.substring(0, 500)
           });
@@ -3358,6 +3385,53 @@
           fetchInitialData();
         } catch (err) {
           showToast('Error registrando notificación: ' + (err.message || err), 'error');
+        }
+      };
+      const handleAdminDeleteDeunaPayment = async paymentId => {
+        if (!paymentId) return;
+        const confirmDelete = window.confirm('¿Deseas eliminar permanentemente esta notificación de pago de DeUna?');
+        if (!confirmDelete) return;
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+        try {
+          const {
+            error
+          } = await supabase.rpc('kaoj_admin_delete_deuna_payment', {
+            admin_pin: adminPin,
+            p_payment_id: paymentId
+          });
+          if (error) {
+            // Intentar eliminación directa
+            await supabase.from('kaoj_deuna_payments').delete().eq('id', paymentId);
+          }
+          showToast('✓ Notificación de DeUna eliminada', 'success');
+          handleFetchAdminDeunaPayments();
+        } catch (err) {
+          showToast('Error al eliminar: ' + (err.message || err), 'error');
+        }
+      };
+      const handleAdminPurgeDeunaPayments = async () => {
+        const confirmPurge = window.confirm('¿Deseas depurar y eliminar todas las notificaciones salientes ("Pagaste", origen 0164 o anuladas) para dejar solo dinero recibido?');
+        if (!confirmPurge) return;
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+        showToast('Depurando notificaciones no válidas...', 'info');
+        try {
+          const {
+            data,
+            error
+          } = await supabase.rpc('kaoj_admin_purge_invalid_deuna_payments', {
+            admin_pin: adminPin
+          });
+          if (!error && data) {
+            showToast(`✓ Depuración finalizada: ${data.deleted_count || 0} notificaciones salientes o anuladas eliminadas`, 'success');
+          } else {
+            // Depuración de respaldo directa
+            await supabase.from('kaoj_deuna_payments').delete().like('origin_account', '%0164%');
+            await supabase.from('kaoj_deuna_payments').delete().eq('status', 'anulado');
+            showToast('✓ Notificaciones salientes depuradas exitosamente', 'success');
+          }
+          handleFetchAdminDeunaPayments();
+        } catch (err) {
+          showToast('Error en depuración: ' + (err.message || err), 'error');
         }
       };
       const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
@@ -5294,7 +5368,7 @@
       }, /*#__PURE__*/React.createElement(Icon.Diamond, {
         className: "w-3 h-3 text-[#FF2E93]"
       }), /*#__PURE__*/React.createElement("span", null, "💎 50 Puntos = $5.00 de Descuento")))), /*#__PURE__*/React.createElement("header", {
-        className: "bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-40 w-full"
+        className: "bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-[100] w-full"
       }, /*#__PURE__*/React.createElement("div", {
         className: "max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4"
       }, /*#__PURE__*/React.createElement("div", {
@@ -5382,7 +5456,7 @@
       }), /*#__PURE__*/React.createElement("span", {
         className: "hidden sm:inline"
       }, "Ingresar")) : /*#__PURE__*/React.createElement("div", {
-        className: "relative"
+        className: "relative z-[100]"
       }, /*#__PURE__*/React.createElement("button", {
         onClick: () => setIsProfileOpen(!isProfileOpen),
         className: "flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 p-1.5 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-zinc-800 transition",
@@ -5398,10 +5472,10 @@
       }, user.user_metadata?.full_name?.split(' ')[0] || user.email?.split('@')[0]), customerProfile?.customer_code && /*#__PURE__*/React.createElement("span", {
         className: "bg-[#FF2E93] text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold hidden sm:inline"
       }, customerProfile.customer_code)), isProfileOpen && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-        className: "fixed inset-0 z-40",
+        className: "fixed inset-0 z-[105]",
         onClick: () => setIsProfileOpen(false)
       }), /*#__PURE__*/React.createElement("div", {
-        className: "absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-50 text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2"
+        className: "absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-[110] text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2"
       }, /*#__PURE__*/React.createElement("div", {
         className: "border-b border-zinc-100 pb-3 flex items-center gap-3"
       }, user.user_metadata?.avatar_url ? /*#__PURE__*/React.createElement("img", {
@@ -12648,19 +12722,46 @@
       }, "Abrir script.google.com ↗"))), /*#__PURE__*/React.createElement("div", {
         className: "space-y-3"
       }, /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center justify-between"
+        className: "flex flex-col sm:flex-row sm:items-center justify-between gap-2"
       }, /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2"
       }, /*#__PURE__*/React.createElement("span", {
         className: "font-extrabold text-zinc-900 text-xs"
       }, "Historial de Notificaciones DeUna"), /*#__PURE__*/React.createElement("span", {
         className: "bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full"
-      }, adminDeunaPayments.length, " registrados")), /*#__PURE__*/React.createElement("button", {
+      }, adminDeunaPayments.filter(p => p.status !== 'anulado').length, " recibidos")), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-2"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: handleAdminPurgeDeunaPayments,
+        className: "text-[11px] text-red-600 hover:text-red-700 font-bold hover:underline flex items-center gap-1",
+        title: "Elimina notificaciones con origen 0164, salientes o anuladas"
+      }, /*#__PURE__*/React.createElement("span", null, "🧹"), /*#__PURE__*/React.createElement("span", null, "Depurar Salientes")), /*#__PURE__*/React.createElement("span", {
+        className: "text-zinc-300"
+      }, "|"), /*#__PURE__*/React.createElement("button", {
         type: "button",
         onClick: handleFetchAdminDeunaPayments,
         disabled: adminDeunaLoading,
         className: "text-[11px] text-purple-700 font-bold hover:underline flex items-center gap-1"
-      }, /*#__PURE__*/React.createElement("span", null, "🔄"), /*#__PURE__*/React.createElement("span", null, adminDeunaLoading ? 'Actualizando...' : 'Actualizar'))), adminDeunaLoading && /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, "🔄"), /*#__PURE__*/React.createElement("span", null, adminDeunaLoading ? 'Actualizando...' : 'Actualizar')))), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-[11px]"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setAdminDeunaFilter('todos'),
+        className: `px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${adminDeunaFilter === 'todos' ? 'bg-purple-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'}`
+      }, "Recibidos Válidos (", adminDeunaPayments.filter(p => p.status !== 'anulado').length, ")"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setAdminDeunaFilter('disponibles'),
+        className: `px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${adminDeunaFilter === 'disponibles' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'}`
+      }, "🟢 Disponibles (", adminDeunaPayments.filter(p => p.status === 'disponible').length, ")"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setAdminDeunaFilter('conciliados'),
+        className: `px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${adminDeunaFilter === 'conciliados' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'}`
+      }, "✓ Conciliados (", adminDeunaPayments.filter(p => p.status === 'conciliado').length, ")"), adminDeunaPayments.some(p => p.status === 'anulado') && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => setAdminDeunaFilter('anulados'),
+        className: `px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${adminDeunaFilter === 'anulados' ? 'bg-red-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'}`
+      }, "⛔ Descartados / Salientes (", adminDeunaPayments.filter(p => p.status === 'anulado').length, ")")), adminDeunaLoading && /*#__PURE__*/React.createElement("div", {
         className: "py-6 text-center text-zinc-400 font-bold text-xs animate-pulse"
       }, "Cargando pagos de DeUna..."), !adminDeunaLoading && adminDeunaPayments.length === 0 && /*#__PURE__*/React.createElement("div", {
         className: "bg-zinc-50 border border-zinc-200 rounded-2xl p-6 text-center text-zinc-500 space-y-1"
@@ -12668,61 +12769,84 @@
         className: "font-bold text-xs"
       }, "No hay notificaciones de DeUna registradas todavía"), /*#__PURE__*/React.createElement("p", {
         className: "text-[11px]"
-      }, "Pega un correo de DeUna arriba o ejecuta el script en Gmail para comenzar.")), !adminDeunaLoading && adminDeunaPayments.length > 0 && /*#__PURE__*/React.createElement("div", {
-        className: "space-y-2"
-      }, adminDeunaPayments.map(p => {
-        const isMatched = p.status === 'conciliado';
+      }, "Pega un correo de DeUna arriba o ejecuta el script en Gmail para comenzar.")), !adminDeunaLoading && adminDeunaPayments.length > 0 && (() => {
+        const displayedList = adminDeunaPayments.filter(p => {
+          if (adminDeunaFilter === 'disponibles') return p.status === 'disponible';
+          if (adminDeunaFilter === 'conciliados') return p.status === 'conciliado';
+          if (adminDeunaFilter === 'anulados') return p.status === 'anulado';
+          return p.status !== 'anulado';
+        });
+        if (displayedList.length === 0) {
+          return /*#__PURE__*/React.createElement("div", {
+            className: "bg-zinc-50 border border-zinc-200 rounded-2xl p-5 text-center text-zinc-500 text-xs"
+          }, "No hay notificaciones en la categoría seleccionada (", adminDeunaFilter, ").");
+        }
         return /*#__PURE__*/React.createElement("div", {
-          key: p.id,
-          className: `p-3 rounded-2xl border transition text-xs space-y-2 ${isMatched ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' : 'bg-white border-zinc-200 hover:border-purple-300'}`
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center justify-between gap-2 flex-wrap"
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2"
-        }, /*#__PURE__*/React.createElement("span", {
-          className: "font-black text-sm text-purple-950"
-        }, "$", Number(p.amount).toFixed(2), " USD"), /*#__PURE__*/React.createElement("span", {
-          className: `text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${isMatched ? 'bg-emerald-200/80 text-emerald-900' : 'bg-purple-100 text-purple-900'}`
-        }, isMatched ? `✓ Conciliado #${p.matched_order_code}` : '🟢 Disponible')), /*#__PURE__*/React.createElement("span", {
-          className: "font-mono text-[10.5px] text-zinc-500"
-        }, "Tx: ", /*#__PURE__*/React.createElement("b", null, p.transaction_id))), /*#__PURE__*/React.createElement("div", {
-          className: "grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-zinc-600"
-        }, /*#__PURE__*/React.createElement("p", null, "👤 Emisor: ", /*#__PURE__*/React.createElement("b", {
-          className: "text-zinc-900"
-        }, p.sender_name || 'No especificado')), /*#__PURE__*/React.createElement("p", null, "📅 Fecha: ", /*#__PURE__*/React.createElement("b", {
-          className: "text-zinc-900"
-        }, p.payment_date || new Date(p.created_at).toLocaleDateString())), p.origin_account && /*#__PURE__*/React.createElement("p", null, "Origen: ", /*#__PURE__*/React.createElement("b", {
-          className: "font-mono"
-        }, p.origin_account)), p.destination_account && /*#__PURE__*/React.createElement("p", null, "Destino: ", /*#__PURE__*/React.createElement("b", {
-          className: "font-mono"
-        }, p.destination_account))), !isMatched && /*#__PURE__*/React.createElement("div", {
-          className: "pt-2 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap"
-        }, /*#__PURE__*/React.createElement("span", {
-          className: "text-[10px] text-zinc-500 font-bold"
-        }, "Vincular a pedido pendiente:"), /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2"
-        }, /*#__PURE__*/React.createElement("select", {
-          id: `reconcile-select-${p.id}`,
-          className: "bg-zinc-50 border border-zinc-300 rounded-xl px-2.5 py-1 text-[11px] text-zinc-900 outline-none font-bold",
-          defaultValue: ""
-        }, /*#__PURE__*/React.createElement("option", {
-          value: ""
-        }, "Selecciona pedido..."), orders.filter(o => o.status === 'pendiente').map(o => /*#__PURE__*/React.createElement("option", {
-          key: o.id,
-          value: o.order_code
-        }, "#", o.order_code, " - $", Number(o.total).toFixed(2), " (", o.customer_name, ")"))), /*#__PURE__*/React.createElement("button", {
-          type: "button",
-          onClick: () => {
-            const sel = document.getElementById(`reconcile-select-${p.id}`);
-            if (sel && sel.value) {
-              handleAdminReconcileDeuna(p.id, sel.value);
-            } else {
-              showToast('Selecciona un pedido de la lista', 'warning');
-            }
-          },
-          className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10.5px] transition"
-        }, "Vincular"))));
-      })))), /*#__PURE__*/React.createElement("div", {
+          className: "space-y-2"
+        }, displayedList.map(p => {
+          const isMatched = p.status === 'conciliado';
+          const isAnulado = p.status === 'anulado';
+          return /*#__PURE__*/React.createElement("div", {
+            key: p.id,
+            className: `p-3 rounded-2xl border transition text-xs space-y-2 ${isAnulado ? 'bg-red-50/50 border-red-200 text-red-950 opacity-75' : isMatched ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' : 'bg-white border-zinc-200 hover:border-purple-300'}`
+          }, /*#__PURE__*/React.createElement("div", {
+            className: "flex items-center justify-between gap-2 flex-wrap"
+          }, /*#__PURE__*/React.createElement("div", {
+            className: "flex items-center gap-2"
+          }, /*#__PURE__*/React.createElement("span", {
+            className: "font-black text-sm text-purple-950"
+          }, "$", Number(p.amount).toFixed(2), " USD"), /*#__PURE__*/React.createElement("span", {
+            className: `text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${isAnulado ? 'bg-red-200 text-red-900' : isMatched ? 'bg-emerald-200/80 text-emerald-900' : 'bg-purple-100 text-purple-900'}`
+          }, isAnulado ? '⛔ Saliente / Descartado' : isMatched ? `✓ Conciliado #${p.matched_order_code}` : '🟢 Disponible')), /*#__PURE__*/React.createElement("div", {
+            className: "flex items-center gap-2"
+          }, /*#__PURE__*/React.createElement("span", {
+            className: "font-mono text-[10.5px] text-zinc-500"
+          }, "Tx: ", /*#__PURE__*/React.createElement("b", null, p.transaction_id)), /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: () => handleAdminDeleteDeunaPayment(p.id),
+            className: "p-1 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition",
+            title: "Eliminar notificación"
+          }, /*#__PURE__*/React.createElement(Icon.Close, {
+            className: "w-3.5 h-3.5"
+          })))), /*#__PURE__*/React.createElement("div", {
+            className: "grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-zinc-600"
+          }, /*#__PURE__*/React.createElement("p", null, "👤 Emisor: ", /*#__PURE__*/React.createElement("b", {
+            className: "text-zinc-900"
+          }, p.sender_name || 'No especificado')), /*#__PURE__*/React.createElement("p", null, "📅 Fecha: ", /*#__PURE__*/React.createElement("b", {
+            className: "text-zinc-900"
+          }, p.payment_date || new Date(p.created_at).toLocaleDateString())), p.origin_account && /*#__PURE__*/React.createElement("p", null, "Origen: ", /*#__PURE__*/React.createElement("b", {
+            className: "font-mono"
+          }, p.origin_account)), p.destination_account && /*#__PURE__*/React.createElement("p", null, "Destino: ", /*#__PURE__*/React.createElement("b", {
+            className: "font-mono"
+          }, p.destination_account))), !isMatched && !isAnulado && /*#__PURE__*/React.createElement("div", {
+            className: "pt-2 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap"
+          }, /*#__PURE__*/React.createElement("span", {
+            className: "text-[10px] text-zinc-500 font-bold"
+          }, "Vincular a pedido pendiente:"), /*#__PURE__*/React.createElement("div", {
+            className: "flex items-center gap-2"
+          }, /*#__PURE__*/React.createElement("select", {
+            id: `reconcile-select-${p.id}`,
+            className: "bg-zinc-50 border border-zinc-300 rounded-xl px-2.5 py-1 text-[11px] text-zinc-900 outline-none font-bold",
+            defaultValue: ""
+          }, /*#__PURE__*/React.createElement("option", {
+            value: ""
+          }, "Selecciona pedido..."), orders.filter(o => o.status === 'pendiente').map(o => /*#__PURE__*/React.createElement("option", {
+            key: o.id,
+            value: o.order_code
+          }, "#", o.order_code, " - $", Number(o.total).toFixed(2), " (", o.customer_name, ")"))), /*#__PURE__*/React.createElement("button", {
+            type: "button",
+            onClick: () => {
+              const sel = document.getElementById(`reconcile-select-${p.id}`);
+              if (sel && sel.value) {
+                handleAdminReconcileDeuna(p.id, sel.value);
+              } else {
+                showToast('Selecciona un pedido de la lista', 'warning');
+              }
+            },
+            className: "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10.5px] transition"
+          }, "Vincular"))));
+        }));
+      })())), /*#__PURE__*/React.createElement("div", {
         className: "p-3 bg-zinc-50 border-t border-zinc-200 flex justify-end shrink-0"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",

@@ -214,6 +214,15 @@ DROP POLICY IF EXISTS "Lectura de pagos deuna" ON public.kaoj_deuna_payments;
 CREATE POLICY "Lectura de pagos deuna" ON public.kaoj_deuna_payments FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Actualización de pagos deuna" ON public.kaoj_deuna_payments;
 CREATE POLICY "Actualización de pagos deuna" ON public.kaoj_deuna_payments FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Eliminación de pagos deuna" ON public.kaoj_deuna_payments;
+CREATE POLICY "Eliminación de pagos deuna" ON public.kaoj_deuna_payments FOR DELETE USING (true);
+
+-- Purgar automáticamente registros de pagos salientes del titular o cancelados
+DELETE FROM public.kaoj_deuna_payments
+WHERE origin_account LIKE '%0164'
+   OR raw_email ILIKE '%Pagaste%'
+   OR raw_email ILIKE '%beneficiario%'
+   OR status = 'anulado';
 
 -- -------------------------------------------------------------------------
 -- 6. TABLA: kaoj_carts (Carritos Persistentes de Google)
@@ -1218,6 +1227,22 @@ BEGIN
         );
     END IF;
 
+    -- Rechazar inmediatamente pagos salientes del titular (origen 0164 o correo 'Pagaste' / 'beneficiario')
+    IF p_orig_acc LIKE '%0164' OR p_raw_email ILIKE '%Pagaste%' OR p_raw_email ILIKE '%beneficiario%' THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', 'Ignorado: Es un comprobante de pago saliente realizado por el titular ("Pagaste").'
+        );
+    END IF;
+
+    -- Si viene especificada cuenta de destino, verificar que sea la de Kaoj Store (terminada en 0164)
+    IF LENGTH(TRIM(p_dest_acc)) > 0 AND p_dest_acc NOT LIKE '%0164' THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', 'Ignorado: La cuenta de destino no corresponde a la cuenta de Kaoj Store (0164).'
+        );
+    END IF;
+
     -- 1. Si la transacción ya existe
     SELECT * INTO existing_row
     FROM public.kaoj_deuna_payments
@@ -1556,6 +1581,60 @@ BEGIN
         'transaction_id', pay_row.transaction_id,
         'amount', pay_row.amount,
         'message', 'Pago conciliado exitosamente con el pedido #' || ord_row.order_code
+    );
+END;
+$$;
+
+-- 9.18.5 Eliminar Notificación DeUna Individual (Solo Admin)
+CREATE OR REPLACE FUNCTION public.kaoj_admin_delete_deuna_payment(
+    admin_pin TEXT,
+    p_payment_id BIGINT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    DELETE FROM public.kaoj_deuna_payments WHERE id = p_payment_id;
+    RETURN true;
+END;
+$$;
+
+-- 9.18.6 Depurar Notificaciones Salientes o Anuladas de DeUna (Solo Admin)
+CREATE OR REPLACE FUNCTION public.kaoj_admin_purge_invalid_deuna_payments(
+    admin_pin TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+    deleted_count INT := 0;
+BEGIN
+    IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
+        RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    WITH del AS (
+        DELETE FROM public.kaoj_deuna_payments
+        WHERE origin_account LIKE '%0164'
+           OR raw_email ILIKE '%Pagaste%'
+           OR raw_email ILIKE '%beneficiario%'
+           OR status = 'anulado'
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO deleted_count FROM del;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'deleted_count', deleted_count,
+        'message', 'Se eliminaron ' || deleted_count || ' transacciones salientes/inválidas exitosamente.'
     );
 END;
 $$;

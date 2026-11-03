@@ -1605,6 +1605,19 @@ ESTADO: ${status.toUpperCase()}
       if (!rawText || typeof rawText !== 'string') return null;
       const text = rawText.trim();
 
+      // REGLA ANTI-PAGOS SALIENTES:
+      // Si el comprobante dice "Pagaste", "Nombre del beneficiario" o la cuenta de origen es la de Alisson (0164),
+      // descartar porque es un pago que tú realizaste a otra persona/empresa, no un pago recibido de una clienta.
+      if (/pagaste\s+\$/i.test(text) || /pagaste\s+a\b/i.test(text) || /nombre\s+del\s+beneficiario/i.test(text)) {
+        return { error: 'saliente', message: 'Este texto corresponde a un pago saliente realizado por el titular ("Pagaste"), no a un cobro recibido.' };
+      }
+
+      const origMatch = text.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
+      const origAccount = origMatch ? origMatch[1].trim() : '';
+      if (origAccount.includes('0164')) {
+        return { error: 'saliente', message: 'La cuenta de origen es la propia cuenta terminada en 0164 (pago saliente del titular).' };
+      }
+
       // 1. Número de transacción DeUna (10 a 18 dígitos numéricos)
       const txMatch = text.match(/(?:n[uú]mero\s+de\s+transacci[oó]n|transacci[oó]n|nro\s+tx)\s*[:\t ]*([0-9]{8,18})/i) ||
                       text.match(/\b([0-9]{12})\b/);
@@ -1620,15 +1633,17 @@ ESTADO: ${status.toUpperCase()}
 
       // 4. Cuentas y fecha
       const destMatch = text.match(/cuenta\s+de\s+destino\s*[:\t ]*([^\n\r]+)/i);
-      const origMatch = text.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
       const dateMatch = text.match(/fecha\s*[:\t ]*([^\n\r]+)/i);
 
       const transactionId = txMatch ? txMatch[1].trim() : '';
       const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : 0;
       const senderName = senderMatch ? senderMatch[1].trim() : '';
       const destAccount = destMatch ? destMatch[1].trim() : '';
-      const origAccount = origMatch ? origMatch[1].trim() : '';
       const paymentDate = dateMatch ? dateMatch[1].trim() : '';
+
+      if (destAccount && !destAccount.includes('0164')) {
+        return { error: 'destino_invalido', message: 'La cuenta de destino (' + destAccount + ') no corresponde a la cuenta de Kaoj Store (0164).' };
+      }
 
       if (!transactionId && !amount) return null;
 
@@ -1636,7 +1651,7 @@ ESTADO: ${status.toUpperCase()}
         transactionId,
         amount,
         senderName,
-        destAccount,
+        destAccount: destAccount || '******0164',
         origAccount,
         paymentDate,
         raw: text
@@ -2008,6 +2023,7 @@ ESTADO: ${status.toUpperCase()}
       const [showDeunaPasteBox, setShowDeunaPasteBox] = useState(false);
       const [deunaPasteInput, setDeunaPasteInput] = useState('');
       const [adminDeunaPayments, setAdminDeunaPayments] = useState([]);
+      const [adminDeunaFilter, setAdminDeunaFilter] = useState('todos');
       const [adminDeunaLoading, setAdminDeunaLoading] = useState(false);
       const [adminDeunaManualText, setAdminDeunaManualText] = useState('');
       const [rememberAdminPin, setRememberAdminPin] = useState(true);
@@ -2703,8 +2719,12 @@ ESTADO: ${status.toUpperCase()}
           return;
         }
         const parsed = parseDeunaNotificationEmail(adminDeunaManualText);
+        if (parsed && parsed.error) {
+          showToast(parsed.message || '⚠️ El texto pegado es un pago saliente realizado por el titular ("Pagaste"), no un pago recibido de una clienta.', 'error');
+          return;
+        }
         if (!parsed || !parsed.transactionId || parsed.amount <= 0) {
-          showToast('No se detectó un número de transacción o monto válido en el texto', 'error');
+          showToast('No se detectó un número de transacción o monto válido en el texto de dinero recibido', 'error');
           return;
         }
 
@@ -2714,7 +2734,7 @@ ESTADO: ${status.toUpperCase()}
             p_amount: parsed.amount,
             p_sender: parsed.senderName || '',
             p_orig_acc: parsed.origAccount || '',
-            p_dest_acc: parsed.destAccount || '',
+            p_dest_acc: parsed.destAccount || '******0164',
             p_payment_date: parsed.paymentDate || '',
             p_raw_email: parsed.raw.substring(0, 500)
           });
@@ -2730,6 +2750,52 @@ ESTADO: ${status.toUpperCase()}
           fetchInitialData();
         } catch (err) {
           showToast('Error registrando notificación: ' + (err.message || err), 'error');
+        }
+      };
+
+      const handleAdminDeleteDeunaPayment = async (paymentId) => {
+        if (!paymentId) return;
+        const confirmDelete = window.confirm('¿Deseas eliminar permanentemente esta notificación de pago de DeUna?');
+        if (!confirmDelete) return;
+
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+        try {
+          const { error } = await supabase.rpc('kaoj_admin_delete_deuna_payment', {
+            admin_pin: adminPin,
+            p_payment_id: paymentId
+          });
+          if (error) {
+            // Intentar eliminación directa
+            await supabase.from('kaoj_deuna_payments').delete().eq('id', paymentId);
+          }
+          showToast('✓ Notificación de DeUna eliminada', 'success');
+          handleFetchAdminDeunaPayments();
+        } catch (err) {
+          showToast('Error al eliminar: ' + (err.message || err), 'error');
+        }
+      };
+
+      const handleAdminPurgeDeunaPayments = async () => {
+        const confirmPurge = window.confirm('¿Deseas depurar y eliminar todas las notificaciones salientes ("Pagaste", origen 0164 o anuladas) para dejar solo dinero recibido?');
+        if (!confirmPurge) return;
+
+        const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+        showToast('Depurando notificaciones no válidas...', 'info');
+        try {
+          const { data, error } = await supabase.rpc('kaoj_admin_purge_invalid_deuna_payments', {
+            admin_pin: adminPin
+          });
+          if (!error && data) {
+            showToast(`✓ Depuración finalizada: ${data.deleted_count || 0} notificaciones salientes o anuladas eliminadas`, 'success');
+          } else {
+            // Depuración de respaldo directa
+            await supabase.from('kaoj_deuna_payments').delete().like('origin_account', '%0164%');
+            await supabase.from('kaoj_deuna_payments').delete().eq('status', 'anulado');
+            showToast('✓ Notificaciones salientes depuradas exitosamente', 'success');
+          }
+          handleFetchAdminDeunaPayments();
+        } catch (err) {
+          showToast('Error en depuración: ' + (err.message || err), 'error');
         }
       };
       const [adminStockFilter, setAdminStockFilter] = useState('todos'); // 'todos', 'critico', 'agotados'
@@ -4660,7 +4726,7 @@ ESTADO: ${status.toUpperCase()}
           </div>
 
           {/* HEADER / NAVBAR PRINCIPAL */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-40 w-full">
+          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-[100] w-full">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO OFICIAL KAOJ STORE */}
@@ -4773,7 +4839,7 @@ ESTADO: ${status.toUpperCase()}
                     <span className="hidden sm:inline">Ingresar</span>
                   </button>
                 ) : (
-                  <div className="relative">
+                  <div className="relative z-[100]">
                     <button
                       onClick={() => setIsProfileOpen(!isProfileOpen)}
                       className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 p-1.5 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-zinc-800 transition"
@@ -4800,10 +4866,10 @@ ESTADO: ${status.toUpperCase()}
                     {isProfileOpen && (
                       <>
                         <div
-                          className="fixed inset-0 z-40"
+                          className="fixed inset-0 z-[105]"
                           onClick={() => setIsProfileOpen(false)}
                         />
-                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-50 text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
+                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-[110] text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
                           <div className="border-b border-zinc-100 pb-3 flex items-center gap-3">
                             {user.user_metadata?.avatar_url ? (
                               <img src={user.user_metadata.avatar_url} alt="User" className="w-10 h-10 rounded-full border-2 border-[#FF007F] shadow-2xs" />
@@ -13601,22 +13667,76 @@ ESTADO: ${status.toUpperCase()}
 
                   {/* 3. SECCIÓN: LISTADO DE PAGOS RECIBIDOS DESDE DEUNA */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-zinc-900 text-xs">Historial de Notificaciones DeUna</span>
                         <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                          {adminDeunaPayments.length} registrados
+                          {adminDeunaPayments.filter(p => p.status !== 'anulado').length} recibidos
                         </span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAdminPurgeDeunaPayments}
+                          className="text-[11px] text-red-600 hover:text-red-700 font-bold hover:underline flex items-center gap-1"
+                          title="Elimina notificaciones con origen 0164, salientes o anuladas"
+                        >
+                          <span>🧹</span>
+                          <span>Depurar Salientes</span>
+                        </button>
+                        <span className="text-zinc-300">|</span>
+                        <button
+                          type="button"
+                          onClick={handleFetchAdminDeunaPayments}
+                          disabled={adminDeunaLoading}
+                          className="text-[11px] text-purple-700 font-bold hover:underline flex items-center gap-1"
+                        >
+                          <span>🔄</span>
+                          <span>{adminDeunaLoading ? 'Actualizando...' : 'Actualizar'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* FILTROS DE ESTADO */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-[11px]">
                       <button
                         type="button"
-                        onClick={handleFetchAdminDeunaPayments}
-                        disabled={adminDeunaLoading}
-                        className="text-[11px] text-purple-700 font-bold hover:underline flex items-center gap-1"
+                        onClick={() => setAdminDeunaFilter('todos')}
+                        className={`px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${
+                          adminDeunaFilter === 'todos' ? 'bg-purple-900 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                        }`}
                       >
-                        <span>🔄</span>
-                        <span>{adminDeunaLoading ? 'Actualizando...' : 'Actualizar'}</span>
+                        Recibidos Válidos ({adminDeunaPayments.filter(p => p.status !== 'anulado').length})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminDeunaFilter('disponibles')}
+                        className={`px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${
+                          adminDeunaFilter === 'disponibles' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                        }`}
+                      >
+                        🟢 Disponibles ({adminDeunaPayments.filter(p => p.status === 'disponible').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminDeunaFilter('conciliados')}
+                        className={`px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${
+                          adminDeunaFilter === 'conciliados' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                        }`}
+                      >
+                        ✓ Conciliados ({adminDeunaPayments.filter(p => p.status === 'conciliado').length})
+                      </button>
+                      {adminDeunaPayments.some(p => p.status === 'anulado') && (
+                        <button
+                          type="button"
+                          onClick={() => setAdminDeunaFilter('anulados')}
+                          className={`px-3 py-1 rounded-full font-bold transition whitespace-nowrap ${
+                            adminDeunaFilter === 'anulados' ? 'bg-red-600 text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                          }`}
+                        >
+                          ⛔ Descartados / Salientes ({adminDeunaPayments.filter(p => p.status === 'anulado').length})
+                        </button>
+                      )}
                     </div>
 
                     {adminDeunaLoading && (
@@ -13632,81 +13752,113 @@ ESTADO: ${status.toUpperCase()}
                       </div>
                     )}
 
-                    {!adminDeunaLoading && adminDeunaPayments.length > 0 && (
-                      <div className="space-y-2">
-                        {adminDeunaPayments.map(p => {
-                          const isMatched = p.status === 'conciliado';
-                          return (
-                            <div
-                              key={p.id}
-                              className={`p-3 rounded-2xl border transition text-xs space-y-2 ${
-                                isMatched
-                                  ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
-                                  : 'bg-white border-zinc-200 hover:border-purple-300'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-black text-sm text-purple-950">${Number(p.amount).toFixed(2)} USD</span>
-                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                                    isMatched
-                                      ? 'bg-emerald-200/80 text-emerald-900'
-                                      : 'bg-purple-100 text-purple-900'
-                                  }`}>
-                                    {isMatched ? `✓ Conciliado #${p.matched_order_code}` : '🟢 Disponible'}
-                                  </span>
-                                </div>
-                                <span className="font-mono text-[10.5px] text-zinc-500">
-                                  Tx: <b>{p.transaction_id}</b>
-                                </span>
-                              </div>
+                    {!adminDeunaLoading && adminDeunaPayments.length > 0 && (() => {
+                      const displayedList = adminDeunaPayments.filter(p => {
+                        if (adminDeunaFilter === 'disponibles') return p.status === 'disponible';
+                        if (adminDeunaFilter === 'conciliados') return p.status === 'conciliado';
+                        if (adminDeunaFilter === 'anulados') return p.status === 'anulado';
+                        return p.status !== 'anulado';
+                      });
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-zinc-600">
-                                <p>👤 Emisor: <b className="text-zinc-900">{p.sender_name || 'No especificado'}</b></p>
-                                <p>📅 Fecha: <b className="text-zinc-900">{p.payment_date || new Date(p.created_at).toLocaleDateString()}</b></p>
-                                {p.origin_account && <p>Origen: <b className="font-mono">{p.origin_account}</b></p>}
-                                {p.destination_account && <p>Destino: <b className="font-mono">{p.destination_account}</b></p>}
-                              </div>
+                      if (displayedList.length === 0) {
+                        return (
+                          <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 text-center text-zinc-500 text-xs">
+                            No hay notificaciones en la categoría seleccionada ({adminDeunaFilter}).
+                          </div>
+                        );
+                      }
 
-                              {/* Si está disponible, dar opción de vincular a un pedido pendiente manualmente */}
-                              {!isMatched && (
-                                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap">
-                                  <span className="text-[10px] text-zinc-500 font-bold">Vincular a pedido pendiente:</span>
+                      return (
+                        <div className="space-y-2">
+                          {displayedList.map(p => {
+                            const isMatched = p.status === 'conciliado';
+                            const isAnulado = p.status === 'anulado';
+                            return (
+                              <div
+                                key={p.id}
+                                className={`p-3 rounded-2xl border transition text-xs space-y-2 ${
+                                  isAnulado
+                                    ? 'bg-red-50/50 border-red-200 text-red-950 opacity-75'
+                                    : isMatched
+                                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                                    : 'bg-white border-zinc-200 hover:border-purple-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
                                   <div className="flex items-center gap-2">
-                                    <select
-                                      id={`reconcile-select-${p.id}`}
-                                      className="bg-zinc-50 border border-zinc-300 rounded-xl px-2.5 py-1 text-[11px] text-zinc-900 outline-none font-bold"
-                                      defaultValue=""
-                                    >
-                                      <option value="">Selecciona pedido...</option>
-                                      {orders.filter(o => o.status === 'pendiente').map(o => (
-                                        <option key={o.id} value={o.order_code}>
-                                          #{o.order_code} - ${Number(o.total).toFixed(2)} ({o.customer_name})
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <span className="font-black text-sm text-purple-950">${Number(p.amount).toFixed(2)} USD</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                      isAnulado
+                                        ? 'bg-red-200 text-red-900'
+                                        : isMatched
+                                        ? 'bg-emerald-200/80 text-emerald-900'
+                                        : 'bg-purple-100 text-purple-900'
+                                    }`}>
+                                      {isAnulado ? '⛔ Saliente / Descartado' : isMatched ? `✓ Conciliado #${p.matched_order_code}` : '🟢 Disponible'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-[10.5px] text-zinc-500">
+                                      Tx: <b>{p.transaction_id}</b>
+                                    </span>
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        const sel = document.getElementById(`reconcile-select-${p.id}`);
-                                        if (sel && sel.value) {
-                                          handleAdminReconcileDeuna(p.id, sel.value);
-                                        } else {
-                                          showToast('Selecciona un pedido de la lista', 'warning');
-                                        }
-                                      }}
-                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10.5px] transition"
+                                      onClick={() => handleAdminDeleteDeunaPayment(p.id)}
+                                      className="p-1 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                      title="Eliminar notificación"
                                     >
-                                      Vincular
+                                      <Icon.Close className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[11px] text-zinc-600">
+                                  <p>👤 Emisor: <b className="text-zinc-900">{p.sender_name || 'No especificado'}</b></p>
+                                  <p>📅 Fecha: <b className="text-zinc-900">{p.payment_date || new Date(p.created_at).toLocaleDateString()}</b></p>
+                                  {p.origin_account && <p>Origen: <b className="font-mono">{p.origin_account}</b></p>}
+                                  {p.destination_account && <p>Destino: <b className="font-mono">{p.destination_account}</b></p>}
+                                </div>
+
+                                {/* Si está disponible, dar opción de vincular a un pedido pendiente manualmente */}
+                                {!isMatched && !isAnulado && (
+                                  <div className="pt-2 border-t border-zinc-100 flex items-center justify-between gap-2 flex-wrap">
+                                    <span className="text-[10px] text-zinc-500 font-bold">Vincular a pedido pendiente:</span>
+                                    <div className="flex items-center gap-2">
+                                      <select
+                                        id={`reconcile-select-${p.id}`}
+                                        className="bg-zinc-50 border border-zinc-300 rounded-xl px-2.5 py-1 text-[11px] text-zinc-900 outline-none font-bold"
+                                        defaultValue=""
+                                      >
+                                        <option value="">Selecciona pedido...</option>
+                                        {orders.filter(o => o.status === 'pendiente').map(o => (
+                                          <option key={o.id} value={o.order_code}>
+                                            #{o.order_code} - ${Number(o.total).toFixed(2)} ({o.customer_name})
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const sel = document.getElementById(`reconcile-select-${p.id}`);
+                                          if (sel && sel.value) {
+                                            handleAdminReconcileDeuna(p.id, sel.value);
+                                          } else {
+                                            showToast('Selecciona un pedido de la lista', 'warning');
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10.5px] transition"
+                                      >
+                                        Vincular
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                 </div>

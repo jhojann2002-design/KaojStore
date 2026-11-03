@@ -4,18 +4,22 @@
  * =========================================================================
  * 
  * Cuenta destinataria: alisson.kandy2002@gmail.com
- * Remitente de Deuna: notificaciones@deunaapp.com
+ * Cuenta bancaria destino: ******0164 (Kaoj Store)
+ * Remitente oficial de Deuna: notificaciones@deunaapp.com
  * Endpoint Supabase: https://uxptcckcwcyaivurhxzh.supabase.co
+ * 
+ * FILTRADO ESTRICTO DE SEGURIDAD:
+ * Solo procesa dinero ENTRANTE recibido de clientas ("Recibiste $XX de [Cliente]").
+ * Descarta y descarta automáticamente pagos salientes que tú realices ("Pagaste").
  * 
  * INSTRUCCIONES DE INSTALACIÓN (EN 2 MINUTOS):
  * 1. Abre https://script.google.com con la cuenta alisson.kandy2002@gmail.com
- * 2. Haz clic en "Nuevo proyecto" y ponle de nombre: "Kaoj DeUna Verificador"
- * 3. Borra todo el código que aparezca y pega este archivo completo.
- * 4. Arriba en la barra selecciona la función: "instalarDisparadorAutomatico" y dale al botón "Ejecutar".
- * 5. Google te pedirá permisos para leer correos de Gmail; dale "Revisar permisos" > "Avanzado" > "Ir a Kaoj DeUna Verificador (no seguro)" > "Permitir".
- * 
- * ¡Listo! A partir de ese momento, cada vez que llegue un pago de DeUna, se verificará
- * automáticamente en tu tienda en menos de 60 segundos.
+ * 2. Abre tu proyecto "Kaoj DeUna Verificador" (o crea uno nuevo).
+ * 3. Reemplaza todo el código por este archivo completo y presiona "Guardar" (Ctrl+S / Cmd+S).
+ * 4. Si quieres importar pagos de días anteriores, selecciona arriba la función:
+ *    "sincronizarHistoricoDeuna" y dale al botón "Ejecutar".
+ * 5. Si es la primera vez que lo instalas, selecciona la función "instalarDisparadorAutomatico"
+ *    y dale "Ejecutar" para que revise correos nuevos automáticamente cada 1 minuto.
  */
 
 var SUPABASE_URL = "https://uxptcckcwcyaivurhxzh.supabase.co";
@@ -23,13 +27,15 @@ var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 /**
  * Función principal que se ejecuta automáticamente cada minuto.
+ * Solo procesa correos NO LEÍDOS de dinero recibido ("Recibiste").
  */
 function procesarPagosDeuna() {
-  var query = 'from:notificaciones@deunaapp.com is:unread';
+  // Búsqueda precisa: remitente oficial de Deuna + palabra clave "Recibiste" + no leído
+  var query = 'from:notificaciones@deunaapp.com ("Recibiste" OR "recibiste") is:unread';
   var threads = GmailApp.search(query, 0, 15);
   
   if (!threads || threads.length === 0) {
-    Logger.log('No hay nuevos correos de Deuna pendientes.');
+    Logger.log('No hay nuevos correos de pagos entrantes de Deuna pendientes.');
     return;
   }
 
@@ -47,16 +53,16 @@ function procesarPagosDeuna() {
         var parsed = parsearCorreoDeuna(body);
 
         if (parsed && parsed.transactionId && parsed.amount > 0) {
-          Logger.log('Detectado pago Deuna: Tx #' + parsed.transactionId + ' | Monto: $' + parsed.amount + ' | Emisor: ' + parsed.senderName);
+          Logger.log('Detectado pago recibido Deuna: Tx #' + parsed.transactionId + ' | Monto: $' + parsed.amount + ' | Emisor: ' + parsed.senderName);
           
           var success = registrarPagoEnSupabase(parsed, body);
           if (success) {
             msg.markRead();
             if (label) thread.addLabel(label);
-            Logger.log('✓ Pago Tx #' + parsed.transactionId + ' registrado y marcado como leído.');
+            Logger.log('✓ Pago entrante Tx #' + parsed.transactionId + ' registrado y marcado como verificado.');
           }
         } else {
-          Logger.log('Mensaje no coincide con formato de pago Deuna recibido.');
+          Logger.log('Mensaje ignorado (no es un pago entrante válido para la cuenta ******0164).');
         }
       }
     }
@@ -64,35 +70,62 @@ function procesarPagosDeuna() {
 }
 
 /**
- * Extrae con precisión los datos de la notificación de Deuna.
+ * Extrae con máxima precisión los datos de la notificación de dinero recibido de Deuna.
+ * Rechaza estrictamente cualquier pago saliente ("Pagaste" o cuenta origen ******0164).
  */
 function parsearCorreoDeuna(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
 
-  // 1. Número de transacción (12 dígitos numéricos)
+  // 1. REGLA ESTRICTA ANTI-PAGOS SALIENTES:
+  // Si contiene "Pagaste", "Nombre del beneficiario" o la cuenta de origen es la de Alisson (0164),
+  // descartar de inmediato porque es un pago que tú hiciste a otro comercio/persona.
+  if (/pagaste\s+\$/i.test(rawText) || /pagaste\s+a\b/i.test(rawText) || /nombre\s+del\s+beneficiario/i.test(rawText)) {
+    Logger.log('Ignorado: Es un comprobante de pago saliente ("Pagaste").');
+    return null;
+  }
+
+  var origMatch = rawText.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
+  var origAccount = origMatch ? origMatch[1].trim() : '';
+  if (origAccount.indexOf('0164') !== -1) {
+    Logger.log('Ignorado: La cuenta de origen es la propia cuenta titular (0164).');
+    return null;
+  }
+
+  // 2. REGLA DE PAGOS ENTRANTES:
+  // Debe contener explícitamente "Recibiste" o "Nombre del ordenante"
+  if (!/recibiste/i.test(rawText) && !/nombre\s+del\s+ordenante/i.test(rawText)) {
+    Logger.log('Ignorado: No contiene indicadores de cobro recibido.');
+    return null;
+  }
+
+  // 3. Número de transacción DeUna (10 a 18 dígitos, habitualmente 12)
   var txMatch = rawText.match(/(?:n[uú]mero\s+de\s+transacci[oó]n|transacci[oó]n|nro\s+tx)\s*[:\t ]*([0-9]{8,18})/i) ||
                 rawText.match(/\b([0-9]{12})\b/);
   
-  // 2. Monto en USD (soporta formato $35,00 o $35.00)
+  // 4. Monto recibido en USD (soporta formato $35,00 o $35.00)
   var amountMatch = rawText.match(/(?:monto\s*[:\t ]*|recibiste\s*)\$?([0-9]+(?:[.,][0-9]{2})?)/i);
 
-  // 3. Nombre del ordenante / Emisor
+  // 5. Nombre del ordenante / Emisor (la clienta que pagó)
   var senderMatch = rawText.match(/nombre\s+del\s+ordenante\s*[:\t ]*([^\n\r]+)/i);
   if (!senderMatch) {
     senderMatch = rawText.match(/recibiste\s+\$?[0-9.,]+\s+de\s*\n?\s*([^\n\r]+?)(?:\s+con\s+deuna|\n|$)/i);
   }
 
-  // 4. Cuentas y fecha
+  // 6. Cuentas y fecha
   var destMatch = rawText.match(/cuenta\s+de\s+destino\s*[:\t ]*([^\n\r]+)/i);
-  var origMatch = rawText.match(/cuenta\s+de\s+origen\s*[:\t ]*([^\n\r]+)/i);
   var dateMatch = rawText.match(/fecha\s*[:\t ]*([^\n\r]+)/i);
 
   var transactionId = txMatch ? txMatch[1].trim() : '';
   var amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : 0;
   var senderName = senderMatch ? senderMatch[1].trim() : '';
   var destAccount = destMatch ? destMatch[1].trim() : '';
-  var origAccount = origMatch ? origMatch[1].trim() : '';
   var paymentDate = dateMatch ? dateMatch[1].trim() : '';
+
+  // 7. Validación de cuenta de destino: si viene especificada, debe corresponder a la cuenta de la tienda (0164)
+  if (destAccount && destAccount.indexOf('0164') === -1) {
+    Logger.log('Ignorado: La cuenta de destino (' + destAccount + ') no es la cuenta de Kaoj Store (0164).');
+    return null;
+  }
 
   if (!transactionId || amount <= 0) {
     return null;
@@ -102,14 +135,14 @@ function parsearCorreoDeuna(rawText) {
     transactionId: transactionId,
     amount: amount,
     senderName: senderName,
-    destAccount: destAccount,
+    destAccount: destAccount || '******0164',
     origAccount: origAccount,
     paymentDate: paymentDate
   };
 }
 
 /**
- * Envía los datos del pago a Supabase RPC
+ * Envía los datos del pago recibido a Supabase RPC
  */
 function registrarPagoEnSupabase(parsed, rawBody) {
   var endpoint = SUPABASE_URL + '/rest/v1/rpc/kaoj_register_deuna_payment';
@@ -119,7 +152,7 @@ function registrarPagoEnSupabase(parsed, rawBody) {
     p_amount: parsed.amount,
     p_sender: parsed.senderName || '',
     p_orig_acc: parsed.origAccount || '',
-    p_dest_acc: parsed.destAccount || '',
+    p_dest_acc: parsed.destAccount || '******0164',
     p_payment_date: parsed.paymentDate || '',
     p_raw_email: (rawBody || '').substring(0, 1000)
   };
@@ -148,6 +181,37 @@ function registrarPagoEnSupabase(parsed, rawBody) {
 }
 
 /**
+ * IMPORTAR HISTORIAL DE PAGOS RECIBIDOS (Últimos 30 días)
+ * Ejecuta esta función manualmente desde el editor de Google Apps Script
+ * si deseas importar pagos recibidos en las últimas semanas que ya fueron leídos.
+ */
+function sincronizarHistoricoDeuna() {
+  var query = 'from:notificaciones@deunaapp.com ("Recibiste" OR "recibiste") newer_than:30d';
+  var threads = GmailApp.search(query, 0, 40);
+  Logger.log('Analizando ' + threads.length + ' conversaciones históricas de DeUna...');
+
+  var importados = 0;
+  var label = obtenerOCrearEtiqueta('Kaoj/Deuna_Verificado');
+
+  for (var i = 0; i < threads.length; i++) {
+    var messages = threads[i].getMessages();
+    for (var j = 0; j < messages.length; j++) {
+      var msg = messages[j];
+      var body = msg.getPlainBody() || msg.getBody();
+      var parsed = parsearCorreoDeuna(body);
+      if (parsed && parsed.transactionId && parsed.amount > 0) {
+        var ok = registrarPagoEnSupabase(parsed, body);
+        if (ok) {
+          importados++;
+          if (label) threads[i].addLabel(label);
+        }
+      }
+    }
+  }
+  Logger.log('🎉 Sincronización histórica finalizada. Se procesaron ' + importados + ' pagos recibidos.');
+}
+
+/**
  * Obtiene o crea una etiqueta en Gmail para organizar
  */
 function obtenerOCrearEtiqueta(nombre) {
@@ -162,7 +226,6 @@ function obtenerOCrearEtiqueta(nombre) {
  * EJECUTA ESTA FUNCIÓN UNA SOLA VEZ para activar el cron de 1 minuto automáticamente.
  */
 function instalarDisparadorAutomatico() {
-  // Eliminar disparadores anteriores para evitar duplicados
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === 'procesarPagosDeuna') {
@@ -170,11 +233,10 @@ function instalarDisparadorAutomatico() {
     }
   }
 
-  // Crear disparador cada 1 minuto
   ScriptApp.newTrigger('procesarPagosDeuna')
     .timeBased()
     .everyMinutes(1)
     .create();
 
-  Logger.log('🎉 ¡Disparador instalado con éxito! Revisará correos de Deuna cada 1 minuto.');
+  Logger.log('🎉 ¡Disparador instalado con éxito! Revisará correos de dinero recibido de Deuna cada 1 minuto.');
 }

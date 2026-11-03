@@ -4879,7 +4879,7 @@ ESTADO: ${status.toUpperCase()}
         <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-zinc-900 overflow-x-hidden w-full max-w-full">
 
           {/* BARRA SUPERIOR CON ANUNCIO EN PASARELA Y SALDO VIP */}
-          <div className="w-full overflow-hidden bg-zinc-900 text-zinc-200 text-xs py-2 px-3 sm:px-4 font-medium tracking-wider flex items-center justify-between gap-3 border-b border-zinc-800">
+          <div className="w-full overflow-hidden bg-zinc-900 text-zinc-200 text-xs py-2 px-3 sm:px-4 font-medium tracking-wider flex items-center justify-between gap-3 border-b border-zinc-800 relative z-20">
             <div className="min-w-0 flex-1 overflow-hidden relative flex items-center h-5">
               <div className="animate-marquee-pasarela flex items-center gap-8 text-[11px] sm:text-xs font-semibold text-zinc-100">
                 <span className="flex items-center gap-2">
@@ -4921,7 +4921,7 @@ ESTADO: ${status.toUpperCase()}
           </div>
 
           {/* HEADER / NAVBAR PRINCIPAL */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-[150] w-full">
+          <header className="bg-white/95 backdrop-blur-md border-b border-zinc-200/80 sticky top-0 z-40 w-full">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
 
               {/* LOGOTIPO OFICIAL KAOJ STORE */}
@@ -5034,7 +5034,7 @@ ESTADO: ${status.toUpperCase()}
                     <span className="hidden sm:inline">Ingresar</span>
                   </button>
                 ) : (
-                  <div className="relative z-[160]">
+                  <div className="relative z-50">
                     <button
                       onClick={() => setIsProfileOpen(!isProfileOpen)}
                       className="flex items-center gap-1.5 bg-pink-50/80 hover:bg-pink-100 border border-pink-200 p-1.5 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-zinc-800 transition"
@@ -5061,10 +5061,10 @@ ESTADO: ${status.toUpperCase()}
                     {isProfileOpen && (
                       <>
                         <div
-                          className="fixed inset-0 z-[165]"
+                          className="fixed inset-0 z-50"
                           onClick={() => setIsProfileOpen(false)}
                         />
-                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-[170] text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
+                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-3xl shadow-2xl border border-zinc-200 p-4 z-50 text-xs space-y-3 ring-1 ring-black/10 animate-in fade-in slide-in-from-top-2">
                           <div className="border-b border-zinc-100 pb-3 flex items-center gap-3">
                             {user.user_metadata?.avatar_url ? (
                               <img src={user.user_metadata.avatar_url} alt="User" className="w-10 h-10 rounded-full border-2 border-[#FF007F] shadow-2xs" />
@@ -9127,7 +9127,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: EDITOR DE PRODUCTOS
               ========================================================================= */}
           {editingProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => setEditingProduct(null)}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[200] flex items-center justify-center p-3 sm:p-4" onClick={() => setEditingProduct(null)}>
               <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full p-4 sm:p-6 space-y-4 shadow-2xl relative max-h-[92vh] overflow-y-auto text-xs min-w-0" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b pb-3">
                   <h3 className="font-bold text-base text-zinc-900 flex items-center gap-2">
@@ -9809,7 +9809,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: VINCULAR TELÉFONO PERMANENTE A GOOGLE (AL PRIMER INGRESO)
               ========================================================================= */}
           {showPhonePromptModal && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative text-xs">
                 <div className="text-center space-y-2">
                   <div className="w-12 h-12 rounded-full bg-pink-50 border border-pink-200 mx-auto flex items-center justify-center text-[#FF2E93]">
@@ -9858,7 +9858,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: AUTORIZACIÓN DE ADMINISTRADOR (PIN DINÁMICO)
               ========================================================================= */}
           {showPinModal && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => { setShowPinModal(false); if (window.location.hash.startsWith('#/admin')) window.location.hash = '#/'; }}>
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[200] flex items-center justify-center p-4" onClick={() => { setShowPinModal(false); if (window.location.hash.startsWith('#/admin')) window.location.hash = '#/'; }}>
               <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
                 <div className="text-center space-y-1">
                   <h3 className="font-bold text-base text-zinc-900">Acceso Administrativo</h3>
@@ -9951,7 +9951,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL INFORMATIVO: PROGRAMA DE PUNTOS KAOJ VIP ($5 OFF POR CADA 50 PUNTOS)
               ========================================================================= */}
           {isPointsModalOpen && (
-            <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsPointsModalOpen(false)}>
+            <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[200] flex items-center justify-center p-4" onClick={() => setIsPointsModalOpen(false)}>
               <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-pink-200 relative text-xs" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
                   <div className="flex items-center gap-2">
@@ -10065,11 +10065,11 @@ ESTADO: ${status.toUpperCase()}
               ========================================================================= */}
           {waitlistModalData && (
             <div
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[95] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
               onClick={() => { setWaitlistModalData(null); setWaitlistSubmitted(false); }}
             >
               <div
-                className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-pink-100 relative z-[95] text-xs"
+                className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-pink-100 relative z-[200] text-xs"
                 onClick={e => e.stopPropagation()}
               >
                 {/* CABECERA */}
@@ -10206,7 +10206,7 @@ ESTADO: ${status.toUpperCase()}
               DRAWER: CARRITO DE COMPRAS & CHECKOUT VIP POR PASOS (1. DATOS, 2. ENVÍO, 3. PAGO)
               ========================================================================= */}
           {isCartOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-end" onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[200] flex justify-end" onClick={() => { setIsCartOpen(false); if (window.location.hash === '#/carrito') window.location.hash = '#/'; }}>
               <div className="bg-white w-full max-w-lg h-full flex flex-col justify-between shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
 
                 {/* HEADER FIJO DEL CARRITO Y STEPPER DE PASOS */}
@@ -11725,7 +11725,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: VISTA RÁPIDA DE PRODUCTO CON SELECTOR DE TONOS/TALLAS
               ========================================================================= */}
           {quickViewProduct && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => {
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[200] flex items-center justify-center p-2 sm:p-4 overflow-y-auto" onClick={() => {
               setQuickViewProduct(null);
               if (window.location.hash.startsWith('#/producto/')) {
                 window.location.hash = selectedSection === 'TODOS' ? '#/' : selectedSection === 'FAVORITOS' ? '#/favoritos' : `#/seccion/${encodeURIComponent(selectedSection)}`;
@@ -12292,7 +12292,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: RASTREO DE PEDIDOS AUTOMÁTICO & PORTAL DE COMPRAS
               ========================================================================= */}
           {isTrackingOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => { setIsTrackingOpen(false); if (window.location.hash === '#/pedidos') window.location.hash = '#/'; }}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[200] flex items-center justify-center p-3 sm:p-4" onClick={() => { setIsTrackingOpen(false); if (window.location.hash === '#/pedidos') window.location.hash = '#/'; }}>
               <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-start border-b border-zinc-100 pb-3">
                   <div>
@@ -12536,7 +12536,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: CALIFICAR PRODUCTO VERIFICADO (Social Proof Auténtico sin selector masivo)
               ========================================================================= */}
           {isReviewModalOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setIsReviewModalOpen(false)}>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[200] flex items-center justify-center p-4" onClick={() => setIsReviewModalOpen(false)}>
               <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl relative text-xs" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b pb-3">
                   <div>
@@ -12659,7 +12659,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: GUÍA DE ENVÍO OFICIAL SERVIENTREGA (Con Cédula y Print CSS Limpio)
               ========================================================================= */}
           {servientregaOrder && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4" onClick={() => setServientregaOrder(null)}>
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[200] flex items-center justify-center p-4" onClick={() => setServientregaOrder(null)}>
               <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center no-print">
                   <h3 className="font-bold text-base text-zinc-900">Guía de Envío Servientrega</h3>
@@ -12725,7 +12725,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: CONFIRMACIÓN DE PEDIDO Y WHATSAPP (Resistente a bloqueadores móviles)
               ========================================================================= */}
           {orderSuccessModal && (
-            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setOrderSuccessModal(null)}>
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[250] flex items-center justify-center p-4" onClick={() => setOrderSuccessModal(null)}>
               <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-zinc-200 relative text-center" onClick={e => e.stopPropagation()}>
                 
                 {/* ÍCONO DE ÉXITO */}
@@ -12839,7 +12839,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: COMPROBANTE DE COMPRA (CLIENTE - DESCARGA / IMPRESIÓN)
               ========================================================================= */}
           {customerReceiptModal && (
-            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setCustomerReceiptModal(null)}>
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setCustomerReceiptModal(null)}>
               <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto text-xs" onClick={e => e.stopPropagation()}>
                 
                 {/* ENCABEZADO */}
@@ -12965,7 +12965,7 @@ ESTADO: ${status.toUpperCase()}
 
             return (
               <div
-                className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[95] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
                 onClick={() => { setAdminReceiptModal(null); setAdminReceiptQrResult(null); }}
               >
                 <div
@@ -13235,7 +13235,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: NOTA DE VENTA ADMINISTRATIVA (ADMIN)
               ========================================================================= */}
           {adminSalesNoteModal && (
-            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setAdminSalesNoteModal(null)}>
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setAdminSalesNoteModal(null)}>
               <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-4 shadow-2xl border border-zinc-200 relative max-h-[92vh] overflow-y-auto text-xs" onClick={e => e.stopPropagation()}>
                 
                 <div className="flex justify-between items-start border-b border-zinc-200 pb-3">
@@ -13363,7 +13363,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: TICKET TÉRMICO POS 58MM (ADMIN)
               ========================================================================= */}
           {adminThermalTicketModal && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setAdminThermalTicketModal(null)}>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setAdminThermalTicketModal(null)}>
               <div className="bg-zinc-900 border border-zinc-700 text-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto text-xs" onClick={e => e.stopPropagation()}>
                 
                 <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
@@ -13451,7 +13451,7 @@ ESTADO: ${status.toUpperCase()}
 
           {/* NOTIFICACIÓN TOAST DINÁMICO */}
           {toast && (
-            <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 text-xs px-4 py-3 rounded-2xl shadow-2xl border transition-all max-w-sm ${
+            <div className={`fixed top-5 right-5 z-[300] flex items-center gap-2.5 text-xs px-4 py-3 rounded-2xl shadow-2xl border transition-all max-w-sm ${
               toast.type === 'error'
                 ? 'bg-zinc-950 text-red-300 border-red-500'
                 : toast.type === 'info'
@@ -13554,7 +13554,7 @@ ESTADO: ${status.toUpperCase()}
 
           {/* MODAL GUÍA DE INSTALACIÓN ADMIN INDEPENDIENTE */}
           {showAdminInstallGuide && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[200]">
               <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-zinc-200 space-y-4">
                 <div className="flex items-center gap-3">
                   <img src="icons/icon-admin-192.png" alt="Kaoj Admin" className="w-12 h-12 rounded-2xl shadow-md border border-zinc-200 object-cover" />
@@ -13598,7 +13598,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: CÓDIGO QR OFICIAL DEUNA! (ESCANEAR O DESCARGAR)
               ========================================================================= */}
           {showDeunaQrModal && (
-            <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={() => setShowDeunaQrModal(false)}>
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[200] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setShowDeunaQrModal(false)}>
               <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-purple-200 relative text-center" onClick={e => e.stopPropagation()}>
                 
                 <div className="flex justify-between items-center pb-2 border-b border-purple-100">
@@ -13670,7 +13670,7 @@ ESTADO: ${status.toUpperCase()}
               MODAL: CONCILIACIÓN AUTOMÁTICA DEUNA! (GMAIL: alisson.kandy2002@gmail.com)
               ========================================================================= */}
           {showDeunaReconcileModal && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 animate-fadeIn" onClick={() => setShowDeunaReconcileModal(false)}>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[200] flex items-center justify-center p-3 sm:p-5 animate-fadeIn" onClick={() => setShowDeunaReconcileModal(false)}>
               <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-purple-200 relative overflow-hidden" onClick={e => e.stopPropagation()}>
                 
                 {/* CABECERA */}

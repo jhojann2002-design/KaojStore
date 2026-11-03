@@ -465,6 +465,91 @@
     };
 
     // =========================================================================
+    // MAPA DE COLORES HEXADECIMALES Y GENERADOR PARA FILTRO VISUAL KAOJ
+    // =========================================================================
+    const COLOR_HEX_MAP = {
+      'negro': '#18181b',
+      'blanco': '#ffffff',
+      'perla': '#fcfbf7',
+      'crema': '#fef7e5',
+      'beige': '#e8dec8',
+      'habano': '#c8a882',
+      'mocca': '#9e7b66',
+      'café': '#6d4c41',
+      'cafe': '#6d4c41',
+      'marron': '#5d4037',
+      'chocolate': '#4e342e',
+      'rosa': '#f472b6',
+      'rosa bebé': '#fbcfe8',
+      'rosa bebe': '#fbcfe8',
+      'fucsia': '#ff2e93',
+      'rosado': '#f472b6',
+      'cherry': '#881337',
+      'vino': '#701a31',
+      'borgoña': '#581c87',
+      'rojo': '#ef4444',
+      'rojo pasión': '#dc2626',
+      'rojo pasion': '#dc2626',
+      'azul': '#2563eb',
+      'azul noche': '#1e293b',
+      'azul marino': '#0f172a',
+      'celeste': '#7dd3fc',
+      'amarillo': '#facc15',
+      'amarillo patito': '#fef08a',
+      'amarillo mantequilla': '#fef9c3',
+      'verde': '#22c55e',
+      'verde limón': '#a3e635',
+      'verde limon': '#a3e635',
+      'verde esmeralda': '#10b981',
+      'verde militar': '#4d7c0f',
+      'oliva': '#65a30d',
+      'menta': '#6ee7b7',
+      'lila': '#c084fc',
+      'morado': '#a855f7',
+      'lavanda': '#e9d5ff',
+      'durazno': '#fdba74',
+      'naranja': '#f97316',
+      'coral': '#fb7185',
+      'gris': '#9ca3af',
+      'plomo': '#6b7280',
+      'dorado': '#eab308',
+      'plateado': '#cbd5e1'
+    };
+
+    const getColorHex = (colorName) => {
+      if (!colorName) return '#e4e4e7';
+      const clean = colorName.toLowerCase().trim();
+      if (COLOR_HEX_MAP[clean]) return COLOR_HEX_MAP[clean];
+      for (const [key, hex] of Object.entries(COLOR_HEX_MAP)) {
+        if (clean === key || clean.startsWith(key) || clean.endsWith(key)) return hex;
+      }
+      for (const [key, hex] of Object.entries(COLOR_HEX_MAP)) {
+        if (clean.includes(key)) return hex;
+      }
+      let hash = 0;
+      for (let i = 0; i < clean.length; i++) {
+        hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const h = Math.abs(hash) % 360;
+      return `hsl(${h}, 65%, 75%)`;
+    };
+
+    const isLightColor = (hexOrName) => {
+      if (!hexOrName) return false;
+      const lower = hexOrName.toLowerCase();
+      if (['blanco', 'perla', 'crema', 'beige', 'amarillo mantequilla', 'amarillo patito'].some(c => lower.includes(c))) return true;
+      const hex = hexOrName.startsWith('#') ? hexOrName : (COLOR_HEX_MAP[lower] || '');
+      if (hex.startsWith('#') && hex.length === 7) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b);
+        return lum > 190;
+      }
+      return false;
+    };
+
+    // =========================================================================
     // PRODUCTOS POR DEFECTO PARA CARGA INSTANTÁNEA (0ms)
     // =========================================================================
     const DEFAULT_STORE_PRODUCTS = [
@@ -1892,9 +1977,17 @@ ESTADO: ${status.toUpperCase()}
       // Filtros de catálogo y búsqueda
       const [selectedSection, setSelectedSection] = useState('TODOS');
       const [selectedSubcategory, setSelectedSubcategory] = useState('TODOS');
+      const [selectedColorFilter, setSelectedColorFilter] = useState('TODOS');
+      const [selectedSizeFilter, setSelectedSizeFilter] = useState('TODOS');
       const [searchQuery, setSearchQuery] = useState('');
       const [sortBy, setSortBy] = useState('destacados');
       const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
+      // Resetear filtros visuales de color y talla al navegar entre secciones o subcategorías
+      useEffect(() => {
+        setSelectedColorFilter('TODOS');
+        setSelectedSizeFilter('TODOS');
+      }, [selectedSection, selectedSubcategory]);
 
       // Variantes activas por producto { [prodId]: { variantName, image } }
       const [activeVariants, setActiveVariants] = useState({});
@@ -4918,9 +5011,9 @@ ESTADO: ${status.toUpperCase()}
       }
 
       // =======================================================================
-      // 8. FILTRADO INTELIGENTE DE PRODUCTOS
+      // 8. FILTRADO INTELIGENTE DE PRODUCTOS Y METADATOS DE FILTROS VISUALES
       // =======================================================================
-      const filteredProducts = useMemo(() => {
+      const sectionProducts = useMemo(() => {
         let result = [...products];
 
         if (selectedSection === 'FAVORITOS') {
@@ -4945,6 +5038,107 @@ ESTADO: ${status.toUpperCase()}
             p.category?.toLowerCase().includes(q) ||
             p.section?.toLowerCase().includes(q)
           );
+        }
+
+        return result;
+      }, [products, selectedSection, selectedSubcategory, searchQuery, favorites]);
+
+      // Métricas de filtros visuales dinámicos (Colores y Tallas disponibles en la sección actual)
+      const catalogFilters = useMemo(() => {
+        const colorMap = new Map();
+        const sizeMap = new Map();
+
+        sectionProducts.forEach(prod => {
+          const variants = prod.variants || [];
+          const prodColors = new Set();
+          const prodSizes = new Set();
+
+          variants.forEach(v => {
+            let col = (v.color || '').trim();
+            let sz = (v.size || '').trim();
+
+            if (!col && v.name && v.name.includes('-')) {
+              const parts = v.name.split('-').map(s => s.trim());
+              if (parts.length >= 2) {
+                col = parts[0];
+                if (!sz) sz = parts[1];
+              }
+            } else if (!col && v.name) {
+              col = v.name.trim();
+            }
+
+            if (col) {
+              const formattedCol = col.charAt(0).toUpperCase() + col.slice(1);
+              prodColors.add(formattedCol);
+            }
+            if (sz) {
+              const formattedSz = (sz.toUpperCase() === 'UNICA' || sz.toUpperCase() === 'ÚNICA') ? 'Única' : sz;
+              prodSizes.add(formattedSz);
+            }
+          });
+
+          prodColors.forEach(c => {
+            colorMap.set(c, (colorMap.get(c) || 0) + 1);
+          });
+          prodSizes.forEach(s => {
+            sizeMap.set(s, (sizeMap.get(s) || 0) + 1);
+          });
+        });
+
+        const colors = Array.from(colorMap.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count);
+
+        const sizeOrder = ['ÚNICA', 'UNICA', 'XS', 'S', 'M', 'L', 'XL', 'XXL'];
+        const sizes = Array.from(sizeMap.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => {
+            const idxA = sizeOrder.indexOf(a.name.toUpperCase());
+            const idxB = sizeOrder.indexOf(b.name.toUpperCase());
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a.name.localeCompare(b.name);
+          });
+
+        return { colors, sizes };
+      }, [sectionProducts]);
+
+      const filteredProducts = useMemo(() => {
+        let result = [...sectionProducts];
+
+        // Filtro por Color
+        if (selectedColorFilter !== 'TODOS') {
+          const targetColor = selectedColorFilter.toLowerCase().trim();
+          result = result.filter(p => {
+            const variants = p.variants || [];
+            return variants.some(v => {
+              let col = (v.color || '').trim().toLowerCase();
+              if (!col && v.name && v.name.includes('-')) {
+                col = v.name.split('-')[0].trim().toLowerCase();
+              } else if (!col && v.name) {
+                col = v.name.trim().toLowerCase();
+              }
+              return col === targetColor;
+            });
+          });
+        }
+
+        // Filtro por Talla
+        if (selectedSizeFilter !== 'TODOS') {
+          const targetSize = selectedSizeFilter.toLowerCase().trim();
+          result = result.filter(p => {
+            const variants = p.variants || [];
+            return variants.some(v => {
+              let sz = (v.size || '').trim().toLowerCase();
+              if (!sz && v.name && v.name.includes('-')) {
+                const parts = v.name.split('-');
+                if (parts.length >= 2) sz = parts[1].trim().toLowerCase();
+              }
+              const normSz = (sz === 'unica' || sz === 'única') ? 'única' : sz;
+              return normSz === (targetSize === 'unica' || targetSize === 'única' ? 'única' : targetSize);
+            });
+          });
         }
 
         if (sortBy === 'precio_menor') {
@@ -4977,7 +5171,7 @@ ESTADO: ${status.toUpperCase()}
         });
 
         return result;
-      }, [products, selectedSection, selectedSubcategory, searchQuery, sortBy, favorites]);
+      }, [sectionProducts, selectedColorFilter, selectedSizeFilter, sortBy]);
 
       // Métricas administrativas (excluyendo ventas canceladas)
       const metrics = useMemo(() => {
@@ -5567,6 +5761,154 @@ ESTADO: ${status.toUpperCase()}
                 </p>
               </div>
 
+              {/* BARRA DE FILTROS VISUALES POR COLOR Y TALLA */}
+              {!isAdmin && (catalogFilters.colors.length > 0 || catalogFilters.sizes.length > 0) && (
+                <div className="bg-white/80 backdrop-blur-xs rounded-2xl p-3 sm:p-4 border border-zinc-200/80 shadow-2xs space-y-3">
+                  {/* FILAS DE FILTROS CON SCROLL HORIZONTAL SUAVE */}
+                  {catalogFilters.colors.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <div className="flex items-center justify-between shrink-0">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                          <span>🎨 Color:</span>
+                          {selectedColorFilter !== 'TODOS' && (
+                            <span className="text-[#FF2E93] font-black lowercase">
+                              {selectedColorFilter}
+                            </span>
+                          )}
+                        </span>
+                        {selectedColorFilter !== 'TODOS' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedColorFilter('TODOS')}
+                            className="text-[10px] font-bold text-zinc-400 hover:text-zinc-700 sm:hidden"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedColorFilter('TODOS')}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                            selectedColorFilter === 'TODOS'
+                              ? 'bg-[#151E28] text-white shadow-2xs'
+                              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/80'
+                          }`}
+                        >
+                          <span>Todos</span>
+                        </button>
+                        {catalogFilters.colors.map(c => {
+                          const isColSelected = selectedColorFilter.toLowerCase() === c.name.toLowerCase();
+                          const hex = getColorHex(c.name);
+                          const isLight = isLightColor(c.name);
+                          return (
+                            <button
+                              key={c.name}
+                              type="button"
+                              onClick={() => setSelectedColorFilter(isColSelected ? 'TODOS' : c.name)}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all shrink-0 ${
+                                isColSelected
+                                  ? 'bg-[#FF2E93] text-white shadow-sm ring-2 ring-[#FF2E93] ring-offset-1'
+                                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/70 border border-transparent'
+                              }`}
+                              title={`${c.name} (${c.count} ${c.count === 1 ? 'producto' : 'productos'})`}
+                            >
+                              <span
+                                className={`w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs ${
+                                  isLight ? 'border border-zinc-300' : ''
+                                }`}
+                                style={{ backgroundColor: hex }}
+                              />
+                              <span>{c.name}</span>
+                              <span className={`text-[10px] font-normal ${isColSelected ? 'text-pink-100' : 'text-zinc-400'}`}>
+                                ({c.count})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {catalogFilters.sizes.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-zinc-100">
+                      <div className="flex items-center justify-between shrink-0">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                          <span>📏 Talla:</span>
+                          {selectedSizeFilter !== 'TODOS' && (
+                            <span className="text-[#151E28] font-black lowercase">
+                              {selectedSizeFilter}
+                            </span>
+                          )}
+                        </span>
+                        {selectedSizeFilter !== 'TODOS' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSizeFilter('TODOS')}
+                            className="text-[10px] font-bold text-zinc-400 hover:text-zinc-700 sm:hidden"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSizeFilter('TODOS')}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                            selectedSizeFilter === 'TODOS'
+                              ? 'bg-[#151E28] text-white shadow-2xs'
+                              : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/80'
+                          }`}
+                        >
+                          <span>Todas</span>
+                        </button>
+                        {catalogFilters.sizes.map(s => {
+                          const isSizeSelected = selectedSizeFilter.toLowerCase() === s.name.toLowerCase();
+                          return (
+                            <button
+                              key={s.name}
+                              type="button"
+                              onClick={() => setSelectedSizeFilter(isSizeSelected ? 'TODOS' : s.name)}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold transition-all shrink-0 flex items-center gap-1 ${
+                                isSizeSelected
+                                  ? 'bg-[#151E28] text-white shadow-2xs ring-2 ring-[#151E28] ring-offset-1'
+                                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200/70'
+                              }`}
+                              title={`${s.name} (${s.count} ${s.count === 1 ? 'producto' : 'productos'})`}
+                            >
+                              <span>{s.name}</span>
+                              <span className={`text-[10px] font-normal ${isSizeSelected ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                                ({s.count})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* BARRA DE ESTADO DE FILTROS ACTIVOS */}
+                  {(selectedColorFilter !== 'TODOS' || selectedSizeFilter !== 'TODOS') && (
+                    <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs">
+                      <span className="text-zinc-600 font-medium">
+                        Filtros activos: <strong className="text-zinc-900">{selectedColorFilter !== 'TODOS' ? `Color ${selectedColorFilter}` : ''}{selectedColorFilter !== 'TODOS' && selectedSizeFilter !== 'TODOS' ? ' • ' : ''}{selectedSizeFilter !== 'TODOS' ? `Talla ${selectedSizeFilter}` : ''}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedColorFilter('TODOS'); setSelectedSizeFilter('TODOS'); }}
+                        className="text-[#FF2E93] hover:text-[#d01070] font-bold text-xs underline cursor-pointer"
+                      >
+                        Limpiar todos los filtros
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* GRID DE PRODUCTOS INSPIRADO EN LIVELARQ (Pedestal gris estudio #F5F6F8 + Tipografía limpia) */}
               {filteredProducts.length === 0 ? (
                 <div className="bg-[#F5F6F8] rounded-[28px] p-12 text-center space-y-3">
@@ -5609,8 +5951,16 @@ ESTADO: ${status.toUpperCase()}
                       ? (prod.variants || []).find(v => v.image && v.image.trim() === prod.image.trim())?.color
                       : null;
 
+                    // Buscar si hay una variante que coincida con el filtro de color activo
+                    const colorMatchVar = (prod.variants || []).find(v => {
+                      let col = (v.color || '').trim().toLowerCase();
+                      if (!col && v.name && v.name.includes('-')) col = v.name.split('-')[0].trim().toLowerCase();
+                      else if (!col && v.name) col = v.name.trim().toLowerCase();
+                      return selectedColorFilter !== 'TODOS' && col === selectedColorFilter.toLowerCase().trim();
+                    });
+
                     const currentColor = hasColorAndSize
-                      ? (activeVar.color || matchingColorForMainImg || (distinctColors.find(c => (prod.variants || []).some(v => v.color === c && v.stock > 0))) || distinctColors[0])
+                      ? (activeVar.color || (colorMatchVar ? colorMatchVar.color : null) || matchingColorForMainImg || (distinctColors.find(c => (prod.variants || []).some(v => v.color === c && v.stock > 0))) || distinctColors[0])
                       : null;
 
                     const currentSize = hasColorAndSize
@@ -5631,11 +5981,13 @@ ESTADO: ${status.toUpperCase()}
                     const discountPercent = hasDiscount ? Math.round(((prod.price - prod.discount_price) / prod.price) * 100) : 0;
 
                     // Foto de primera impresión en catálogo:
-                    // SIEMPRE la foto principal del producto (prod.image). Solo si el cliente tocó manualmente un tono
-                    // en esta tarjeta (activeVar.userSelected === true) se muestra la foto de esa variante.
+                    // Si el cliente seleccionó un filtro de color o tocó manualmente un tono, se muestra la foto de esa variante.
+                    // Si no, la foto principal del producto (prod.image).
                     const displayImage = (activeVar.userSelected && activeVar.image)
                       ? activeVar.image
-                      : (prod.image || activeVar.image || varObj?.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600');
+                      : (selectedColorFilter !== 'TODOS' && colorMatchVar?.image)
+                        ? colorMatchVar.image
+                        : (prod.image || activeVar.image || varObj?.image || 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600');
                     const cardImages = getProductImages(prod);
 
                     return (
@@ -12418,6 +12770,52 @@ ESTADO: ${status.toUpperCase()}
                           </div>
                         )}
                       </div>
+
+                      {/* BARRA STICKY INFERIOR MÓVIL DENTRO DEL QUICKVIEW */}
+                      <div className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-md px-4 py-3 border-t border-zinc-100 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] md:hidden flex items-center justify-between gap-3 w-full">
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-zinc-500 font-medium leading-none mb-0.5">Precio:</p>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-base font-black text-[#151E28]">
+                              ${Number(quickViewProduct.discount_price || quickViewProduct.price).toFixed(2)}
+                            </span>
+                            {hasDiscount && (
+                              <span className="line-through text-zinc-400 text-xs">
+                                ${Number(quickViewProduct.price).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {stock <= 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenWaitlistModal(quickViewProduct, currentVarName)}
+                            className="bg-[#151E28] hover:bg-black text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm active:scale-95 transition"
+                          >
+                            <Icon.Bell className="w-3.5 h-3.5 text-[#FF2E93]" />
+                            <span>Avisarme cuando haya</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => addToCart(quickViewProduct, currentVarName, false)}
+                              className="bg-pink-50 hover:bg-pink-100 text-[#FF2E93] border border-pink-200 text-xs font-bold px-3 py-2.5 rounded-xl flex items-center gap-1 active:scale-95 transition"
+                              title="Agregar a la bolsa"
+                            >
+                              <Icon.Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addToCart(quickViewProduct, currentVarName, true)}
+                              className="bg-[#FF2E93] hover:bg-[#e0157a] text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 transition"
+                            >
+                              <Icon.Bag className="w-3.5 h-3.5" />
+                              <span>Comprar Ahora</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </>
                   );
                 })()}
@@ -13580,12 +13978,51 @@ ESTADO: ${status.toUpperCase()}
             </div>
           )}
 
+          {/* BARRA DE COMPRA FIJA EN MÓVIL (STICKY CART) */}
+          {!isAdmin && cart.length > 0 && !isCartOpen && !quickViewProduct && (
+            <aside
+              aria-label="Resumen de compra flotante"
+              className="fixed bottom-3 left-3 right-3 z-40 md:hidden animate-fade-in"
+            >
+              <div className="bg-[#151E28]/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-2xl border border-white/10 flex items-center justify-between gap-3">
+                <div
+                  onClick={() => { setIsCartOpen(true); window.location.hash = '#/carrito'; }}
+                  className="flex items-center gap-2.5 cursor-pointer min-w-0"
+                >
+                  <div className="relative w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
+                    <Icon.Bag className="w-4 h-4 text-[#FF2E93]" />
+                    <span className="absolute -top-1 -right-1 bg-[#FF2E93] text-white text-[10px] font-black rounded-full w-4 h-4 flex items-center justify-center shadow-xs">
+                      {cart.reduce((a, b) => a + b.qty, 0)}
+                    </span>
+                  </div>
+                  <div className="truncate">
+                    <p className="text-[11px] text-zinc-300 font-medium leading-tight">
+                      Tu Compra • {cart.reduce((a, b) => a + b.qty, 0)} {cart.reduce((a, b) => a + b.qty, 0) === 1 ? 'artículo' : 'artículos'}
+                    </p>
+                    <p className="text-sm font-black text-white leading-tight">
+                      ${cart.reduce((a, b) => a + ((b.discount_price || b.price) * b.qty), 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setIsCartOpen(true); window.location.hash = '#/carrito'; }}
+                  className="bg-[#FF2E93] hover:bg-[#e0157a] active:scale-95 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md transition shrink-0"
+                >
+                  <span>Ver Bolsa</span>
+                  <Icon.ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </aside>
+          )}
+
           {/* BOTÓN FLOTANTE WHATSAPP OFICIAL DINÁMICO (+593) */}
           <a
             href={`https://wa.me/${formatWhatsAppPhone(settings.whatsapp_number)}?text=${encodeURIComponent('Hola Kaoj Store, quisiera consultar sobre sus productos y catálogo.')}`}
             target="_blank"
             rel="noreferrer"
-            className="fixed bottom-6 right-6 z-40 bg-zinc-900 hover:bg-black text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition duration-200"
+            className={`fixed ${!isAdmin && cart.length > 0 && !isCartOpen && !quickViewProduct ? 'bottom-20 md:bottom-6' : 'bottom-6'} right-6 z-40 bg-zinc-900 hover:bg-black text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition duration-200`}
             title="WhatsApp Kaoj Store"
           >
             <Icon.WhatsApp className="w-6 h-6 text-emerald-400" />

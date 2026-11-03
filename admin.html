@@ -3257,45 +3257,64 @@ window.IS_ADMIN_APP = true;
         }
         setIsVerifyingDeuna(true);
         try {
-          const {
-            data,
-            error
-          } = await supabase.rpc('kaoj_verify_deuna_payment', {
-            p_tx_id: cleanTx,
-            p_expected_amount: total
-          });
-          if (error) throw error;
-          if (data && data.valid) {
+          const maxAttempts = 3;
+          let verifiedData = null;
+          let isDuplicate = false;
+          let isMismatch = false;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const {
+              data,
+              error
+            } = await supabase.rpc('kaoj_verify_deuna_payment', {
+              p_tx_id: cleanTx,
+              p_expected_amount: total
+            });
+            if (error) throw error;
+            if (data && data.valid) {
+              verifiedData = data;
+              break;
+            } else if (data && data.is_duplicate) {
+              isDuplicate = true;
+              showToast(`❌ Transacción ya utilizada en el pedido #${data.matched_order_code}`, 'error');
+              setCustomer(prev => ({
+                ...prev,
+                deunaVerified: false,
+                deunaData: null
+              }));
+              break;
+            } else if (data && data.amount_mismatch) {
+              isMismatch = true;
+              showToast(`⚠️ El monto de DeUna ($${Number(data.amount).toFixed(2)}) es menor al total requerido ($${Number(data.expected_amount).toFixed(2)})`, 'warning');
+              setCustomer(prev => ({
+                ...prev,
+                deunaVerified: false,
+                deunaData: data
+              }));
+              break;
+            } else {
+              // Si no aparece aún y faltan intentos, esperamos 3.5 segundos y reintentamos automáticamente
+              if (attempt < maxAttempts) {
+                showToast(`Sincronizando con DeUna... buscando confirmación (${attempt}/${maxAttempts})`, 'info');
+                await new Promise(resolve => setTimeout(resolve, 3500));
+              }
+            }
+          }
+          if (verifiedData) {
             setCustomer(prev => ({
               ...prev,
               receiptRef: cleanTx,
               deunaVerified: true,
-              deunaData: data
+              deunaData: verifiedData
             }));
-            showToast(`✓ Pago DeUna de $${Number(data.amount).toFixed(2)} verificado con éxito (${data.sender_name || 'Titular verificado'})`, 'success');
-          } else if (data && data.is_duplicate) {
-            showToast(`❌ Transacción ya utilizada en el pedido #${data.matched_order_code}`, 'error');
-            setCustomer(prev => ({
-              ...prev,
-              deunaVerified: false,
-              deunaData: null
-            }));
-          } else if (data && data.amount_mismatch) {
-            showToast(`⚠️ El monto de DeUna ($${Number(data.amount).toFixed(2)}) es menor al total requerido ($${Number(data.expected_amount).toFixed(2)})`, 'warning');
-            setCustomer(prev => ({
-              ...prev,
-              deunaVerified: false,
-              deunaData: data
-            }));
-          } else {
-            // No encontrado en la base de datos de pagos recibidos
+            showToast(`✓ ¡Pago DeUna de $${Number(verifiedData.amount).toFixed(2)} verificado con éxito! (${verifiedData.sender_name || 'Titular verificado'})`, 'success');
+          } else if (!isDuplicate && !isMismatch) {
             setCustomer(prev => ({
               ...prev,
               receiptRef: cleanTx,
               deunaVerified: false,
               deunaData: null
             }));
-            showToast(`⚠️ No encontramos un pago registrado con la transacción #${cleanTx}. Si acabas de transferir en Deuna!, espera unos 30-60 segundos a que ingrese el correo y vuelve a pulsar "Verificar".`, 'warning');
+            showToast(`⚠️ Aún no detectamos la transacción #${cleanTx}. Nuestro sistema revisa cada 30 segundos. Si acabas de transferir, espera unos 15 segundos y vuelve a pulsar "Verificar".`, 'warning');
           }
         } catch (err) {
           console.warn('Error verificando Deuna:', err);

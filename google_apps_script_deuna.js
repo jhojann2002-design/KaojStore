@@ -18,8 +18,8 @@
  * 3. Reemplaza todo el código por este archivo completo y presiona "Guardar" (Ctrl+S / Cmd+S).
  * 4. Si quieres importar pagos de días anteriores, selecciona arriba la función:
  *    "sincronizarHistoricoDeuna" y dale al botón "Ejecutar".
- * 5. Si es la primera vez que lo instalas, selecciona la función "instalarDisparadorAutomatico"
- *    y dale "Ejecutar" para que revise correos nuevos automáticamente cada 1 minuto.
+ * 5. Selecciona la función "instalarDisparadorAutomatico" y dale "Ejecutar"
+ *    para que revise correos nuevos automáticamente cada 30 segundos (2 veces por minuto).
  */
 
 var SUPABASE_URL = "https://uxptcckcwcyaivurhxzh.supabase.co";
@@ -223,20 +223,51 @@ function obtenerOCrearEtiqueta(nombre) {
 }
 
 /**
- * EJECUTA ESTA FUNCIÓN UNA SOLA VEZ para activar el cron de 1 minuto automáticamente.
+ * CICLO DE ALTA VELOCIDAD: REVISA CADA 30 SEGUNDOS (2 veces por minuto)
+ * Ejecuta una revisión en el segundo 0 y otra en el segundo 30.
+ * Utiliza LockService para garantizar que las revisiones no se superpongan.
+ */
+function cicloVerificacionDeuna() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) {
+    Logger.log('Ciclo anterior aún activo. Esperando el siguiente turno...');
+    return;
+  }
+
+  try {
+    // 1ª Revisión (Segundo 0)
+    procesarPagosDeuna();
+
+    // Pausa activa de 30 segundos
+    Utilities.sleep(30000);
+
+    // 2ª Revisión (Segundo 30)
+    procesarPagosDeuna();
+  } catch (err) {
+    Logger.log('Error en ciclo de 30 segundos: ' + err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * EJECUTA ESTA FUNCIÓN UNA SOLA VEZ para activar el disparador automático.
+ * Configurará revisiones cada 30 segundos de forma continua y desatendida.
  */
 function instalarDisparadorAutomatico() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'procesarPagosDeuna') {
+    var fn = triggers[i].getHandlerFunction();
+    if (fn === 'procesarPagosDeuna' || fn === 'cicloVerificacionDeuna') {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
 
-  ScriptApp.newTrigger('procesarPagosDeuna')
+  // Activa el ciclo cada 1 minuto (que internamente ejecuta 2 revisiones cada 30s)
+  ScriptApp.newTrigger('cicloVerificacionDeuna')
     .timeBased()
     .everyMinutes(1)
     .create();
 
-  Logger.log('🎉 ¡Disparador instalado con éxito! Revisará correos de dinero recibido de Deuna cada 1 minuto.');
+  Logger.log('🎉 ¡Disparador de 30 segundos instalado con éxito! Revisará correos entrantes dos veces por minuto.');
 }

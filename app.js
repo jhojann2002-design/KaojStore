@@ -3977,6 +3977,21 @@ function App() {
   const total = Number((baseTotalBeforeCardFee + payphoneSurchargeAmount).toFixed(2));
   const pointsEarnedWithOrder = Math.floor(Math.max(0, subtotal - productDiscounts));
 
+  // Si el cliente modificó el carrito o cambió el método de envío y el nuevo total supera el monto verificado en DeUna,
+  // invalidar automáticamente la verificación para requerir confirmación del monto completo.
+  useEffect(() => {
+    if (customer.deunaVerified && customer.deunaData) {
+      const verifiedAmt = Number(customer.deunaData.amount || 0);
+      if (verifiedAmt > 0 && verifiedAmt < total - 0.05) {
+        setCustomer(prev => ({
+          ...prev,
+          deunaVerified: false
+        }));
+        showToast(`⚠️ El total del pedido cambió a $${total.toFixed(2)}. Por favor verifica tu pago de DeUna por el nuevo monto.`, 'warning');
+      }
+    }
+  }, [total, customer.deunaVerified, customer.deunaData]);
+
   // Métricas de Envío Gratis
   const remainingForFreeShipping = Math.max(0, freeShippingThreshold - subtotal);
   const shippingProgressPercent = Math.min(100, Math.round(subtotal / freeShippingThreshold * 100));
@@ -4083,8 +4098,15 @@ function App() {
       if (!cleanTx) {
         return showToast('Ingresa el número de transacción de 12 dígitos de tu pago en Deuna!.', 'error');
       }
-      if (customer.deunaVerified !== true) {
+      if (customer.deunaVerified !== true || !customer.deunaData) {
         return showToast('❌ Tu pago con Deuna! aún no ha sido verificado. Ingresa los 12 dígitos de tu transacción y pulsa en "Verificar" para validar la compra.', 'error');
+      }
+      if (Number(customer.deunaData.amount || 0) < total - 0.05) {
+        setCustomer(prev => ({
+          ...prev,
+          deunaVerified: false
+        }));
+        return showToast(`⚠️ El monto verificado en DeUna ($${Number(customer.deunaData.amount || 0).toFixed(2)}) es menor al total actual del pedido ($${total.toFixed(2)}). Verifica el pago por el monto completo.`, 'error');
       }
     } else if (!customer.receiptUrl) {
       return showToast('Sube la captura del comprobante de transferencia bancaria para validar tu pedido.', 'error');
@@ -4134,13 +4156,13 @@ function App() {
       return showToast(`Este comprobante ya fue utilizado en el pedido #${customer.receiptQrData.duplicateOrder}. Debes realizar una transferencia nueva.`, 'error');
     }
 
-    // Doble comprobación en tiempo real en la base de datos
-    if (customer.receiptRef && customer.receiptRef.trim()) {
+    // Doble comprobación en tiempo real en la base de datos (solo si la referencia tiene >= 5 caracteres o hay QR)
+    if (customer.receiptRef && customer.receiptRef.trim().length >= 5 || customer.receiptQrData?.uuid || customer.receiptQrData?.hash) {
       try {
         const {
           data: serverCheck
         } = await supabase.rpc('kaoj_check_receipt_duplicate', {
-          check_ref: customer.receiptRef.trim(),
+          check_ref: customer.receiptRef && customer.receiptRef.trim().length >= 5 ? customer.receiptRef.trim() : '',
           check_uuid: customer.receiptQrData?.uuid || '',
           check_hash: customer.receiptQrData?.hash || ''
         });
@@ -4154,7 +4176,9 @@ function App() {
     if (customer.receiptQrData && !customer.receiptQrData.isDuplicate) {
       const qr = customer.receiptQrData;
       adminNotesParts.push(`[QR PICHINCHA VERIFICADO: $${Number(qr.amount).toFixed(2)} | Emisor: ${qr.senderName} | Ref: ${qr.secuencial || qr.uuid} | Dest: ${qr.receiverName} (${qr.receiverAcc})]`);
-      const receiverMatches = qr.receiverAcc && qr.receiverAcc.includes('7440') || qr.receiverName && qr.receiverName.toUpperCase().includes('DEMERA') || settings.bank_pichincha_acc && qr.receiverAcc && qr.receiverAcc.includes(settings.bank_pichincha_acc.slice(-4));
+      const recAcc = String(qr.receiverAcc || '');
+      const recName = String(qr.receiverName || '').toUpperCase();
+      const receiverMatches = recAcc.includes('7440') || recAcc.includes('0164') || recAcc.includes('9619') || recName.includes('DEMERA') || recName.includes('TOLEDO') || settings.bank_pichincha_acc && recAcc.includes(settings.bank_pichincha_acc.slice(-4)) || settings.bank_guayaquil_acc && recAcc.includes(settings.bank_guayaquil_acc.slice(-4));
       const amountMatches = qr.amount >= total - 0.05;
       if (receiverMatches && amountMatches) {
         initialStatus = 'verificado';
@@ -10467,7 +10491,9 @@ function App() {
     type: "button",
     onClick: () => {
       const parsed = parseDeunaNotificationEmail(deunaPasteInput);
-      if (parsed && parsed.transactionId) {
+      if (parsed && parsed.error) {
+        showToast(parsed.message || 'El texto pegado no corresponde a un pago válido hacia Kaoj Store', 'error');
+      } else if (parsed && parsed.transactionId) {
         setCustomer(prev => ({
           ...prev,
           receiptRef: parsed.transactionId
@@ -10475,7 +10501,7 @@ function App() {
         handleVerifyDeunaTx(parsed.transactionId);
         setShowDeunaPasteBox(false);
       } else {
-        showToast('No se encontró número de transacción en el texto pegado', 'warning');
+        showToast('No se encontró un número de transacción de 12 dígitos en el texto pegado', 'warning');
       }
     },
     className: "w-full py-1.5 bg-purple-800 hover:bg-purple-900 text-white rounded-lg font-bold text-[10.5px] transition"
@@ -10871,11 +10897,11 @@ function App() {
     className: "text-zinc-500 block text-[10px]"
   }, "Secuencial / Ref:"), /*#__PURE__*/React.createElement("b", {
     className: "font-mono text-zinc-800"
-  }, customer.receiptQrData.secuencial || customer.receiptQrData.uuid?.slice(0, 8)))), Math.abs(customer.receiptQrData.amount - total) < 0.05 ? /*#__PURE__*/React.createElement("p", {
+  }, customer.receiptQrData.secuencial || customer.receiptQrData.uuid?.slice(0, 8)))), customer.receiptQrData.amount >= total - 0.05 ? /*#__PURE__*/React.createElement("p", {
     className: "text-[10px] text-emerald-700 font-bold flex items-center gap-1"
-  }, /*#__PURE__*/React.createElement("span", null, "✓ Monto exacto confirmado ($", total.toFixed(2), "). Tu pedido será validado al instante.")) : /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-amber-700 font-bold flex items-center gap-1"
-  }, /*#__PURE__*/React.createElement("span", null, "ℹ️ Monto transferido: $", customer.receiptQrData.amount.toFixed(2), " (Total de tu orden: $", total.toFixed(2), ")"))))))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "✓ Monto cubierto confirmado ($", customer.receiptQrData.amount.toFixed(2), "). Tu pedido será validado al instante.")) : /*#__PURE__*/React.createElement("p", {
+    className: "text-[10px] text-amber-800 bg-amber-100/80 px-2 py-1 rounded-lg font-bold flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("span", null, "⚠️ Monto del comprobante ($$", customer.receiptQrData.amount.toFixed(2), ") es menor al total de la orden ($$", total.toFixed(2), "). Se revisará manualmente."))))))), /*#__PURE__*/React.createElement("div", {
     className: "bg-zinc-50 border border-zinc-200 rounded-2xl p-4 space-y-1.5 text-xs"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex justify-between text-zinc-600"
@@ -12013,9 +12039,14 @@ function App() {
       className: "text-zinc-500 block text-[10px]"
     }, "Beneficiario:"), /*#__PURE__*/React.createElement("b", {
       className: "truncate block text-zinc-900"
-    }, adminReceiptQrResult.receiverName), /*#__PURE__*/React.createElement("span", {
-      className: `text-[10px] font-bold ${adminReceiptQrResult.receiverAcc.includes('7440') ? 'text-emerald-700' : 'text-zinc-600'}`
-    }, adminReceiptQrResult.receiverAcc, " ", adminReceiptQrResult.receiverAcc.includes('7440') ? '✓ Cuenta Kaoj' : '')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    }, adminReceiptQrResult.receiverName), (() => {
+      const rAcc = String(adminReceiptQrResult.receiverAcc || '');
+      const rName = String(adminReceiptQrResult.receiverName || '').toUpperCase();
+      const isKaoj = rAcc.includes('7440') || rAcc.includes('0164') || rAcc.includes('9619') || rName.includes('DEMERA') || rName.includes('TOLEDO') || settings.bank_pichincha_acc && rAcc.includes(settings.bank_pichincha_acc.slice(-4)) || settings.bank_guayaquil_acc && rAcc.includes(settings.bank_guayaquil_acc.slice(-4));
+      return /*#__PURE__*/React.createElement("span", {
+        className: `text-[10px] font-bold ${isKaoj ? 'text-emerald-700' : 'text-zinc-600'}`
+      }, adminReceiptQrResult.receiverAcc, " ", isKaoj ? '✓ Cuenta Kaoj' : '');
+    })()), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
       className: "text-zinc-500 block text-[10px]"
     }, "Canal & Fecha:"), /*#__PURE__*/React.createElement("b", {
       className: "text-zinc-900 block"

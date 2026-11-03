@@ -752,28 +752,39 @@ SET search_path = public, extensions
 AS $$
 DECLARE
     matched_order RECORD;
-    c_ref TEXT := NULLIF(TRIM(check_ref), '');
-    c_uuid TEXT := NULLIF(TRIM(check_uuid), '');
-    c_hash TEXT := NULLIF(TRIM(check_hash), '');
+    c_ref TEXT := NULLIF(TRIM(COALESCE(check_ref, '')), '');
+    c_uuid TEXT := NULLIF(TRIM(COALESCE(check_uuid, '')), '');
+    c_hash TEXT := NULLIF(TRIM(COALESCE(check_hash, '')), '');
 BEGIN
+    -- Ignorar referencias demasiado cortas (< 5 caracteres) para evitar falsos positivos con montos o fechas
+    IF c_ref IS NOT NULL AND LENGTH(c_ref) < 5 THEN
+        c_ref := NULL;
+    END IF;
+
     IF c_ref IS NULL AND c_uuid IS NULL AND c_hash IS NULL THEN
         RETURN jsonb_build_object('is_duplicate', false);
     END IF;
 
-    -- Buscar órdenes existentes no canceladas que contengan este secuencial, UUID o firma hash
+    -- Buscar órdenes activas (no canceladas ni eliminadas) que ya hayan usado este comprobante, UUID o hash
     SELECT order_code, created_at INTO matched_order
     FROM public.kaoj_orders
-    WHERE status != 'cancelado'
+    WHERE status NOT IN ('cancelado', 'eliminado', 'cancelado_eliminado')
       AND (
         (c_ref IS NOT NULL AND (
-            admin_notes LIKE '%' || c_ref || '%' OR
-            payment_method LIKE '%' || c_ref || '%' OR
-            receipt_url LIKE '%' || c_ref || '%'
+            admin_notes ILIKE '%Comprobante #: ' || c_ref || '%' OR
+            admin_notes ILIKE '%Comp: ' || c_ref || '%' OR
+            admin_notes ILIKE '%Tx: ' || c_ref || '%' OR
+            admin_notes ILIKE '%Ref: ' || c_ref || '%' OR
+            payment_method ILIKE '%Comp: ' || c_ref || '%' OR
+            payment_method ILIKE '%Tx: ' || c_ref || '%' OR
+            payment_method ILIKE '%Ref: ' || c_ref || '%' OR
+            receipt_url ILIKE '%Tx: ' || c_ref || '%' OR
+            receipt_url ILIKE '%Ref: ' || c_ref || '%'
         ))
         OR
-        (c_uuid IS NOT NULL AND admin_notes LIKE '%' || c_uuid || '%')
+        (c_uuid IS NOT NULL AND LENGTH(c_uuid) >= 8 AND admin_notes LIKE '%' || c_uuid || '%')
         OR
-        (c_hash IS NOT NULL AND admin_notes LIKE '%' || c_hash || '%')
+        (c_hash IS NOT NULL AND LENGTH(c_hash) >= 8 AND admin_notes LIKE '%' || c_hash || '%')
       )
     ORDER BY id DESC
     LIMIT 1;
@@ -1119,7 +1130,7 @@ BEGIN
     IF LENGTH(clean_ref) >= 4 THEN
         IF EXISTS (
             SELECT 1 FROM public.kaoj_orders
-            WHERE status IN ('verificado', 'enviado', 'entregado')
+            WHERE status IN ('verificado', 'empacado', 'en_camino', 'enviado', 'entregado')
               AND admin_notes ILIKE '%[AUTO-VALIDADO%' || clean_ref || '%]%'
         ) THEN
             RETURN jsonb_build_object(

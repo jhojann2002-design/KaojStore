@@ -12991,9 +12991,9 @@ function App() {
     className: "w-3.5 h-3.5"
   })))), !isAdmin && !isCartOpen && /*#__PURE__*/React.createElement("nav", {
     "aria-label": "Navegación principal móvil",
-    className: "fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-zinc-200/80 px-2 py-2 md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.06)]",
+    className: "fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-lg border-t border-zinc-200/80 px-2 pt-2 pb-3 md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.08)]",
     style: {
-      paddingBottom: 'max(env(safe-area-inset-bottom), 8px)'
+      paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-5 items-center justify-items-center"
@@ -13079,7 +13079,7 @@ function App() {
   }), /*#__PURE__*/React.createElement("p", {
     className: "font-semibold leading-tight"
   }, toast.message)), showInstallBanner && /*#__PURE__*/React.createElement("div", {
-    className: "fixed bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40"
+    className: "fixed bottom-[74px] md:bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40"
   }, /*#__PURE__*/React.createElement("div", {
     className: "bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 text-white p-3.5 rounded-3xl border border-pink-500/30 shadow-2xl flex items-center justify-between gap-3"
   }, /*#__PURE__*/React.createElement("img", {
@@ -13611,7 +13611,11 @@ function App() {
     className: "text-zinc-900"
   }, settings.email_contact || 'kaoj.store.ecu@gmail.com')))))), /*#__PURE__*/React.createElement("div", {
     className: "pt-8 border-t border-zinc-200/80 flex flex-col sm:flex-row justify-between items-center gap-3 text-zinc-400 text-[11px]"
-  }, /*#__PURE__*/React.createElement("p", null, "© 2026 KAOJ STORE. Todos los derechos reservados."), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", null, "© 2026 KAOJ STORE. Todos los derechos reservados."), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] font-bold text-[#FF2E93] bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200 shadow-2xs"
+  }, "v2.6 LiveLARQ")), /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-4"
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",

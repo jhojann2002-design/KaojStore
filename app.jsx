@@ -14289,8 +14289,8 @@ ESTADO: ${status.toUpperCase()}
           {!isAdmin && !isCartOpen && (
             <nav
               aria-label="Navegación principal móvil"
-              className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-zinc-200/80 px-2 py-2 md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
-              style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
+              className="fixed bottom-0 left-0 right-0 z-[100] bg-white/95 backdrop-blur-lg border-t border-zinc-200/80 px-2 pt-2 pb-3 md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
             >
               <div className="grid grid-cols-5 items-center justify-items-center">
                 <button
@@ -14383,7 +14383,7 @@ ESTADO: ${status.toUpperCase()}
 
           {/* BANNER FLOTANTE DE INSTALACIÓN PWA (1-CLIC ANDROID & GUÍA IOS) */}
           {showInstallBanner && (
-            <div className="fixed bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40">
+            <div className="fixed bottom-[74px] md:bottom-4 left-4 right-4 sm:right-auto sm:left-4 sm:max-w-md z-40">
               <div className="bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 text-white p-3.5 rounded-3xl border border-pink-500/30 shadow-2xl flex items-center justify-between gap-3">
                 <img
                   src={Boolean((typeof window !== 'undefined' && window.IS_ADMIN_APP) || (typeof window !== 'undefined' && window.location.pathname.includes('admin')) || (typeof window !== 'undefined' && window.location.hash.startsWith('#/admin'))) ? "icons/icon-admin-192.png" : "icons/icon-192.png"}
@@ -15047,7 +15047,10 @@ ESTADO: ${status.toUpperCase()}
 
               {/* BARRA INFERIOR DE COPYRIGHT Y UTILIDADES */}
               <div className="pt-8 border-t border-zinc-200/80 flex flex-col sm:flex-row justify-between items-center gap-3 text-zinc-400 text-[11px]">
-                <p>© 2026 KAOJ STORE. Todos los derechos reservados.</p>
+                <p className="flex items-center gap-2">
+                  <span>© 2026 KAOJ STORE. Todos los derechos reservados.</span>
+                  <span className="text-[10px] font-bold text-[#FF2E93] bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200 shadow-2xs">v2.6 LiveLARQ</span>
+                </p>
 
                 <div className="flex items-center gap-4">
                   {/* BOTÓN FORZAR ACTUALIZACIÓN DE TIENDA */}

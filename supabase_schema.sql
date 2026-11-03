@@ -594,15 +594,28 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
+DECLARE
+    ord RECORD;
 BEGIN
     IF NOT public.kaoj_verify_admin_pin(admin_pin) THEN
         RAISE EXCEPTION 'PIN de administrador no válido';
+    END IF;
+
+    SELECT * INTO ord FROM public.kaoj_orders WHERE id = target_order_id;
+    IF ord.id IS NULL THEN
+        RAISE EXCEPTION 'Pedido no encontrado';
     END IF;
 
     -- Si se cambia a cancelado, ejecutar reversión atómica de stock y puntos
     IF new_status = 'cancelado' THEN
         PERFORM public.kaoj_admin_cancel_order(admin_pin, target_order_id);
         RETURN true;
+    END IF;
+
+    -- Si el pedido estaba cancelado y ahora se reactiva, re-descontar stock y sincronizar métricas de la clienta
+    IF ord.status = 'cancelado' AND new_status != 'cancelado' THEN
+        PERFORM public.kaoj_decrement_order_stock(ord.items);
+        PERFORM public.kaoj_admin_sync_customer_metrics(admin_pin, ord.customer_phone);
     END IF;
 
     UPDATE public.kaoj_orders

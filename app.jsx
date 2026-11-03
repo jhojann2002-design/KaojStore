@@ -1946,7 +1946,13 @@ ESTADO: ${status.toUpperCase()}
 
       // Autenticación con Google y Perfil Permanente
       const [user, setUser] = useState(null);
-      const [customerProfile, setCustomerProfile] = useState(null);
+      const [customerProfile, setCustomerProfile] = useState(() => {
+        try {
+          const saved = localStorage.getItem('kaoj_customer_profile');
+          if (saved) return JSON.parse(saved);
+        } catch (e) {}
+        return null;
+      });
       const [showPhonePromptModal, setShowPhonePromptModal] = useState(false);
       const [phoneInputForGoogle, setPhoneInputForGoogle] = useState('');
       const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -2299,8 +2305,8 @@ ESTADO: ${status.toUpperCase()}
         return list.length > 0 ? list : [product.image && !isVideoUrl(product.image) ? product.image : 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=600'];
       }
 
-      // Auto-detección de cliente VIP y saldo de puntos al escribir celular en el checkout
-      async function handlePhoneLookup(phoneVal) {
+      // Auto-detección de cliente VIP y saldo de puntos al escribir celular en el checkout o al iniciar
+      async function handlePhoneLookup(phoneVal, silent = false) {
         const clean = (phoneVal || '').replace(/\D/g, '');
         if (clean.length < 9) return;
         if (user && customerProfile?.user_id) return; // Si ya inició sesión con Google y tiene perfil cargado
@@ -2317,13 +2323,18 @@ ESTADO: ${status.toUpperCase()}
             const firstName = lastOrder.customer_name ? lastOrder.customer_name.split(' ')[0] : 'Clienta';
             const vipCode = lastOrder.customer_code || generateCustomerCode(lastOrder.customer_name || customer.name, clean);
 
-            setCustomerProfile(prev => ({
-              ...(prev || {}),
+            const newProf = {
               customer_code: vipCode,
-              name: lastOrder.customer_name || prev?.name || customer.name,
+              name: lastOrder.customer_name || customer.name,
               phone: clean,
               points: netPoints
-            }));
+            };
+            setCustomerProfile(newProf);
+            try {
+              localStorage.setItem('kaoj_customer_profile', JSON.stringify(newProf));
+              localStorage.setItem('kaoj_customer_phone', clean);
+              localStorage.setItem('kaoj_last_customer_code', vipCode);
+            } catch (_) {}
 
             setCustomer(prev => ({
               ...prev,
@@ -2332,14 +2343,34 @@ ESTADO: ${status.toUpperCase()}
               address: prev.address.trim() ? prev.address : (lastOrder.delivery_address || '')
             }));
 
-            if (netPoints >= 50) {
-              showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj disponibles ($${(Math.floor(netPoints / 50) * 5).toFixed(2)} de descuento). 💎`);
-            } else {
-              showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj acumulados con tu código ${vipCode}. ✨`);
+            if (!silent) {
+              if (netPoints >= 50) {
+                showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj disponibles ($${(Math.floor(netPoints / 50) * 5).toFixed(2)} de descuento). 💎`);
+              } else if (netPoints > 0) {
+                showToast(`¡Bienvenida de nuevo, ${firstName}! Tienes ${netPoints} Puntos Kaoj acumulados con tu código ${vipCode}. ✨`);
+              }
             }
           }
         } catch (err) {}
       }
+
+      // Sincronización automática de perfil VIP y puntos al arrancar la app
+      useEffect(() => {
+        const ph = customerProfile?.phone || customer?.phone || localStorage.getItem('kaoj_customer_phone');
+        if (ph && ph.replace(/\D/g, '').length >= 9) {
+          handlePhoneLookup(ph, true);
+        }
+      }, []);
+
+      // Re-sincronizar puntos automáticamente al abrir el carrito si faltaba
+      useEffect(() => {
+        if (isCartOpen) {
+          const ph = customerProfile?.phone || customer?.phone || localStorage.getItem('kaoj_customer_phone');
+          if (ph && ph.replace(/\D/g, '').length >= 9) {
+            handlePhoneLookup(ph, true);
+          }
+        }
+      }, [isCartOpen]);
 
       // Consulta automática de pedidos para clientas logeadas o por código/celular (RLS Seguro)
       const fetchMyOrders = async (identifier) => {
@@ -2361,7 +2392,27 @@ ESTADO: ${status.toUpperCase()}
             const { data, error } = await supabase.rpc('kaoj_track_orders', {
               lookup_query: String(targetId).trim()
             });
-            setTrackedOrders(!error && data ? data : []);
+            if (!error && data && data.length > 0) {
+              setTrackedOrders(data);
+              const lastOrder = data[0];
+              const validOrders = data.filter(o => o.status !== 'cancelado' && o.status !== 'eliminado' && o.status !== 'cancelado_eliminado');
+              const netPoints = Math.max(0, validOrders.reduce((acc, o) => acc + Number(o.points_earned || 0) - Number(o.points_redeemed || 0), 0));
+              const vipCode = lastOrder.customer_code || generateCustomerCode(lastOrder.customer_name || '', lastOrder.customer_phone || '');
+              const prof = {
+                customer_code: vipCode,
+                name: lastOrder.customer_name,
+                phone: lastOrder.customer_phone,
+                points: netPoints
+              };
+              setCustomerProfile(prof);
+              try {
+                localStorage.setItem('kaoj_customer_profile', JSON.stringify(prof));
+                localStorage.setItem('kaoj_customer_phone', lastOrder.customer_phone);
+                localStorage.setItem('kaoj_last_customer_code', vipCode);
+              } catch (_) {}
+            } else {
+              setTrackedOrders(!error && data ? data : []);
+            }
           }
         } catch (err) {
           console.error('Error cargando pedidos:', err);
@@ -2640,6 +2691,22 @@ ESTADO: ${status.toUpperCase()}
           return handleCancelOrder(order);
         }
         const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
+
+        // Si la orden estaba cancelada y ahora se reactiva, re-descontar stock y re-sincronizar puntos
+        if (order.status === 'cancelado' && newStatus !== 'cancelado') {
+          try {
+            await supabase.rpc('kaoj_decrement_order_stock', {
+              order_items: order.items
+            });
+            await supabase.rpc('kaoj_admin_sync_customer_metrics', {
+              admin_pin: adminPin,
+              target_phone: order.customer_phone
+            });
+          } catch (reErr) {
+            console.warn('Reactivación de orden cancelada:', reErr);
+          }
+        }
+
         const { error } = await supabase.rpc('kaoj_admin_update_order_status', {
           admin_pin: adminPin,
           target_order_id: order.id,
@@ -2673,6 +2740,14 @@ ESTADO: ${status.toUpperCase()}
         }
         const adminPin = sessionStorage.getItem('kaoj_admin_pin') || localStorage.getItem('kaoj_admin_pin') || '';
         for (const orderId of selectedOrderIds) {
+          const ord = orders.find(o => o.id === orderId);
+          // Si la orden estaba cancelada y se reactiva por lote, re-descontar stock y sincronizar
+          if (ord && ord.status === 'cancelado' && newStatus !== 'cancelado') {
+            try {
+              await supabase.rpc('kaoj_decrement_order_stock', { order_items: ord.items });
+              await supabase.rpc('kaoj_admin_sync_customer_metrics', { admin_pin: adminPin, target_phone: ord.customer_phone });
+            } catch (_) {}
+          }
           try {
             await supabase.rpc('kaoj_admin_update_order_status', {
               admin_pin: adminPin,
@@ -3343,6 +3418,11 @@ ESTADO: ${status.toUpperCase()}
 
           if (existingCust && existingCust.customer_code) {
             setCustomerProfile(existingCust);
+            try {
+              localStorage.setItem('kaoj_customer_profile', JSON.stringify(existingCust));
+              if (existingCust.phone) localStorage.setItem('kaoj_customer_phone', existingCust.phone);
+              localStorage.setItem('kaoj_last_customer_code', existingCust.customer_code);
+            } catch (_) {}
             setCustomer(prev => ({
               ...prev,
               name: existingCust.name || googleName,
@@ -3396,7 +3476,13 @@ ESTADO: ${status.toUpperCase()}
           return showToast('Error vinculando cuenta: ' + error.message, 'error');
         }
 
-        setCustomerProfile(data || newProfile);
+        const finalProf = data || newProfile;
+        setCustomerProfile(finalProf);
+        try {
+          localStorage.setItem('kaoj_customer_profile', JSON.stringify(finalProf));
+          localStorage.setItem('kaoj_customer_phone', cleanDigits);
+          localStorage.setItem('kaoj_last_customer_code', code);
+        } catch (_) {}
         setCustomer(prev => ({ ...prev, phone: cleanDigits, name: googleName }));
         setShowPhonePromptModal(false);
         showToast(`Tu Código VIP permanente es [${code}]. Ha quedado vinculado a tu cuenta.`);
@@ -3957,18 +4043,20 @@ ESTADO: ${status.toUpperCase()}
             order_total: total
           });
 
-          if (customerProfile && custRes?.points !== undefined) {
-            setCustomerProfile(prev => ({ ...prev, points: custRes.points }));
-          } else {
-            const updatedPts = Math.max(0, customerCurrentPoints - pointsToRedeemNow) + pointsEarnedWithOrder;
-            setCustomerProfile(prev => ({
-              ...(prev || {}),
-              customer_code: activeCustomerCode,
-              name: activeCust.name.trim(),
-              phone: activeCust.phone.trim(),
-              points: updatedPts
-            }));
-          }
+          const updatedPts = Math.max(0, customerCurrentPoints - pointsToRedeemNow) + pointsEarnedWithOrder;
+          const finalPts = (custRes?.points !== undefined) ? custRes.points : updatedPts;
+          const finalProfile = {
+            customer_code: activeCustomerCode,
+            name: activeCust.name.trim(),
+            phone: activeCust.phone.trim(),
+            points: finalPts
+          };
+          setCustomerProfile(finalProfile);
+          try {
+            localStorage.setItem('kaoj_customer_profile', JSON.stringify(finalProfile));
+            localStorage.setItem('kaoj_customer_phone', activeCust.phone.trim());
+            localStorage.setItem('kaoj_last_customer_code', activeCustomerCode);
+          } catch (_) {}
 
           if (user) {
             await supabase.from('kaoj_carts').delete().eq('user_id', user.id);
@@ -10406,7 +10494,11 @@ ESTADO: ${status.toUpperCase()}
                               <div className="bg-white/90 border border-amber-200/70 rounded-xl p-2.5 space-y-1.5">
                                 <div className="flex items-center justify-between text-[11px]">
                                   <span className="font-bold text-zinc-700">
-                                    Tu saldo actual: <b className="text-[#FF2E93]">{customerCurrentPoints} pts</b>
+                                    {customerProfile?.customer_code ? (
+                                      <span>VIP <span className="font-mono text-pink-600 font-black">[{customerProfile.customer_code}]</span> • Saldo: <b className="text-[#FF2E93]">{customerCurrentPoints} pts</b></span>
+                                    ) : (
+                                      <span>Tu saldo actual: <b className="text-[#FF2E93]">{customerCurrentPoints} pts</b></span>
+                                    )}
                                   </span>
                                   {canRedeemPoints ? (
                                     <span className="text-emerald-700 font-black text-[10px] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
@@ -10414,7 +10506,11 @@ ESTADO: ${status.toUpperCase()}
                                     </span>
                                   ) : (
                                     <span className="text-zinc-500 text-[10px] font-semibold">
-                                      Faltan {pointsNeededForNextDiscount} pts para $5.00 OFF
+                                      {customerCurrentPoints > 0 
+                                        ? `Faltan ${pointsNeededForNextDiscount} pts para $5.00 OFF`
+                                        : (customer.phone && customer.phone.length >= 9) 
+                                          ? `Faltan 50 pts para $5.00 OFF` 
+                                          : `Ingresa tu WhatsApp abajo para ver tus puntos ✨`}
                                     </span>
                                   )}
                                 </div>
